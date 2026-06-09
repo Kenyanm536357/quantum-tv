@@ -11,7 +11,8 @@ export default function MediaCard({ item, type = 'live', aspect = 'video', onPla
   return (
     <button
       onClick={onPlay}
-      className="group w-full bg-card border border-border hover:border-primary/40 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-xl hover:shadow-primary/5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      style={{ minHeight: 44 }}
+      className="group w-full bg-card border border-border hover:border-primary/40 rounded-xl overflow-hidden transition-all duration-200 hover:shadow-xl hover:shadow-primary/5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 select-none"
     >
       {/* Thumbnail */}
       <div className={`relative bg-muted flex items-center justify-center overflow-hidden ${aspect === 'poster' ? 'aspect-[2/3]' : 'aspect-video'}`}>

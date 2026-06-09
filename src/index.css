@@ -34,6 +34,11 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', sans-serif;
+    overscroll-behavior: none;
+  }
+  button, a, [role="button"], nav * {
+    user-select: none;
+    -webkit-user-select: none;
   }
 }
 

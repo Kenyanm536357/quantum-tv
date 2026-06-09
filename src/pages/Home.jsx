@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useStore } from '@/lib/use-store';
 import { loadCredentials, setState } from '@/lib/iptv-store';
 import LoginScreen from '@/components/iptv/LoginScreen';
 import AppSidebar from '@/components/iptv/AppSidebar';
+import MobileNavbar from '@/components/iptv/MobileNavbar';
 import VideoPlayer from '@/components/iptv/VideoPlayer';
 import LiveSection from '@/pages/iptv/LiveSection';
 import MoviesSection from '@/pages/iptv/MoviesSection';
@@ -10,49 +13,36 @@ import SeriesSection from '@/pages/iptv/SeriesSection';
 import SettingsSection from '@/pages/iptv/SettingsSection';
 import { Menu, Radio, Film, Clapperboard, Settings } from 'lucide-react';
 
-const SECTIONS = {
-  live: LiveSection,
-  movies: MoviesSection,
-  series: SeriesSection,
-  settings: SettingsSection,
+const SECTION_META = {
+  live:     { label: 'Live TV',    Icon: Radio },
+  movies:   { label: 'Movies',     Icon: Film },
+  series:   { label: 'TV Series',  Icon: Clapperboard },
+  settings: { label: 'Settings',   Icon: Settings },
 };
 
-const SECTION_LABELS = {
-  live: 'Live TV',
-  movies: 'Movies',
-  series: 'TV Series',
-  settings: 'Settings',
+const pageVariants = {
+  initial: { opacity: 0, x: 16 },
+  animate: { opacity: 1, x: 0 },
+  exit:    { opacity: 0, x: -16 },
 };
+const pageTransition = { duration: 0.18, ease: 'easeOut' };
 
-const SECTION_ICONS = {
-  live: Radio,
-  movies: Film,
-  series: Clapperboard,
-  settings: Settings,
-};
-
-export default function Home() {
-  const { credentials, section, player } = useStore();
-  const [booting, setBooting] = useState(true);
+function AppShell() {
+  const { credentials, player } = useStore();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
 
+  // Derive active section from URL
+  const sectionKey = location.pathname.replace('/', '') || 'live';
+  const meta = SECTION_META[sectionKey] || SECTION_META.live;
+
+  // Keep legacy store section in sync
   useEffect(() => {
-    loadCredentials();
-    setBooting(false);
-  }, []);
-
-  if (booting) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="w-9 h-9 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
-      </div>
-    );
-  }
+    if (SECTION_META[sectionKey]) setState({ section: sectionKey });
+  }, [sectionKey]);
 
   if (!credentials) return <LoginScreen />;
-
-  const ActiveSection = SECTIONS[section] || LiveSection;
-  const SectionIcon = SECTION_ICONS[section] || Radio;
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -71,35 +61,85 @@ export default function Home() {
         </div>
       )}
 
-      {/* Main */}
+      {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile topbar */}
-        <header className="lg:hidden sticky top-0 z-30 h-14 bg-[hsl(220_18%_5%/0.95)] backdrop-blur border-b border-border flex items-center justify-between px-4">
-          <button onClick={() => setDrawerOpen(true)}
-            className="w-9 h-9 rounded-xl bg-secondary flex items-center justify-center">
+        <header
+          className="lg:hidden sticky top-0 z-30 bg-[hsl(220_18%_5%/0.95)] backdrop-blur border-b border-border flex items-center justify-between px-4"
+          style={{
+            height: 'calc(3.5rem + env(safe-area-inset-top))',
+            paddingTop: 'env(safe-area-inset-top)',
+            paddingLeft: 'calc(1rem + env(safe-area-inset-left))',
+            paddingRight: 'calc(1rem + env(safe-area-inset-right))',
+          }}
+        >
+          <button
+            onClick={() => setDrawerOpen(true)}
+            style={{ minHeight: 44, minWidth: 44 }}
+            className="rounded-xl bg-secondary flex items-center justify-center select-none"
+          >
             <Menu className="w-5 h-5" />
           </button>
-          <span className="flex items-center gap-2 text-sm font-bold">
-            <SectionIcon className="w-4 h-4 text-primary" />
-            {SECTION_LABELS[section]}
+          <span className="flex items-center gap-2 text-sm font-bold select-none">
+            <meta.Icon className="w-4 h-4 text-primary" />
+            {meta.label}
           </span>
-          <div className="w-9" />
+          <div style={{ minWidth: 44 }} />
         </header>
 
-        {/* Page content */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">
-          <ActiveSection />
+        {/* Animated page content */}
+        <main
+          className="flex-1 overflow-auto"
+          style={{ paddingBottom: 'calc(4rem + env(safe-area-inset-bottom))' }}
+        >
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={location.pathname}
+              variants={pageVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={pageTransition}
+              className="min-h-full p-4 sm:p-6 lg:p-8"
+            >
+              <Routes location={location}>
+                <Route path="/live"     element={<LiveSection />} />
+                <Route path="/movies"   element={<MoviesSection />} />
+                <Route path="/series"   element={<SeriesSection />} />
+                <Route path="/settings" element={<SettingsSection />} />
+                <Route path="*"         element={<Navigate to="/live" replace />} />
+              </Routes>
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
 
+      {/* Mobile bottom nav */}
+      <MobileNavbar />
+
       {/* Video player overlay */}
       {player && (
-        <VideoPlayer
-          src={player.src}
-          title={player.title}
-          type={player.type}
-        />
+        <VideoPlayer src={player.src} title={player.title} type={player.type} />
       )}
     </div>
   );
+}
+
+export default function Home() {
+  const [booting, setBooting] = useState(true);
+
+  useEffect(() => {
+    loadCredentials();
+    setBooting(false);
+  }, []);
+
+  if (booting) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-9 h-9 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return <AppShell />;
 }

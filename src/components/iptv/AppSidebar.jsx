@@ -1,7 +1,8 @@
 import React from 'react';
-import { Tv2, Film, Clapperboard, Settings, Zap, LogOut, Radio } from 'lucide-react';
-import { setState, clearCredentials } from '@/lib/iptv-store';
+import { Film, Clapperboard, Settings, Zap, LogOut, Radio } from 'lucide-react';
+import { clearCredentials } from '@/lib/iptv-store';
 import { useStore } from '@/lib/use-store';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const NAV = [
   { id: 'live',     icon: Radio,        label: 'Live TV',   sub: 'Channels' },
@@ -11,7 +12,9 @@ const NAV = [
 ];
 
 export default function AppSidebar({ onClose }) {
-  const { section, credentials } = useStore();
+  const { credentials } = useStore();
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
   const host = credentials?.baseUrl?.replace(/https?:\/\//, '').split(':')[0] ?? '';
 
   return (
@@ -30,10 +33,10 @@ export default function AppSidebar({ onClose }) {
       {/* Nav */}
       <nav className="flex-1 p-2.5 space-y-0.5 overflow-y-auto">
         {NAV.map(item => {
-          const active = section === item.id;
+          const active = pathname.startsWith('/' + item.id);
           return (
             <button key={item.id}
-              onClick={() => { setState({ section: item.id }); onClose?.(); }}
+              onClick={() => { navigate('/' + item.id); onClose?.(); }}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-150 group ${
                 active
                   ? 'bg-primary/10 text-primary'

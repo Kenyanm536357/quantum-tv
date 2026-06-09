@@ -48,11 +48,11 @@ export default function LoginScreen() {
           style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
       </div>
 
-      <div className="relative w-full max-w-[420px]">
+      <div className="relative w-full max-w-[420px] h-screen sm:h-auto flex flex-col sm:justify-center">
         {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="relative inline-block mb-6">
-            <div className="w-40 h-40 rounded-[2.5rem] overflow-hidden border-2 border-violet-500/50"
+        <div className="text-center mb-4 sm:mb-8">
+          <div className="relative inline-block mb-3 sm:mb-6">
+            <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-[2rem] sm:rounded-[2.5rem] overflow-hidden border-2 border-violet-500/50"
               style={{ boxShadow: '0 0 50px rgba(167,139,250,0.6), 0 0 100px rgba(139,92,246,0.25), inset 0 0 20px rgba(139,92,246,0.15)' }}>
               <img
                 src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/3349a49f0_QUANTUMTVLOGOver2.png"
@@ -61,16 +61,16 @@ export default function LoginScreen() {
               />
             </div>
           </div>
-          <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-violet-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight bg-gradient-to-r from-violet-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
             Quantum TV
           </h1>
-          <p className="text-sm text-muted-foreground mt-1.5">Connect your Xtream Codes provider</p>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">Connect your provider</p>
         </div>
 
         {/* Card */}
-        <div className="rounded-2xl p-6 shadow-2xl border border-violet-500/20"
+        <div className="rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-2xl border border-violet-500/20"
           style={{ background: 'rgba(15, 10, 40, 0.75)', backdropFilter: 'blur(20px)' }}>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
             <Field label="Server URL" icon={Globe} required>
               <input
                 type="url" placeholder="http://provider.com:8080"

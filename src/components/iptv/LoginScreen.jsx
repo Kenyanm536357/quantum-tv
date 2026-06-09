@@ -47,7 +47,7 @@ export default function LoginScreen() {
             <Tv2 className="w-8 h-8 text-primary" />
           </div>
           <h1 className="text-3xl font-black tracking-tight">
-            Quantum<span className="text-primary text-glow">IPTV</span>
+            Quantum<span className="text-primary text-glow">TV</span>
           </h1>
           <p className="text-sm text-muted-foreground mt-1.5">Connect your Xtream Codes provider</p>
         </div>

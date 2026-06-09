@@ -22,7 +22,7 @@ export default function AppSidebar({ onClose }) {
           <Zap className="w-4 h-4 text-primary" />
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-black leading-tight">Quantum<span className="text-primary">IPTV</span></p>
+          <p className="text-sm font-black leading-tight">Quantum<span className="text-primary">TV</span></p>
           <p className="text-[10px] text-muted-foreground truncate">{host || 'Connected'}</p>
         </div>
       </div>

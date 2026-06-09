@@ -33,11 +33,19 @@ export default function LoginScreen() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
+      style={{ background: 'radial-gradient(ellipse at 60% 0%, #1a0a3d 0%, #0a0f2e 40%, #060a1a 100%)' }}>
       {/* Ambient blobs */}
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[350px] bg-primary/8 blur-[120px] rounded-full" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[300px] bg-accent/8 blur-[100px] rounded-full" />
+        <div className="absolute top-[-10%] left-[30%] w-[600px] h-[400px] rounded-full blur-[130px]"
+          style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.35) 0%, rgba(99,51,220,0.15) 60%, transparent 100%)' }} />
+        <div className="absolute top-[20%] right-[-10%] w-[400px] h-[400px] rounded-full blur-[120px]"
+          style={{ background: 'radial-gradient(circle, rgba(56,189,248,0.2) 0%, rgba(14,116,196,0.1) 60%, transparent 100%)' }} />
+        <div className="absolute bottom-0 left-[10%] w-[500px] h-[300px] rounded-full blur-[100px]"
+          style={{ background: 'radial-gradient(circle, rgba(168,85,247,0.2) 0%, transparent 70%)' }} />
+        {/* Subtle grid overlay */}
+        <div className="absolute inset-0 opacity-[0.03]"
+          style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
       </div>
 
       <div className="relative w-full max-w-[420px]">
@@ -60,7 +68,8 @@ export default function LoginScreen() {
         </div>
 
         {/* Card */}
-        <div className="bg-card border border-border rounded-2xl p-6 shadow-2xl">
+        <div className="rounded-2xl p-6 shadow-2xl border border-violet-500/20"
+          style={{ background: 'rgba(15, 10, 40, 0.75)', backdropFilter: 'blur(20px)' }}>
           <form onSubmit={handleSubmit} className="space-y-4">
             <Field label="Server URL" icon={Globe} required>
               <input

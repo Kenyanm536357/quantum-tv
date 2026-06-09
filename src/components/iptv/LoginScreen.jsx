@@ -43,12 +43,13 @@ export default function LoginScreen() {
       <div className="relative w-full max-w-[420px]">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-block mb-6">
+          <div className="inline-flex items-center justify-center w-32 h-32 rounded-full bg-gradient-to-br from-violet-500/20 via-purple-500/10 to-cyan-500/20 border-2 border-violet-400/30 mb-6 shadow-2xl" 
+            style={{ boxShadow: '0 0 60px rgba(167, 139, 250, 0.4), 0 0 100px rgba(168, 85, 247, 0.2)' }}>
             <img src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/3349a49f0_QUANTUMTVLOGOver2.png" 
-              alt="Quantum TV" className="h-20 drop-shadow-[0_0_30px_rgba(191,97,255,0.4)]" />
+              alt="Quantum TV" className="h-24" />
           </div>
-          <h1 className="text-3xl font-black tracking-tight">
-            Quantum<span className="text-primary text-glow">TV</span>
+          <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-violet-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
+            Quantum TV
           </h1>
           <p className="text-sm text-muted-foreground mt-1.5">Connect your Xtream Codes provider</p>
         </div>
@@ -101,7 +102,7 @@ export default function LoginScreen() {
             )}
 
             <button type="submit" disabled={loading}
-              className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-semibold flex items-center justify-center gap-2 hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-50 glow-cyan mt-2">
+              className="w-full h-11 rounded-xl bg-gradient-to-r from-violet-500 to-cyan-500 text-white font-semibold flex items-center justify-center gap-2 hover:from-violet-600 hover:to-cyan-600 active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg shadow-violet-500/30 mt-2">
               {loading
                 ? <><span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />Connecting...</>
                 : <>Connect<ArrowRight className="w-4 h-4" /></>}

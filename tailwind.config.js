@@ -5,7 +5,7 @@ module.exports = {
   theme: {
   	extend: {
   		fontFamily: {
-  			inter: ['var(--font-inter)']
+  			inter: ['Inter', 'sans-serif']
   		},
   		borderRadius: {
   			lg: 'var(--radius)',
@@ -47,11 +47,11 @@ module.exports = {
   			input: 'hsl(var(--input))',
   			ring: 'hsl(var(--ring))',
   			chart: {
-  				'1': 'hsl(var(--chart-1))',
-  				'2': 'hsl(var(--chart-2))',
-  				'3': 'hsl(var(--chart-3))',
-  				'4': 'hsl(var(--chart-4))',
-  				'5': 'hsl(var(--chart-5))'
+  				'1': 'hsl(180, 100%, 50%)',
+  				'2': 'hsl(270, 100%, 65%)',
+  				'3': 'hsl(142, 71%, 45%)',
+  				'4': 'hsl(38, 92%, 50%)',
+  				'5': 'hsl(0, 72%, 51%)'
   			},
   			sidebar: {
   				DEFAULT: 'hsl(var(--sidebar-background))',
@@ -73,15 +73,19 @@ module.exports = {
   				from: { height: 'var(--radix-accordion-content-height)' },
   				to: { height: '0' }
   			},
-  			'pulse-glow': {
-  				'0%, 100%': { opacity: '1' },
-  				'50%': { opacity: '0.5' }
+  			'spin-slow': {
+  				from: { transform: 'rotate(0deg)' },
+  				to: { transform: 'rotate(360deg)' }
+  			},
+  			'ping-slow': {
+  				'75%, 100%': { transform: 'scale(2)', opacity: '0' }
   			}
   		},
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
   			'accordion-up': 'accordion-up 0.2s ease-out',
-  			'pulse-glow': 'pulse-glow 2s ease-in-out infinite'
+  			'spin-slow': 'spin-slow 3s linear infinite',
+  			'ping-slow': 'ping-slow 2s cubic-bezier(0,0,0.2,1) infinite'
   		}
   	}
   },

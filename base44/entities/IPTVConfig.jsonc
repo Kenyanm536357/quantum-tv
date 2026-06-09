@@ -1,0 +1,27 @@
+{
+  "name": "IPTVConfig",
+  "type": "object",
+  "properties": {
+    "base_url": {
+      "type": "string",
+      "description": "Xtream Codes API base URL"
+    },
+    "username": {
+      "type": "string",
+      "description": "Xtream Codes username"
+    },
+    "password": {
+      "type": "string",
+      "description": "Xtream Codes password"
+    },
+    "label": {
+      "type": "string",
+      "description": "Friendly label for this configuration"
+    }
+  },
+  "required": [
+    "base_url",
+    "username",
+    "password"
+  ]
+}

@@ -43,20 +43,16 @@ export default function LoginScreen() {
       <div className="relative w-full max-w-[420px]">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="relative inline-flex items-center justify-center w-28 h-28 mb-6">
-            {/* Animated gradient border */}
-            <div className="absolute inset-0 bg-gradient-to-br from-violet-500 via-purple-500 to-cyan-500 rounded-[2.5rem] p-[3px]" 
-              style={{ borderRadius: '2.5rem' }}>
-              <div className="absolute inset-0 bg-gradient-to-br from-violet-600/90 via-purple-600/80 to-background rounded-[2.4rem]" />
+          <div className="relative inline-block mb-6">
+            {/* Squircle frame */}
+            <div className="w-28 h-28 rounded-[2rem] overflow-hidden border-2 border-violet-500/40"
+              style={{ boxShadow: '0 0 40px rgba(167,139,250,0.5), 0 0 80px rgba(139,92,246,0.2), inset 0 0 20px rgba(139,92,246,0.1)' }}>
+              <img
+                src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/3349a49f0_QUANTUMTVLOGOver2.png"
+                alt="Quantum TV"
+                className="w-full h-full object-cover"
+              />
             </div>
-            {/* Content */}
-            <div className="relative flex items-center justify-center w-full h-full">
-              <img src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/3349a49f0_QUANTUMTVLOGOver2.png" 
-                alt="Quantum TV" className="h-16 drop-shadow-lg" />
-            </div>
-            {/* Glow */}
-            <div className="absolute -inset-2 bg-gradient-to-br from-violet-500 via-purple-500 to-cyan-500 rounded-[2.5rem] opacity-0 blur-xl -z-10"
-              style={{ animation: 'pulse 3s ease-in-out infinite' }} />
           </div>
           <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-violet-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
             Quantum TV

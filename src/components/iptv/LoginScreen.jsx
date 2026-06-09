@@ -43,8 +43,9 @@ export default function LoginScreen() {
       <div className="relative w-full max-w-[420px]">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 mb-4 glow-cyan">
-            <Tv2 className="w-8 h-8 text-primary" />
+          <div className="inline-block mb-6">
+            <img src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/3349a49f0_QUANTUMTVLOGOver2.png" 
+              alt="Quantum TV" className="h-20 drop-shadow-[0_0_30px_rgba(191,97,255,0.4)]" />
           </div>
           <h1 className="text-3xl font-black tracking-tight">
             Quantum<span className="text-primary text-glow">TV</span>

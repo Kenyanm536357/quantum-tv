@@ -46,10 +46,13 @@ export default function SettingsSection() {
         <h2 className="text-xl font-bold flex items-center gap-2">
           <Settings className="w-5 h-5 text-primary" /> Settings
         </h2>
-        <p className="text-xs text-muted-foreground mt-0.5">Manage your Xtream Codes connection</p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Connected via: <span className="text-foreground font-medium capitalize">{credentials?.type ?? 'xtream'}</span>
+          {credentials?.label ? ` — ${credentials.label}` : ''}
+        </p>
       </div>
 
-      {/* Connection form */}
+      {/* Connection info */}
       <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
         <p className="text-sm font-semibold text-foreground">Server Configuration</p>
 
@@ -59,20 +62,24 @@ export default function SettingsSection() {
               placeholder="http://provider.com:8080"
               className="field-input font-mono text-sm" />
           </InputRow>
-          <InputRow label="Username" icon={User}>
-            <input type="text" value={form.username} onChange={e => set('username', e.target.value)}
-              placeholder="xtream_username" autoComplete="username" className="field-input" />
-          </InputRow>
-          <InputRow label="Password" icon={Lock}>
-            <div className="relative">
-              <input type={showPwd ? 'text' : 'password'} value={form.password} onChange={e => set('password', e.target.value)}
-                placeholder="••••••••" autoComplete="current-password" className="field-input pr-10" />
-              <button type="button" onClick={() => setShowPwd(s => !s)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
-                {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </InputRow>
+          {(credentials?.type === 'xtream' || !credentials?.type) && (
+            <>
+              <InputRow label="Username" icon={User}>
+                <input type="text" value={form.username} onChange={e => set('username', e.target.value)}
+                  placeholder="xtream_username" autoComplete="username" className="field-input" />
+              </InputRow>
+              <InputRow label="Password" icon={Lock}>
+                <div className="relative">
+                  <input type={showPwd ? 'text' : 'password'} value={form.password} onChange={e => set('password', e.target.value)}
+                    placeholder="••••••••" autoComplete="current-password" className="field-input pr-10" />
+                  <button type="button" onClick={() => setShowPwd(s => !s)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                    {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </InputRow>
+            </>
+          )}
           <InputRow label="Label" icon={Globe}>
             <input type="text" value={form.label} onChange={e => set('label', e.target.value)}
               placeholder="My IPTV" className="field-input" />

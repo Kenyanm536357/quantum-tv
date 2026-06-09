@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '@/lib/use-store';
-import { useXtream } from '@/lib/use-xtream';
-import { setState, episodeUrl } from '@/lib/iptv-store';
+import { usePlaylist } from '@/lib/use-playlist';
+import { setState } from '@/lib/iptv-store';
 import CategoryGrid from '@/components/iptv/CategoryGrid';
 import SearchInput from '@/components/iptv/SearchInput';
 import SkeletonGrid from '@/components/iptv/SkeletonGrid';
@@ -9,7 +9,7 @@ import { Clapperboard, ChevronLeft, Play, Star } from 'lucide-react';
 
 export default function SeriesSection() {
   const { credentials } = useStore();
-  const { loading, error, fetchAction } = useXtream(credentials);
+  const { loading, error, fetchAction, resolveStreamUrl } = usePlaylist(credentials);
 
   const [categories, setCategories] = useState([]);
   const [seriesList, setSeriesList] = useState([]);
@@ -159,7 +159,10 @@ export default function SeriesSection() {
               <p className="text-sm font-semibold text-foreground">{allEpisodes.length} Episode{allEpisodes.length !== 1 ? 's' : ''}</p>
               {allEpisodes.map(ep => (
                 <button key={ep.id}
-                  onClick={() => setState({ player: { src: episodeUrl(credentials, ep.id), title: ep.title || `Episode ${ep.episode_num}`, type: 'series' } })}
+                  onClick={async () => {
+                    const src = await resolveStreamUrl(ep, 'series');
+                    setState({ player: { src, title: ep.title || `Episode ${ep.episode_num}`, type: 'series' } });
+                  }}
                   className="w-full flex items-center gap-3 p-3 bg-card border border-border hover:border-primary/30 rounded-xl transition-all hover:bg-primary/5 text-left group">
                   <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
                     <Play className="w-4 h-4 text-primary fill-primary" />

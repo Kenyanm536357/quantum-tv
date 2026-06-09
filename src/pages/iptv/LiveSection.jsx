@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '@/lib/use-store';
-import { useXtream } from '@/lib/use-xtream';
-import { setState, streamUrl } from '@/lib/iptv-store';
+import { usePlaylist } from '@/lib/use-playlist';
+import { setState } from '@/lib/iptv-store';
 import CategoryGrid from '@/components/iptv/CategoryGrid';
 import MediaCard from '@/components/iptv/MediaCard';
 import SearchInput from '@/components/iptv/SearchInput';
@@ -10,7 +10,7 @@ import { Radio, ChevronLeft } from 'lucide-react';
 
 export default function LiveSection() {
   const { credentials } = useStore();
-  const { loading, error, fetchAction } = useXtream(credentials);
+  const { loading, error, fetchAction, resolveStreamUrl } = usePlaylist(credentials);
 
   const [categories, setCategories] = useState([]);
   const [channels, setChannels] = useState([]);
@@ -92,7 +92,10 @@ export default function LiveSection() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3">
             {displayedChannels.map(ch => (
               <MediaCard key={ch.stream_id} item={ch} type="live"
-                onPlay={() => setState({ player: { src: streamUrl(credentials, ch.stream_id), title: ch.name, type: 'live' } })}
+                onPlay={async () => {
+                  const src = await resolveStreamUrl(ch, 'live');
+                  setState({ player: { src, title: ch.name, type: 'live' } });
+                }}
               />
             ))}
           </div>

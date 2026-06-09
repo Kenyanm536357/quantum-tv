@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '@/lib/use-store';
-import { useXtream } from '@/lib/use-xtream';
-import { setState, vodUrl } from '@/lib/iptv-store';
+import { usePlaylist } from '@/lib/use-playlist';
+import { setState } from '@/lib/iptv-store';
 import CategoryGrid from '@/components/iptv/CategoryGrid';
 import MediaCard from '@/components/iptv/MediaCard';
 import SearchInput from '@/components/iptv/SearchInput';
@@ -10,7 +10,7 @@ import { Film, ChevronLeft } from 'lucide-react';
 
 export default function MoviesSection() {
   const { credentials } = useStore();
-  const { loading, error, fetchAction } = useXtream(credentials);
+  const { loading, error, fetchAction, resolveStreamUrl } = usePlaylist(credentials);
 
   const [categories, setCategories] = useState([]);
   const [vods, setVods] = useState([]);
@@ -87,7 +87,10 @@ export default function MoviesSection() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3">
             {displayedVods.map(v => (
               <MediaCard key={v.stream_id} item={v} type="movie"
-                onPlay={() => setState({ player: { src: vodUrl(credentials, v.stream_id), title: v.name, type: 'vod' } })}
+                onPlay={async () => {
+                  const src = await resolveStreamUrl(v, 'vod');
+                  setState({ player: { src, title: v.name, type: 'vod' } });
+                }}
               />
             ))}
           </div>

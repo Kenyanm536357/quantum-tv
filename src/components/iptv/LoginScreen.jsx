@@ -1,182 +1,149 @@
 import React, { useState } from 'react';
-import { useIPTV } from '@/lib/IPTVContext';
-import { base44 } from '@/api/base44Client';
-import { Zap, Globe, User, Lock, Eye, EyeOff, ChevronRight, Tv } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { saveCredentials, apiUrl } from '@/lib/iptv-store';
+import { Tv2, Globe, User, Lock, Eye, EyeOff, ArrowRight, Wifi } from 'lucide-react';
 
 export default function LoginScreen() {
-  const { setConfig } = useIPTV();
-  const [form, setForm] = useState({ base_url: '', username: '', password: '', label: '' });
-  const [showPass, setShowPass] = useState(false);
+  const [form, setForm] = useState({ baseUrl: '', username: '', password: '', label: '' });
+  const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [err, setErr] = useState('');
 
-  const handleConnect = async (e) => {
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setErr('');
     setLoading(true);
     try {
-      const base = form.base_url.replace(/\/$/, '');
-      const url = `${base}/player_api.php?username=${encodeURIComponent(form.username)}&password=${encodeURIComponent(form.password)}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('Could not connect. Check your URL and credentials.');
+      const url = apiUrl(form, 'get_live_categories');
+      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      if (!res.ok) throw new Error(`Server returned ${res.status}.`);
       const data = await res.json();
-      if (data.user_info && data.user_info.auth === 0) throw new Error('Invalid username or password.');
-      // Persist to entity
-      await base44.entities.IPTVConfig.create({
-        base_url: form.base_url,
-        username: form.username,
-        password: form.password,
-        label: form.label || 'My IPTV'
-      });
-      setConfig({ base_url: form.base_url, username: form.username, password: form.password });
-    } catch (err) {
-      setError(err.message || 'Connection failed. Please verify your settings.');
+      if (Array.isArray(data) || data?.user_info) {
+        saveCredentials(form);
+      } else {
+        throw new Error('Invalid response. Check your credentials.');
+      }
+    } catch (e) {
+      if (e.name === 'TimeoutError') setErr('Connection timed out. Check the URL.');
+      else setErr(e.message || 'Could not connect to server.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Background effects */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-[120px]" />
-        <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] rounded-full bg-accent/5 blur-[100px]" />
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Ambient blobs */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[350px] bg-primary/8 blur-[120px] rounded-full" />
+        <div className="absolute bottom-0 right-0 w-[400px] h-[300px] bg-accent/8 blur-[100px] rounded-full" />
       </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="w-full max-w-md relative z-10"
-      >
+      <div className="relative w-full max-w-[420px]">
         {/* Logo */}
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 mb-4 neon-glow">
-            <Tv className="w-8 h-8 text-primary" />
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 mb-4 glow-cyan">
+            <Tv2 className="w-8 h-8 text-primary" />
           </div>
-          <h1 className="text-3xl font-bold text-foreground tracking-tight">
-            Quantum<span className="text-primary neon-text">IPTV</span>
+          <h1 className="text-3xl font-black tracking-tight">
+            Quantum<span className="text-primary text-glow">IPTV</span>
           </h1>
-          <p className="text-sm text-muted-foreground mt-2">Connect your Xtream Codes provider</p>
+          <p className="text-sm text-muted-foreground mt-1.5">Connect your Xtream Codes provider</p>
         </div>
 
-        {/* Form Card */}
+        {/* Card */}
         <div className="bg-card border border-border rounded-2xl p-6 shadow-2xl">
-          <form onSubmit={handleConnect} className="space-y-4">
-            {/* Label */}
-            <div>
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">
-                Configuration Label
-              </label>
-              <div className="relative">
-                <Zap className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="My IPTV (optional)"
-                  value={form.label}
-                  onChange={e => setForm(f => ({ ...f, label: e.target.value }))}
-                  className="w-full bg-secondary border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
-                />
-              </div>
-            </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Field label="Server URL" icon={Globe} required>
+              <input
+                type="url" placeholder="http://provider.com:8080"
+                value={form.baseUrl} onChange={e => set('baseUrl', e.target.value)}
+                required className="input-base font-mono text-sm"
+              />
+            </Field>
 
-            {/* Base URL */}
-            <div>
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">
-                Server URL <span className="text-primary">*</span>
-              </label>
-              <div className="relative">
-                <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input
-                  type="url"
-                  placeholder="http://your-provider.com:8080"
-                  value={form.base_url}
-                  onChange={e => setForm(f => ({ ...f, base_url: e.target.value }))}
-                  required
-                  className="w-full bg-secondary border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all font-mono"
-                />
-              </div>
-            </div>
+            <Field label="Username" icon={User} required>
+              <input
+                type="text" placeholder="xtream_username"
+                value={form.username} onChange={e => set('username', e.target.value)}
+                required autoComplete="username" className="input-base"
+              />
+            </Field>
 
-            {/* Username */}
-            <div>
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">
-                Username <span className="text-primary">*</span>
-              </label>
+            <Field label="Password" icon={Lock} required>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <input
-                  type="text"
-                  placeholder="xtream_username"
-                  value={form.username}
-                  onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
-                  required
-                  autoComplete="username"
-                  className="w-full bg-secondary border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
+                  type={showPwd ? 'text' : 'password'} placeholder="••••••••••"
+                  value={form.password} onChange={e => set('password', e.target.value)}
+                  required autoComplete="current-password" className="input-base pr-10"
                 />
-              </div>
-            </div>
-
-            {/* Password */}
-            <div>
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">
-                Password <span className="text-primary">*</span>
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input
-                  type={showPass ? 'text' : 'password'}
-                  placeholder="••••••••••••"
-                  value={form.password}
-                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                  required
-                  autoComplete="current-password"
-                  className="w-full bg-secondary border border-border rounded-lg pl-10 pr-10 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPass(s => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                <button type="button" onClick={() => setShowPwd(s => !s)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                  {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-            </div>
+            </Field>
 
-            {/* Error */}
-            {error && (
-              <div className="bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2 text-xs text-destructive">
-                {error}
+            <Field label="Label (optional)" icon={Wifi}>
+              <input
+                type="text" placeholder="My IPTV"
+                value={form.label} onChange={e => set('label', e.target.value)}
+                className="input-base"
+              />
+            </Field>
+
+            {err && (
+              <div className="bg-destructive/10 border border-destructive/25 rounded-xl px-4 py-2.5 text-sm text-destructive">
+                {err}
               </div>
             )}
 
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-primary text-primary-foreground font-semibold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-primary/90 transition-all disabled:opacity-50 neon-glow mt-2"
-            >
-              {loading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                  Connecting...
-                </>
-              ) : (
-                <>
-                  Connect
-                  <ChevronRight className="w-4 h-4" />
-                </>
-              )}
+            <button type="submit" disabled={loading}
+              className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-semibold flex items-center justify-center gap-2 hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-50 glow-cyan mt-2">
+              {loading
+                ? <><span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />Connecting...</>
+                : <>Connect<ArrowRight className="w-4 h-4" /></>}
             </button>
           </form>
         </div>
 
         <p className="text-center text-xs text-muted-foreground mt-4">
-          Your credentials are stored securely and only used to connect to your provider.
+          Credentials saved locally. Never shared with third parties.
         </p>
-      </motion.div>
+      </div>
+
+      <style>{`
+        .input-base {
+          width: 100%;
+          background: hsl(var(--input));
+          border: 1px solid hsl(var(--border));
+          border-radius: 0.625rem;
+          padding: 0.6rem 0.875rem;
+          font-size: 0.875rem;
+          color: hsl(var(--foreground));
+          outline: none;
+          transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .input-base::placeholder { color: hsl(var(--muted-foreground)); }
+        .input-base:focus {
+          border-color: hsl(var(--primary) / 0.5);
+          box-shadow: 0 0 0 3px hsl(var(--primary) / 0.08);
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function Field({ label, icon: Icon, required, children }) {
+  return (
+    <div>
+      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
+        <Icon className="w-3 h-3" />
+        {label}
+        {required && <span className="text-primary">*</span>}
+      </label>
+      {children}
     </div>
   );
 }

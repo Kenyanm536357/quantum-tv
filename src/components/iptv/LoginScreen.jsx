@@ -44,13 +44,12 @@ export default function LoginScreen() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="relative inline-block mb-6">
-            {/* Squircle frame */}
-            <div className="w-28 h-28 rounded-[2rem] overflow-hidden border-2 border-violet-500/40"
-              style={{ boxShadow: '0 0 40px rgba(167,139,250,0.5), 0 0 80px rgba(139,92,246,0.2), inset 0 0 20px rgba(139,92,246,0.1)' }}>
+            <div className="w-40 h-40 rounded-[2.5rem] overflow-hidden border-2 border-violet-500/50"
+              style={{ boxShadow: '0 0 50px rgba(167,139,250,0.6), 0 0 100px rgba(139,92,246,0.25), inset 0 0 20px rgba(139,92,246,0.15)' }}>
               <img
                 src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/3349a49f0_QUANTUMTVLOGOver2.png"
                 alt="Quantum TV"
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover scale-110"
               />
             </div>
           </div>

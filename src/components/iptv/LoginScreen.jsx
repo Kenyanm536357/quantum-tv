@@ -43,10 +43,20 @@ export default function LoginScreen() {
       <div className="relative w-full max-w-[420px]">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-32 h-32 rounded-full bg-gradient-to-br from-violet-500/20 via-purple-500/10 to-cyan-500/20 border-2 border-violet-400/30 mb-6 shadow-2xl" 
-            style={{ boxShadow: '0 0 60px rgba(167, 139, 250, 0.4), 0 0 100px rgba(168, 85, 247, 0.2)' }}>
-            <img src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/3349a49f0_QUANTUMTVLOGOver2.png" 
-              alt="Quantum TV" className="h-24" />
+          <div className="relative inline-flex items-center justify-center w-28 h-28 mb-6">
+            {/* Animated gradient border */}
+            <div className="absolute inset-0 bg-gradient-to-br from-violet-500 via-purple-500 to-cyan-500 rounded-[2.5rem] p-[3px]" 
+              style={{ borderRadius: '2.5rem' }}>
+              <div className="absolute inset-0 bg-gradient-to-br from-violet-600/90 via-purple-600/80 to-background rounded-[2.4rem]" />
+            </div>
+            {/* Content */}
+            <div className="relative flex items-center justify-center w-full h-full">
+              <img src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/3349a49f0_QUANTUMTVLOGOver2.png" 
+                alt="Quantum TV" className="h-16 drop-shadow-lg" />
+            </div>
+            {/* Glow */}
+            <div className="absolute -inset-2 bg-gradient-to-br from-violet-500 via-purple-500 to-cyan-500 rounded-[2.5rem] opacity-0 blur-xl -z-10"
+              style={{ animation: 'pulse 3s ease-in-out infinite' }} />
           </div>
           <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-violet-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
             Quantum TV

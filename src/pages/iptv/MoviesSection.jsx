@@ -6,7 +6,38 @@ import CategoryGrid from '@/components/iptv/CategoryGrid';
 import MediaCard from '@/components/iptv/MediaCard';
 import SearchInput from '@/components/iptv/SearchInput';
 import SkeletonGrid from '@/components/iptv/SkeletonGrid';
-import { Film, ChevronLeft } from 'lucide-react';
+import { Film, ChevronLeft, ArrowUpDown } from 'lucide-react';
+
+const SORT_OPTIONS = [
+  { value: 'az',     label: 'A → Z' },
+  { value: 'za',     label: 'Z → A' },
+  { value: 'newest', label: 'Newest' },
+  { value: 'oldest', label: 'Oldest' },
+];
+
+function sortItems(items, sort, nameKey = 'name', dateKey = 'added') {
+  const arr = [...items];
+  if (sort === 'az') return arr.sort((a, b) => (a[nameKey] || '').localeCompare(b[nameKey] || ''));
+  if (sort === 'za') return arr.sort((a, b) => (b[nameKey] || '').localeCompare(a[nameKey] || ''));
+  if (sort === 'newest') return arr.sort((a, b) => (Number(b[dateKey]) || 0) - (Number(a[dateKey]) || 0));
+  if (sort === 'oldest') return arr.sort((a, b) => (Number(a[dateKey]) || 0) - (Number(b[dateKey]) || 0));
+  return arr;
+}
+
+function SortSelect({ value, onChange }) {
+  return (
+    <div className="relative">
+      <ArrowUpDown className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="pl-8 pr-3 py-2 text-xs rounded-lg border border-border bg-card text-foreground appearance-none cursor-pointer focus:outline-none focus:border-primary/50"
+      >
+        {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </div>
+  );
+}
 
 export default function MoviesSection() {
   const { credentials } = useStore();
@@ -16,6 +47,7 @@ export default function MoviesSection() {
   const [vods, setVods] = useState([]);
   const [selectedCat, setSelectedCat] = useState(null);
   const [search, setSearch] = useState('');
+  const [sort, setSort] = useState('az');
   const [loadingVods, setLoadingVods] = useState(false);
 
   useEffect(() => {
@@ -33,17 +65,23 @@ export default function MoviesSection() {
 
   const back = () => { setSelectedCat(null); setVods([]); setSearch(''); };
 
-  const displayedCats = useMemo(() =>
-    search ? categories.filter(c => c.category_name?.toLowerCase().includes(search.toLowerCase())) : categories,
-    [categories, search]);
+  const displayedCats = useMemo(() => {
+    const filtered = search
+      ? categories.filter(c => c.category_name?.toLowerCase().includes(search.toLowerCase()))
+      : categories;
+    return sortItems(filtered, sort, 'category_name');
+  }, [categories, search, sort]);
 
-  const displayedVods = useMemo(() =>
-    search ? vods.filter(v => v.name?.toLowerCase().includes(search.toLowerCase())) : vods,
-    [vods, search]);
+  const displayedVods = useMemo(() => {
+    const filtered = search
+      ? vods.filter(v => v.name?.toLowerCase().includes(search.toLowerCase()))
+      : vods;
+    return sortItems(filtered, sort, 'name', 'added');
+  }, [vods, search, sort]);
 
   return (
     <div className="flex flex-col gap-5 h-full">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           {selectedCat && (
             <button onClick={back}
@@ -54,7 +92,7 @@ export default function MoviesSection() {
           <div>
             <h2 className="text-xl font-bold flex items-center gap-2">
               <Film className="w-5 h-5 text-primary" />
-              {selectedCat ? selectedCat.category_name : 'Movies (VOD)'}
+              {selectedCat ? selectedCat.category_name : 'Movies'}
             </h2>
             <p className="text-xs text-muted-foreground">
               {selectedCat
@@ -63,9 +101,12 @@ export default function MoviesSection() {
             </p>
           </div>
         </div>
-        <div className="w-64">
-          <SearchInput value={search} onChange={setSearch}
-            placeholder={selectedCat ? 'Search movies…' : 'Search categories…'} />
+        <div className="flex items-center gap-2">
+          <SortSelect value={sort} onChange={setSort} />
+          <div className="w-52">
+            <SearchInput value={search} onChange={setSearch}
+              placeholder={selectedCat ? 'Search movies…' : 'Search categories…'} />
+          </div>
         </div>
       </div>
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { saveCredentials, apiUrl } from '@/lib/iptv-store';
 import { parseM3U } from '@/lib/m3u-parser';
-import { Globe, User, Lock, Eye, EyeOff, ArrowRight, List, Cpu } from 'lucide-react';
+import { Globe, User, Lock, Eye, EyeOff, ArrowRight, List, Cpu, ArrowLeft } from 'lucide-react';
 
 const TABS = [
   { id: 'xtream', label: 'Xtream Codes' },
@@ -9,8 +9,9 @@ const TABS = [
   { id: 'mac',    label: 'MAC Address'  },
 ];
 
-export default function LoginScreen() {
-  const [tab, setTab] = useState('xtream');
+export default function LoginScreen({ onBack, contentType }) {
+  // contentType 'live' → default xtream, 'vod' → default m3u
+  const [tab, setTab] = useState(contentType === 'vod' ? 'm3u' : 'xtream');
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
@@ -89,8 +90,14 @@ export default function LoginScreen() {
       </div>
 
       <div className="relative w-full max-w-[420px] flex flex-col justify-center">
-        {/* Logo */}
+        {/* Back button + Logo */}
         <div className="text-center mb-3 sm:mb-5">
+          {onBack && (
+            <button onClick={onBack} style={{ minHeight: 40, minWidth: 40 }}
+              className="absolute left-0 top-0 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center select-none">
+              <ArrowLeft className="w-4 h-4 text-muted-foreground" />
+            </button>
+          )}
           <div className="relative inline-block mb-2 sm:mb-3">
             <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-2xl sm:rounded-[2rem] overflow-hidden border-2 border-violet-500/50"
               style={{ boxShadow: '0 0 50px rgba(167,139,250,0.6), 0 0 100px rgba(139,92,246,0.25), inset 0 0 20px rgba(139,92,246,0.15)' }}>

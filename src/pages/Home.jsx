@@ -3,7 +3,7 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-
 import { AnimatePresence, motion } from 'framer-motion';
 import { useStore } from '@/lib/use-store';
 import { loadCredentials, setState } from '@/lib/iptv-store';
-import LoginScreen from '@/components/iptv/LoginScreen';
+import WelcomeScreen from '@/components/iptv/WelcomeScreen';
 import AppSidebar from '@/components/iptv/AppSidebar';
 import MobileNavbar from '@/components/iptv/MobileNavbar';
 import VideoPlayer from '@/components/iptv/VideoPlayer';
@@ -42,7 +42,7 @@ function AppShell() {
     if (SECTION_META[sectionKey]) setState({ section: sectionKey });
   }, [sectionKey]);
 
-  if (!credentials) return <LoginScreen />;
+  if (!credentials) return <WelcomeScreen />;
 
   return (
     <div className="min-h-screen bg-background flex">

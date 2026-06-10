@@ -85,7 +85,7 @@ export default function WelcomeScreen() {
               <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-violet-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
                 Quantum TV
               </h1>
-              <p className="text-sm text-muted-foreground mt-1">Your personal IPTV player</p>
+              <p className="text-sm text-muted-foreground mt-1">Brought to you by <span className="text-violet-400 font-semibold">QuantumTek</span></p>
             </div>
 
             <button

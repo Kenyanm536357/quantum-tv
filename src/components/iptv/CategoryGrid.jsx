@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChevronRight } from 'lucide-react';
 import PullToRefresh from './PullToRefresh';
+import { cleanName } from '@/lib/clean-name';
 
 export default function CategoryGrid({ categories, onSelect, icon: Icon, onRefresh }) {
   if (!categories.length) {
@@ -18,7 +19,7 @@ export default function CategoryGrid({ categories, onSelect, icon: Icon, onRefre
               <Icon className="w-5 h-5 text-primary" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-foreground truncate">{(cat.category_name || '').replace(/;/g, '').trim()}</p>
+              <p className="text-sm font-semibold text-foreground truncate">{cleanName(cat.category_name)}</p>
               {cat.num && <p className="text-[11px] text-muted-foreground">{cat.num} items</p>}
             </div>
             <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0" />

@@ -3,9 +3,9 @@ import { Play, Radio, Film, Clapperboard, Bookmark, BookmarkCheck, Bell } from '
 import { useStore } from '@/lib/use-store';
 import { toggleBookmark, isBookmarked } from '@/lib/user-data';
 import ReminderModal from './ReminderModal';
+import { cleanName } from '@/lib/clean-name';
 
 const TYPE_ICON = { live: Radio, movie: Film, series: Clapperboard };
-const cleanName = (name = '') => name.replace(/;/g, '').replace(/\s{2,}/g, ' ').trim();
 
 export default function MediaCard({ item, type = 'live', aspect = 'video', onPlay }) {
   const { credentials } = useStore();

@@ -4,16 +4,11 @@ import { usePlaylist } from '@/lib/use-playlist';
 import { setState, apiUrl } from '@/lib/iptv-store';
 import { Tv2, ChevronLeft, ChevronRight, Radio, Loader2, Play, RefreshCw } from 'lucide-react';
 import SearchInput from '@/components/iptv/SearchInput';
+import { cleanName } from '@/lib/clean-name';
 
 const MINS_VISIBLE = 120;   // 2 hours visible in the viewport
 const SLOT_WIDTH   = 200;   // px per 30-min slot
 const CHAN_WIDTH   = 160;   // px for channel label column
-
-const cleanName = (s = '') =>
-  s
-    .replace(/[;|]/g, ' ')          // replace ; and | with a space
-    .replace(/\s{2,}/g, ' ')        // collapse multiple spaces
-    .trim();
 
 // US state abbreviations + a few extras to detect from channel names
 const US_STATES = [

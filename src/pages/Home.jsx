@@ -45,7 +45,7 @@ function AppShell() {
   if (!credentials) return <WelcomeScreen />;
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen flex" style={{ background: 'radial-gradient(ellipse at 60% 0%, #1a0a3d 0%, #0a0f2e 40%, #060a1a 100%)' }}>
       {/* Desktop sidebar */}
       <div className="hidden lg:flex flex-shrink-0">
         <AppSidebar />

@@ -125,7 +125,7 @@ export default function MoviesSection() {
       ) : (
         <>
           {displayedVods.length === 0 && <p className="text-center text-muted-foreground py-20 text-sm">No movies found.</p>}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {displayedVods.map(v => (
               <MediaCard key={v.stream_id} item={v} type="movie"
                 onPlay={async () => {

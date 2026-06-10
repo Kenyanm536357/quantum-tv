@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import { saveCredentials, apiUrl } from '@/lib/iptv-store';
 import { parseM3U } from '@/lib/m3u-parser';
-import { Globe, User, Lock, Eye, EyeOff, ArrowRight, List, Cpu, ArrowLeft } from 'lucide-react';
+import { Globe, User, Lock, Eye, EyeOff, ArrowRight, List, ArrowLeft } from 'lucide-react';
 
 const TABS = [
   { id: 'xtream', label: 'Xtream Codes' },
   { id: 'm3u',    label: 'M3U Playlist' },
-  { id: 'mac',    label: 'MAC Address'  },
 ];
 
 export default function LoginScreen({ onBack, contentType }) {
@@ -21,11 +20,8 @@ export default function LoginScreen({ onBack, contentType }) {
   // M3U
   const [m3uUrl, setM3uUrl] = useState('');
   const [m3uLabel, setM3uLabel] = useState('');
-  // MAC
-  const [mac, setMac] = useState({ portalUrl: '', macAddr: '', label: '' });
 
   const setX = (k, v) => setXt(f => ({ ...f, [k]: v }));
-  const setM = (k, v) => setMac(f => ({ ...f, [k]: v }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -52,19 +48,6 @@ export default function LoginScreen({ onBack, contentType }) {
         const parsed = parseM3U(text);
         localStorage.setItem('m3u_parsed', JSON.stringify(parsed));
         saveCredentials({ type: 'm3u', baseUrl: m3uUrl, label: m3uLabel || 'M3U Playlist', username: '', password: '' });
-      } else {
-        // MAC / Stalker portal — attempt handshake
-        const base = mac.portalUrl.replace(/\/+$/, '');
-        const res = await fetch(
-          `${base}/portal.php?type=stb&action=handshake&token=&JsHttpRequest=1-xml`,
-          {
-            signal: AbortSignal.timeout(10000),
-            headers: { Cookie: `mac=${mac.macAddr}; stb_lang=en; timezone=GMT`, 'X-User-Agent': 'Model: MAG250; Link: WiFi' },
-          }
-        );
-        const data = await res.json();
-        if (!data?.js?.token) throw new Error('Portal handshake failed. Check the URL and MAC address.');
-        saveCredentials({ type: 'mac', portalUrl: mac.portalUrl, mac: mac.macAddr, label: mac.label || 'MAC Portal', baseUrl: mac.portalUrl, username: '', password: '' });
       }
     } catch (e) {
       if (e.name === 'TimeoutError' || e.name === 'AbortError') setErr('Connection timed out. Check the URL.');
@@ -166,26 +149,6 @@ export default function LoginScreen({ onBack, contentType }) {
                 <Field label="Label (optional)" icon={Globe}>
                   <input type="text" placeholder="My Playlist"
                     value={m3uLabel} onChange={e => setM3uLabel(e.target.value)}
-                    className="input-base" />
-                </Field>
-              </>
-            )}
-
-            {tab === 'mac' && (
-              <>
-                <Field label="Portal URL" icon={Globe} required>
-                  <input type="url" placeholder="http://portal.provider.com:8080"
-                    value={mac.portalUrl} onChange={e => setM('portalUrl', e.target.value)}
-                    required className="input-base font-mono text-sm" />
-                </Field>
-                <Field label="MAC Address" icon={Cpu} required>
-                  <input type="text" placeholder="00:1A:79:XX:XX:XX"
-                    value={mac.macAddr} onChange={e => setM('macAddr', e.target.value)}
-                    required className="input-base font-mono" />
-                </Field>
-                <Field label="Label (optional)" icon={Globe}>
-                  <input type="text" placeholder="My MAG Box"
-                    value={mac.label} onChange={e => setM('label', e.target.value)}
                     className="input-base" />
                 </Field>
               </>

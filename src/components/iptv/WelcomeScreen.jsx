@@ -97,7 +97,6 @@ export default function WelcomeScreen() {
               Add Playlist
             </button>
 
-            <p className="text-[11px] text-muted-foreground">Saved locally. Never shared.</p>
           </motion.div>
         )}
 

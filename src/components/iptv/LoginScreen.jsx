@@ -168,10 +168,6 @@ export default function LoginScreen({ onBack, contentType }) {
             </button>
           </form>
         </div>
-
-        <p className="text-center text-[10px] sm:text-xs text-muted-foreground mt-2">
-          Saved locally. Never shared.
-        </p>
       </div>
 
       <style>{`

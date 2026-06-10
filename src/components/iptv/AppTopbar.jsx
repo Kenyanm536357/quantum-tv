@@ -35,8 +35,8 @@ export default function AppTopbar() {
       >
         {/* Brand */}
         <button onClick={() => go('live')} className="flex items-center gap-2 flex-shrink-0 select-none">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center glow-cyan">
-            <Zap className="w-4 h-4 text-black" />
+          <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0">
+            <img src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/40f2bbd9e_QUANTUMTVLOGOver2.png" alt="QuantumTV" className="w-full h-full object-cover" />
           </div>
           <span className="text-[17px] font-black tracking-tight">
             Quantum<span className="text-primary">TV</span>

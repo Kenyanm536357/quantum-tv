@@ -25,8 +25,8 @@ export default function AppSidebar({ onClose }) {
     <aside className="flex flex-col h-full bg-[hsl(220_18%_5%)] border-r border-border w-60">
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-border">
-        <div className="w-9 h-9 flex-shrink-0 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center glow-cyan">
-          <Zap className="w-4 h-4 text-primary" />
+        <div className="w-9 h-9 flex-shrink-0 rounded-xl overflow-hidden">
+          <img src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/40f2bbd9e_QUANTUMTVLOGOver2.png" alt="QuantumTV" className="w-full h-full object-cover" />
         </div>
         <div className="min-w-0">
           <p className="text-sm font-black leading-tight">Quantum<span className="text-primary">TV</span></p>

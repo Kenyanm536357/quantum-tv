@@ -17,6 +17,25 @@
     "label": {
       "type": "string",
       "description": "Friendly label for this configuration"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "error",
+        "pending"
+      ],
+      "default": "pending",
+      "description": "Connection status after last sync"
+    },
+    "last_synced": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp of the last sync attempt"
+    },
+    "error_message": {
+      "type": "string",
+      "description": "Error message from last failed sync"
     }
   },
   "required": [

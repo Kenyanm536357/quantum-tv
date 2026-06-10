@@ -11,6 +11,33 @@ const CHAN_WIDTH   = 160;   // px for channel label column
 
 const cleanName = (s = '') => s.replace(/;/g, '').replace(/\s{2,}/g, ' ').trim();
 
+// US state abbreviations + a few extras to detect from channel names
+const US_STATES = [
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA',
+  'HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
+  'MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
+  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC',
+  'SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC',
+];
+
+function extractState(name = '') {
+  const upper = name.toUpperCase();
+  // Match patterns like "| TX |", "TX:", "(TX)", "- TX -", " TX " at word boundary
+  for (const st of US_STATES) {
+    if (new RegExp(`(^|[\\s|\\-(:,])${st}([\\s|\\-):,]|$)`).test(upper)) return st;
+  }
+  return null;
+}
+
+function getStatesFromChannels(channels) {
+  const set = new Set();
+  channels.forEach(ch => {
+    const st = extractState(ch.name);
+    if (st) set.add(st);
+  });
+  return [...set].sort();
+}
+
 function decodeBase64(s) {
   if (!s) return '';
   try { return atob(s); } catch { return s; }
@@ -223,6 +250,7 @@ export default function EPGSection() {
   const [loadingEpg, setLoadingEpg]     = useState(false);
   const [selectedProg, setSelectedProg] = useState(null);  // { prog, channel }
   const [windowStart, setWindowStart]   = useState(() => Math.floor(Date.now() / 1000 / 1800) * 1800 - 1800);
+  const [stateFilter, setStateFilter]   = useState('ALL');
 
   const gridRef = useRef(null);
 
@@ -238,6 +266,7 @@ export default function EPGSection() {
     setSelectedCat(cat);
     setSearch('');
     setEpgMap({});
+    setStateFilter('ALL');
     setLoadingChans(true);
     const data = await fetchAction('get_live_streams', { category_id: cat.category_id });
     const chans = data || [];
@@ -281,8 +310,13 @@ export default function EPGSection() {
     setWindowStart(Math.floor(Date.now() / 1000 / 1800) * 1800 - 1800);
   };
 
-  const filteredCats  = categories.filter(c => (c.category_name || '').toLowerCase().includes(search.toLowerCase()));
-  const filteredChans = channels.filter(c => cleanName(c.name).toLowerCase().includes(search.toLowerCase()));
+  const filteredCats   = categories.filter(c => (c.category_name || '').toLowerCase().includes(search.toLowerCase()));
+  const availableStates = getStatesFromChannels(channels);
+  const filteredChans  = channels.filter(c => {
+    const matchSearch = cleanName(c.name).toLowerCase().includes(search.toLowerCase());
+    const matchState  = stateFilter === 'ALL' || extractState(c.name) === stateFilter;
+    return matchSearch && matchState;
+  });
   const slots         = buildTimeSlots(windowStart);
   const now           = Date.now() / 1000;
   const nowOffset     = ((now - windowStart) / 1800) * SLOT_WIDTH;
@@ -357,6 +391,36 @@ export default function EPGSection() {
           {loadingEpg && <Loader2 className="w-4 h-4 text-primary animate-spin" />}
         </div>
       </div>
+
+      {/* State filter pills — only shown when states are detected */}
+      {availableStates.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto px-4 sm:px-6 lg:px-10 pb-3 scrollbar-hide"
+          style={{ scrollbarWidth: 'none' }}>
+          <button
+            onClick={() => setStateFilter('ALL')}
+            className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors border ${
+              stateFilter === 'ALL'
+                ? 'bg-primary text-black border-primary'
+                : 'bg-white/5 text-white/50 border-white/10 hover:border-white/20 hover:text-white/80'
+            }`}
+          >
+            All States
+          </button>
+          {availableStates.map(st => (
+            <button
+              key={st}
+              onClick={() => setStateFilter(st === stateFilter ? 'ALL' : st)}
+              className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors border ${
+                stateFilter === st
+                  ? 'bg-primary text-black border-primary'
+                  : 'bg-white/5 text-white/50 border-white/10 hover:border-white/20 hover:text-white/80'
+              }`}
+            >
+              {st}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Guide grid */}
       <div

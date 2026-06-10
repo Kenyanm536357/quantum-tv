@@ -114,8 +114,8 @@ export default function MoviesSection() {
 
       {!selectedCat ? (
         loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-[72px] bg-card border border-border rounded-xl animate-pulse" />)}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-[88px] bg-card border border-border rounded-2xl animate-pulse" />)}
           </div>
         ) : (
           <CategoryGrid categories={displayedCats} onSelect={selectCategory} icon={Film} />
@@ -125,7 +125,7 @@ export default function MoviesSection() {
       ) : (
         <>
           {displayedVods.length === 0 && <p className="text-center text-muted-foreground py-20 text-sm">No movies found.</p>}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-5">
             {displayedVods.map(v => (
               <MediaCard key={v.stream_id} item={v} type="movie"
                 onPlay={async () => {

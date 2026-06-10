@@ -11,12 +11,14 @@ import LiveSection from '@/pages/iptv/LiveSection';
 import MoviesSection from '@/pages/iptv/MoviesSection';
 import SeriesSection from '@/pages/iptv/SeriesSection';
 import SettingsSection from '@/pages/iptv/SettingsSection';
-import { Menu, Radio, Film, Clapperboard, Settings } from 'lucide-react';
+import EPGSection from '@/pages/iptv/EPGSection';
+import { Menu, Radio, Film, Clapperboard, Settings, Tv2 } from 'lucide-react';
 
 const SECTION_META = {
   live:     { label: 'Live TV',    Icon: Radio },
   movies:   { label: 'Movies',     Icon: Film },
   series:   { label: 'TV Series',  Icon: Clapperboard },
+  epg:      { label: 'TV Guide',   Icon: Tv2 },
   settings: { label: 'Settings',   Icon: Settings },
 };
 
@@ -106,6 +108,7 @@ function AppShell() {
                 <Route path="/live"     element={<LiveSection />} />
                 <Route path="/movies"   element={<MoviesSection />} />
                 <Route path="/series"   element={<SeriesSection />} />
+                <Route path="/epg"      element={<EPGSection />} />
                 <Route path="/settings" element={<SettingsSection />} />
                 <Route path="*"         element={<Navigate to="/live" replace />} />
               </Routes>

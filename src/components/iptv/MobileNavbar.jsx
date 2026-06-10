@@ -1,11 +1,12 @@
 import React from 'react';
-import { Radio, Film, Clapperboard, Settings } from 'lucide-react';
+import { Radio, Film, Clapperboard, Settings, Tv2 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const NAV = [
   { id: 'live',     path: '/live',     icon: Radio,        label: 'Live TV'  },
   { id: 'movies',   path: '/movies',   icon: Film,         label: 'Movies'   },
   { id: 'series',   path: '/series',   icon: Clapperboard, label: 'Series'   },
+  { id: 'epg',      path: '/epg',      icon: Tv2,          label: 'Guide'    },
   { id: 'settings', path: '/settings', icon: Settings,     label: 'Settings' },
 ];
 

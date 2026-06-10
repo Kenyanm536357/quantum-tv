@@ -3,6 +3,7 @@ import { Play, Radio, Film, Clapperboard } from 'lucide-react';
 
 const TYPE_ICON = { live: Radio, movie: Film, series: Clapperboard };
 const FALLBACK = { live: 'LIVE', movie: 'MOVIE', series: 'SERIES' };
+const cleanName = (name = '') => name.replace(/;/g, '').replace(/\s{2,}/g, ' ').trim();
 
 export default function MediaCard({ item, type = 'live', aspect = 'video', onPlay }) {
   const Icon = TYPE_ICON[type] || Radio;
@@ -43,7 +44,7 @@ export default function MediaCard({ item, type = 'live', aspect = 'video', onPla
 
       {/* Info */}
       <div className="p-3">
-        <p className="text-[13px] font-medium text-foreground truncate leading-snug">{item.name}</p>
+        <p className="text-[13px] font-medium text-foreground truncate leading-snug">{cleanName(item.name)}</p>
         {item.rating && item.rating !== '0' && (
           <p className="text-[11px] text-amber-400 mt-0.5">★ {item.rating}</p>
         )}

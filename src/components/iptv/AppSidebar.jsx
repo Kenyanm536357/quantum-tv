@@ -1,5 +1,5 @@
 import React from 'react';
-import { Film, Clapperboard, Settings, Zap, LogOut, Radio } from 'lucide-react';
+import { Film, Clapperboard, Settings, Zap, LogOut, Radio, Tv2 } from 'lucide-react';
 import { clearCredentials } from '@/lib/iptv-store';
 import { useStore } from '@/lib/use-store';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -8,6 +8,7 @@ const NAV = [
   { id: 'live',     icon: Radio,        label: 'Live TV',   sub: 'Channels' },
   { id: 'movies',   icon: Film,         label: 'Movies',    sub: 'VOD' },
   { id: 'series',   icon: Clapperboard, label: 'TV Series', sub: 'Episodes' },
+  { id: 'epg',      icon: Tv2,          label: 'TV Guide',  sub: 'EPG' },
   { id: 'settings', icon: Settings,     label: 'Settings',  sub: 'Config' },
 ];
 

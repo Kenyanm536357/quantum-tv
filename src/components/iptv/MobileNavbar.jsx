@@ -1,13 +1,13 @@
 import React from 'react';
-import { Radio, Film, Clapperboard, Settings, Tv2 } from 'lucide-react';
+import { Radio, Film, Clapperboard, Bookmark, Bell } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const NAV = [
-  { id: 'live',     path: '/live',     icon: Radio,        label: 'Live TV'  },
-  { id: 'movies',   path: '/movies',   icon: Film,         label: 'Movies'   },
-  { id: 'series',   path: '/series',   icon: Clapperboard, label: 'Series'   },
-  { id: 'epg',      path: '/epg',      icon: Tv2,          label: 'Guide'    },
-  { id: 'settings', path: '/settings', icon: Settings,     label: 'Settings' },
+  { id: 'live',      path: '/live',      icon: Radio,        label: 'Live'   },
+  { id: 'movies',    path: '/movies',    icon: Film,         label: 'Movies' },
+  { id: 'series',    path: '/series',    icon: Clapperboard, label: 'Series' },
+  { id: 'bookmarks', path: '/bookmarks', icon: Bookmark,     label: 'Saved'  },
+  { id: 'reminders', path: '/reminders', icon: Bell,         label: 'Alerts' },
 ];
 
 export default function MobileNavbar() {
@@ -26,7 +26,7 @@ export default function MobileNavbar() {
             key={item.id}
             onClick={() => navigate(item.path)}
             style={{ minHeight: 44 }}
-            className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors select-none ${
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors select-none relative ${
               active ? 'text-primary' : 'text-muted-foreground'
             }`}
           >

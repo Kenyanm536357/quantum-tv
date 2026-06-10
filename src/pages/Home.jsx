@@ -12,14 +12,22 @@ import MoviesSection from '@/pages/iptv/MoviesSection';
 import SeriesSection from '@/pages/iptv/SeriesSection';
 import SettingsSection from '@/pages/iptv/SettingsSection';
 import EPGSection from '@/pages/iptv/EPGSection';
-import { Menu, Radio, Film, Clapperboard, Settings, Tv2 } from 'lucide-react';
+import BookmarksSection from '@/pages/iptv/BookmarksSection';
+import HistorySection from '@/pages/iptv/HistorySection';
+import RemindersSection from '@/pages/iptv/RemindersSection';
+import { getDueReminders, markReminderFired } from '@/lib/user-data';
+import { usePlaylist } from '@/lib/use-playlist';
+import { Menu, Radio, Film, Clapperboard, Settings, Tv2, Bookmark, History, Bell, BellRing, X } from 'lucide-react';
 
 const SECTION_META = {
-  live:     { label: 'Live TV',    Icon: Radio },
-  movies:   { label: 'Movies',     Icon: Film },
-  series:   { label: 'TV Series',  Icon: Clapperboard },
-  epg:      { label: 'TV Guide',   Icon: Tv2 },
-  settings: { label: 'Settings',   Icon: Settings },
+  live:      { label: 'Live TV',    Icon: Radio },
+  movies:    { label: 'Movies',     Icon: Film },
+  series:    { label: 'TV Series',  Icon: Clapperboard },
+  epg:       { label: 'TV Guide',   Icon: Tv2 },
+  bookmarks: { label: 'Bookmarks',  Icon: Bookmark },
+  history:   { label: 'History',    Icon: History },
+  reminders: { label: 'Reminders',  Icon: Bell },
+  settings:  { label: 'Settings',   Icon: Settings },
 };
 
 const pageVariants = {
@@ -28,6 +36,49 @@ const pageVariants = {
   exit:    { opacity: 0, x: -16 },
 };
 const pageTransition = { duration: 0.18, ease: 'easeOut' };
+
+function ReminderChecker({ credentials }) {
+  const { resolveStreamUrl } = usePlaylist(credentials);
+  const [alert, setAlert] = useState(null);
+
+  useEffect(() => {
+    const check = () => {
+      const due = getDueReminders(credentials);
+      if (due.length > 0) {
+        due.forEach(r => markReminderFired(credentials, r.id));
+        setAlert(due[0]);
+      }
+    };
+    check();
+    const t = setInterval(check, 30000);
+    return () => clearInterval(t);
+  }, [credentials]);
+
+  if (!alert) return null;
+  const cleanName = (s = '') => s.replace(/;/g, '').trim();
+
+  return (
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[70] w-full max-w-sm px-4">
+      <div className="flex items-center gap-3 bg-card border border-primary/40 rounded-2xl p-4 shadow-2xl">
+        <BellRing className="w-5 h-5 text-primary flex-shrink-0 animate-bounce" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-primary">Reminder</p>
+          <p className="text-xs text-muted-foreground truncate">{cleanName(alert.label)} is on now!</p>
+        </div>
+        <button onClick={async () => {
+          const src = await resolveStreamUrl(alert.item, alert.streamType);
+          setState({ player: { src, title: cleanName(alert.label), type: alert.streamType } });
+          setAlert(null);
+        }} className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-bold flex-shrink-0">
+          Tune In
+        </button>
+        <button onClick={() => setAlert(null)} className="text-muted-foreground hover:text-foreground flex-shrink-0">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function AppShell() {
   const { credentials, player } = useStore();
@@ -45,6 +96,7 @@ function AppShell() {
   }, [sectionKey]);
 
   if (!credentials) return <WelcomeScreen />;
+
 
   return (
     <div className="min-h-screen flex" style={{ background: 'radial-gradient(ellipse at 60% 0%, #1a0a3d 0%, #0a0f2e 40%, #060a1a 100%)' }}>
@@ -108,8 +160,11 @@ function AppShell() {
                 <Route path="/live"     element={<LiveSection />} />
                 <Route path="/movies"   element={<MoviesSection />} />
                 <Route path="/series"   element={<SeriesSection />} />
-                <Route path="/epg"      element={<EPGSection />} />
-                <Route path="/settings" element={<SettingsSection />} />
+                <Route path="/epg"       element={<EPGSection />} />
+                <Route path="/bookmarks" element={<BookmarksSection />} />
+                <Route path="/history"   element={<HistorySection />} />
+                <Route path="/reminders" element={<RemindersSection />} />
+                <Route path="/settings"  element={<SettingsSection />} />
                 <Route path="*"         element={<Navigate to="/live" replace />} />
               </Routes>
             </motion.div>
@@ -119,6 +174,9 @@ function AppShell() {
 
       {/* Mobile bottom nav */}
       <MobileNavbar />
+
+      {/* Reminder alert */}
+      <ReminderChecker credentials={credentials} />
 
       {/* Video player overlay */}
       {player && (

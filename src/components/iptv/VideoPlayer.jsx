@@ -1,9 +1,12 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Hls from 'hls.js';
 import { setState } from '@/lib/iptv-store';
+import { useStore } from '@/lib/use-store';
+import { addToHistory, updateProgress, toggleBookmark, isBookmarked } from '@/lib/user-data';
 import {
   X, Play, Pause, Volume2, VolumeX,
-  Maximize, Minimize, RotateCcw, Radio, AlertTriangle
+  Maximize, Minimize, RotateCcw, Radio, AlertTriangle,
+  Bookmark, BookmarkCheck
 } from 'lucide-react';
 
 export default function VideoPlayer({ src, title, type }) {
@@ -11,6 +14,8 @@ export default function VideoPlayer({ src, title, type }) {
   const hlsRef = useRef(null);
   const containerRef = useRef(null);
   const hideTimer = useRef(null);
+  const progressTimer = useRef(null);
+  const { credentials, player } = useStore();
 
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -21,7 +26,46 @@ export default function VideoPlayer({ src, title, type }) {
   const [showCtrl, setShowCtrl] = useState(true);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
+  const [bookmarked, setBookmarked] = useState(false);
   const isLive = type === 'live' || !isFinite(duration) || duration > 86400;
+
+  // Track bookmark state
+  useEffect(() => {
+    if (credentials && player) {
+      setBookmarked(isBookmarked(credentials, player));
+    }
+  }, [credentials, player]);
+
+  // Add to history on play start
+  useEffect(() => {
+    if (credentials && player && !loading && !err) {
+      addToHistory(credentials, player, type);
+    }
+  }, [loading, err, credentials]);
+
+  // Save progress every 15s for VOD
+  useEffect(() => {
+    if (!isLive && credentials && player) {
+      progressTimer.current = setInterval(() => {
+        const v = videoRef.current;
+        if (v && v.duration > 0) {
+          updateProgress(credentials, player, v.currentTime / v.duration);
+        }
+      }, 15000);
+    }
+    return () => clearInterval(progressTimer.current);
+  }, [isLive, credentials, player]);
+
+  // Resume VOD from saved progress
+  useEffect(() => {
+    if (player?.resumeAt && player.resumeAt > 0) {
+      const v = videoRef.current;
+      if (v) {
+        const onCanPlay = () => { v.currentTime = player.resumeAt; v.removeEventListener('canplay', onCanPlay); };
+        v.addEventListener('canplay', onCanPlay);
+      }
+    }
+  }, [player?.resumeAt]);
 
   const initHls = useCallback(() => {
     const video = videoRef.current;
@@ -123,10 +167,25 @@ export default function VideoPlayer({ src, title, type }) {
               </span>
               <p className="text-sm font-semibold text-white truncate">{title}</p>
             </div>
-            <button onClick={() => setState({ player: null })}
-              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all flex-shrink-0">
-              <X className="w-4 h-4 text-white" />
-            </button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={() => {
+                  if (credentials && player) {
+                    toggleBookmark(credentials, player, type);
+                    setBookmarked(b => !b);
+                  }
+                }}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all"
+                title={bookmarked ? 'Remove bookmark' : 'Bookmark'}>
+                {bookmarked
+                  ? <BookmarkCheck className="w-4 h-4 text-primary" />
+                  : <Bookmark className="w-4 h-4 text-white" />}
+              </button>
+              <button onClick={() => setState({ player: null })}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all">
+                <X className="w-4 h-4 text-white" />
+              </button>
+            </div>
           </div>
 
           {/* Click area */}

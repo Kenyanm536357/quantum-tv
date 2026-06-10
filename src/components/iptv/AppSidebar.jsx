@@ -1,15 +1,18 @@
 import React from 'react';
-import { Film, Clapperboard, Settings, Zap, LogOut, Radio, Tv2 } from 'lucide-react';
+import { Film, Clapperboard, Settings, Zap, LogOut, Radio, Tv2, Bookmark, History, Bell } from 'lucide-react';
 import { clearCredentials } from '@/lib/iptv-store';
 import { useStore } from '@/lib/use-store';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const NAV = [
-  { id: 'live',     icon: Radio,        label: 'Live TV',   sub: 'Channels' },
-  { id: 'movies',   icon: Film,         label: 'Movies',    sub: 'VOD' },
-  { id: 'series',   icon: Clapperboard, label: 'TV Series', sub: 'Episodes' },
-  { id: 'epg',      icon: Tv2,          label: 'TV Guide',  sub: 'EPG' },
-  { id: 'settings', icon: Settings,     label: 'Settings',  sub: 'Config' },
+  { id: 'live',      icon: Radio,        label: 'Live TV',   sub: 'Channels' },
+  { id: 'movies',    icon: Film,         label: 'Movies',    sub: 'VOD' },
+  { id: 'series',    icon: Clapperboard, label: 'TV Series', sub: 'Episodes' },
+  { id: 'epg',       icon: Tv2,          label: 'TV Guide',  sub: 'EPG' },
+  { id: 'bookmarks', icon: Bookmark,     label: 'Bookmarks', sub: 'Saved' },
+  { id: 'history',   icon: History,      label: 'History',   sub: 'Watched' },
+  { id: 'reminders', icon: Bell,         label: 'Reminders', sub: 'Alerts' },
+  { id: 'settings',  icon: Settings,     label: 'Settings',  sub: 'Config' },
 ];
 
 export default function AppSidebar({ onClose }) {

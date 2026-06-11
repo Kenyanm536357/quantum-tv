@@ -4,6 +4,7 @@ import { usePlaylist } from '@/lib/use-playlist';
 import { setState, apiUrl } from '@/lib/iptv-store';
 import { Tv2, ChevronLeft, ChevronRight, Radio, Loader2, Play, RefreshCw } from 'lucide-react';
 import SearchInput from '@/components/iptv/SearchInput';
+import MiniPlayer from '@/components/iptv/MiniPlayer';
 import { cleanName } from '@/lib/clean-name';
 
 const MINS_VISIBLE = 120;   // 2 hours visible in the viewport
@@ -236,7 +237,7 @@ function ProgramDrawer({ prog, channel, onClose, onWatch }) {
 
 /* ─── Main EPG page ───────────────────────────────────────────── */
 export default function EPGSection() {
-  const { credentials } = useStore();
+  const { credentials, player } = useStore();
   const { fetchAction, resolveStreamUrl } = usePlaylist(credentials);
 
   const [categories, setCategories]     = useState([]);
@@ -480,6 +481,11 @@ export default function EPGSection() {
           onClose={() => setSelectedProg(null)}
           onWatch={watchChannel}
         />
+      )}
+
+      {/* Mini preview while browsing the guide */}
+      {player && (
+        <MiniPlayer src={player.src} title={player.title} type={player.type} />
       )}
     </div>
   );

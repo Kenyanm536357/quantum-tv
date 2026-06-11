@@ -128,8 +128,8 @@ function AppShell() {
       {/* Reminder alert */}
       <ReminderChecker credentials={credentials} />
 
-      {/* Video player overlay */}
-      {player && (
+      {/* Video player overlay — suppressed on EPG page (MiniPlayer handles it there) */}
+      {player && sectionKey !== 'epg' && (
         <VideoPlayer src={player.src} title={player.title} type={player.type} />
       )}
     </div>

@@ -44,12 +44,8 @@ export default function SettingsSection() {
     setCreatingRepo(true);
     setRepoResult(null);
     try {
-      const res = await base44.functions.invoke('createGithubRepo', {
-        name: repoName,
-        description: repoDesc,
-        isPrivate: repoPrivate,
-      });
-      setRepoResult({ ok: true, url: res.data.url, full_name: res.data.full_name });
+      const res = await base44.functions.invoke('createGithubRepo', {});
+      setRepoResult({ ok: true, url: res.data.url, full_name: res.data.full_name, created: res.data.created });
     } catch (e) {
       setRepoResult({ ok: false, msg: e?.response?.data?.error || e.message });
     } finally {
@@ -158,15 +154,20 @@ export default function SettingsSection() {
         {repoResult && (
           <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm ${repoResult.ok ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-destructive/10 text-destructive border border-destructive/20'}`}>
             {repoResult.ok
-              ? <><CheckCircle className="w-4 h-4 flex-shrink-0" /> Repo created! <a href={repoResult.url} target="_blank" rel="noopener noreferrer" className="underline flex items-center gap-1">{repoResult.full_name} <ExternalLink className="w-3 h-3" /></a></>
+              ? <><CheckCircle className="w-4 h-4 flex-shrink-0" />
+                  {repoResult.created ? 'Repo created!' : 'Found repo!'}&nbsp;
+                  <a href={repoResult.url} target="_blank" rel="noopener noreferrer" className="underline flex items-center gap-1">
+                    {repoResult.full_name} <ExternalLink className="w-3 h-3" />
+                  </a>
+                </>
               : <><XCircle className="w-4 h-4 flex-shrink-0" /> {repoResult.msg}</>}
           </div>
         )}
 
-        <button onClick={createRepo} disabled={creatingRepo || !repoName}
+        <button onClick={createRepo} disabled={creatingRepo}
           className="flex items-center gap-2 px-4 py-2 bg-secondary border border-border rounded-xl text-sm font-medium text-foreground hover:bg-secondary/80 transition-all disabled:opacity-50">
           {creatingRepo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Github className="w-4 h-4" />}
-          {creatingRepo ? 'Creating…' : 'Create Repository'}
+          {creatingRepo ? 'Connecting…' : 'Find / Create quantum-tv Repo'}
         </button>
       </div>
 

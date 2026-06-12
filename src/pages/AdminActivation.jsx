@@ -6,7 +6,7 @@ const ALLOWED_EMAILS = ['kenyan@quantumtek.net', 'kenyanmcgarr@gmail.com'];
 import {
   Monitor, CheckCircle, XCircle, Plus, Trash2, Loader2,
   RefreshCw, Shield, Lock, LockOpen, Calendar,
-  Tv2, Signal, AlertTriangle
+  Tv2, Signal, AlertTriangle, Github, ExternalLink
 } from 'lucide-react';
 
 const ADMIN_PASSCODE = 'quantum-admin-2024';
@@ -233,6 +233,21 @@ export default function AdminActivation() {
   const [newMac,      setNewMac]      = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [newMonths,   setNewMonths]   = useState(1);
+  const [syncing,     setSyncing]     = useState(false);
+  const [syncResult,  setSyncResult]  = useState(null);
+
+  const syncToGithub = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await base44.functions.invoke('createGithubRepo', {});
+      setSyncResult({ ok: true, url: res.data?.m3u_url, repo: res.data?.url });
+    } catch (e) {
+      setSyncResult({ ok: false, msg: e.message });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const generateRandomMac = () => {
     const hex = () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0').toUpperCase();
@@ -533,6 +548,7 @@ export default function AdminActivation() {
           <p className="text-center text-xs text-white/10 pb-4">
             Quantum TV Admin · Device Manager
           </p>
+
         </div>
 
         {/* ── Right sidebar: Activate New Device ── */}
@@ -597,6 +613,41 @@ export default function AdminActivation() {
               {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
               {adding ? 'Activating…' : `Activate · ${DURATION_OPTIONS.find(o => o.months === newMonths)?.label}`}
             </button>
+          </div>
+
+          {/* GitHub Playlist Sync */}
+          <div className="border-t border-white/6 pt-5 space-y-3">
+            <div className="flex items-center gap-2">
+              <Github className="w-4 h-4 text-white/40" />
+              <p className="text-sm font-bold text-white">Playlist Sync</p>
+            </div>
+            <p className="text-[11px] text-white/30 leading-relaxed">
+              Fetch Movies, Series, Animation, Documentary, Kids, News, Sports, Music & more from iptv-org and push to your GitHub repo.
+            </p>
+            <button
+              onClick={syncToGithub}
+              disabled={syncing}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 border border-white/10 text-white/70 font-bold text-sm rounded-xl disabled:opacity-40 transition-all hover:bg-white/10 hover:text-white"
+            >
+              {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Github className="w-4 h-4" />}
+              {syncing ? 'Syncing categories…' : 'Sync to GitHub'}
+            </button>
+            {syncResult && (
+              <div className={`rounded-xl p-3 text-xs ${syncResult.ok ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border border-red-500/20 text-red-400'}`}>
+                {syncResult.ok ? (
+                  <div className="space-y-1.5">
+                    <p className="font-bold">✓ Synced successfully!</p>
+                    <a href={syncResult.repo} target="_blank" rel="noreferrer"
+                      className="flex items-center gap-1 text-white/50 hover:text-white underline underline-offset-2">
+                      View repo <ExternalLink className="w-3 h-3" />
+                    </a>
+                    <p className="text-white/30 break-all font-mono text-[10px]">{syncResult.url}</p>
+                  </div>
+                ) : (
+                  <p>Error: {syncResult.msg}</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

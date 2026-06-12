@@ -1,36 +1,42 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.32';
 
-const M3U_CONTENT = `#EXTM3U
-#EXTINF:-1 tvg-id="" tvg-name="iptv-org All Channels" tvg-logo="" group-title="All",iptv-org All Channels
-https://iptv-org.github.io/iptv/index.m3u
+// Build the M3U by fetching and merging all category playlists from iptv-org
+const CATEGORIES = [
+  { name: 'Movies',      url: 'https://iptv-org.github.io/iptv/categories/movies.m3u' },
+  { name: 'Series',      url: 'https://iptv-org.github.io/iptv/categories/series.m3u' },
+  { name: 'Animation',   url: 'https://iptv-org.github.io/iptv/categories/animation.m3u' },
+  { name: 'Documentary', url: 'https://iptv-org.github.io/iptv/categories/documentary.m3u' },
+  { name: 'Kids',        url: 'https://iptv-org.github.io/iptv/categories/kids.m3u' },
+  { name: 'News',        url: 'https://iptv-org.github.io/iptv/categories/news.m3u' },
+  { name: 'Sports',      url: 'https://iptv-org.github.io/iptv/categories/sports.m3u' },
+  { name: 'Music',       url: 'https://iptv-org.github.io/iptv/categories/music.m3u' },
+  { name: 'Comedy',      url: 'https://iptv-org.github.io/iptv/categories/comedy.m3u' },
+  { name: 'Lifestyle',   url: 'https://iptv-org.github.io/iptv/categories/lifestyle.m3u' },
+  { name: 'Science',     url: 'https://iptv-org.github.io/iptv/categories/science.m3u' },
+  { name: 'Travel',      url: 'https://iptv-org.github.io/iptv/categories/travel.m3u' },
+  { name: 'Weather',     url: 'https://iptv-org.github.io/iptv/categories/weather.m3u' },
+  { name: 'General',     url: 'https://iptv-org.github.io/iptv/categories/general.m3u' },
+];
 
-#EXTINF:-1 tvg-id="" tvg-name="iptv-org English" tvg-logo="" group-title="English",iptv-org English
-https://iptv-org.github.io/iptv/languages/eng.m3u
-
-#EXTINF:-1 tvg-id="" tvg-name="iptv-org Spanish" tvg-logo="" group-title="Spanish",iptv-org Spanish
-https://iptv-org.github.io/iptv/languages/spa.m3u
-
-#EXTINF:-1 tvg-id="" tvg-name="iptv-org News" tvg-logo="" group-title="News",iptv-org News
-https://iptv-org.github.io/iptv/categories/news.m3u
-
-#EXTINF:-1 tvg-id="" tvg-name="iptv-org Sports" tvg-logo="" group-title="Sports",iptv-org Sports
-https://iptv-org.github.io/iptv/categories/sports.m3u
-
-#EXTINF:-1 tvg-id="" tvg-name="iptv-org Movies" tvg-logo="" group-title="Movies",iptv-org Movies
-https://iptv-org.github.io/iptv/categories/movies.m3u
-
-#EXTINF:-1 tvg-id="" tvg-name="iptv-org Kids" tvg-logo="" group-title="Kids",iptv-org Kids
-https://iptv-org.github.io/iptv/categories/kids.m3u
-
-#EXTINF:-1 tvg-id="" tvg-name="iptv-org Music" tvg-logo="" group-title="Music",iptv-org Music
-https://iptv-org.github.io/iptv/categories/music.m3u
-
-#EXTINF:-1 tvg-id="" tvg-name="iptv-org Documentary" tvg-logo="" group-title="Documentary",iptv-org Documentary
-https://iptv-org.github.io/iptv/categories/documentary.m3u
-
-#EXTINF:-1 tvg-id="" tvg-name="iptv-org Religious" tvg-logo="" group-title="Religious",iptv-org Religious
-https://iptv-org.github.io/iptv/categories/religious.m3u
-`;
+async function buildM3U() {
+  let merged = '#EXTM3U\n';
+  for (const cat of CATEGORIES) {
+    try {
+      const res = await fetch(cat.url, { signal: AbortSignal.timeout(15000) });
+      if (!res.ok) continue;
+      let text = await res.text();
+      // Strip the #EXTM3U header line from each sub-playlist, inject group-title
+      text = text.replace(/^#EXTM3U[^\n]*\n?/m, '');
+      // Inject group-title into each EXTINF line that doesn't have one
+      text = text.replace(/(#EXTINF:[^\n]*)(group-title="[^"]*")/g, `$1group-title="${cat.name}"`);
+      text = text.replace(/(#EXTINF:[^\n]*)(?!.*group-title)/g, `$1 group-title="${cat.name}"`);
+      merged += `\n# ── ${cat.name} ──\n` + text.trim() + '\n';
+    } catch (_) {
+      // skip category on error
+    }
+  }
+  return merged;
+}
 
 Deno.serve(async (req) => {
   try {
@@ -92,8 +98,11 @@ Deno.serve(async (req) => {
       repo = await checkRes.json();
     }
 
+    // Build merged M3U from all categories
+    const M3U_CONTENT = await buildM3U();
+
     // Add / update index.m3u in the repo
-    const fileContent = btoa(M3U_CONTENT);
+    const fileContent = btoa(unescape(encodeURIComponent(M3U_CONTENT)));
     const fileRes = await fetch(`https://api.github.com/repos/${owner}/${repoName}/contents/index.m3u`, {
       headers,
     });
@@ -126,7 +135,6 @@ Deno.serve(async (req) => {
       full_name: repo.full_name,
       created,
       m3u_url: rawM3uUrl,
-      m3u_raw_content: M3U_CONTENT,
     });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });

@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useStore } from '@/lib/use-store';
-import { loadCredentials, setState } from '@/lib/iptv-store';
-import WelcomeScreen from '@/components/iptv/WelcomeScreen';
+import { loadCredentials, setState, saveCredentials } from '@/lib/iptv-store';
+import MacActivationScreen from '@/components/iptv/MacActivationScreen';
+import { isActivated, activateDevice, getDeviceMAC } from '@/lib/mac-auth';
 import { AppSidebar, BottomTabBar } from '@/components/iptv/AppTopbar';
 import VideoPlayer from '@/components/iptv/VideoPlayer';
 import LiveSection from '@/pages/iptv/LiveSection';
@@ -73,12 +75,28 @@ function AppShell() {
   const { credentials, player } = useStore();
   const location = useLocation();
   const sectionKey = location.pathname.replace('/', '') || 'epg';
+  const [activated, setActivated] = useState(() => isActivated());
 
   useEffect(() => {
     setState({ section: sectionKey });
   }, [sectionKey]);
 
-  if (!credentials) return <WelcomeScreen />;
+  // Auto-load hardcoded playlist once MAC is activated
+  useEffect(() => {
+    if (activated && !credentials) {
+      // Load the hardcoded Quantum TV M3U source silently
+      saveCredentials({
+        type: 'm3u',
+        baseUrl: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us.m3u',
+        label: 'Quantum TV',
+        mac: getDeviceMAC(),
+      });
+    }
+  }, [activated, credentials]);
+
+  if (!activated) {
+    return <MacActivationScreen onActivated={() => setActivated(true)} />;
+  }
 
   return (
     <div className="flex h-screen overflow-hidden"

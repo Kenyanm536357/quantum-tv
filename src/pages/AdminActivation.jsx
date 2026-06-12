@@ -134,7 +134,6 @@ function DeviceCard({ dev, onActivate, onDeactivate, onRenew, onDelete, onLock, 
                 <p className="text-base font-black text-white truncate">{dev.username}</p>
               </div>
             )}
-            {dev.label && <p className="text-xs text-white/40 truncate">{dev.label}</p>}
           </div>
           <StatusBadge activated={dev.activated} expires_at={dev.expires_at} locked={locked} />
         </div>
@@ -167,8 +166,6 @@ function DeviceCard({ dev, onActivate, onDeactivate, onRenew, onDelete, onLock, 
             <p className="text-[11px] font-bold text-violet-400 uppercase tracking-wider">Edit Customer</p>
             <input value={editUser} onChange={e => setEditUser(e.target.value)} placeholder="Username"
               className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-xs text-violet-300 placeholder-white/15 outline-none focus:border-violet-500/40 transition-all" />
-            <input value={editLabel} onChange={e => setEditLabel(e.target.value)} placeholder="Customer name"
-              className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-white/15 outline-none focus:border-white/20 transition-all" />
             <div className="flex gap-2">
               <button onClick={handleEdit} disabled={isLoading}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-violet-500/20 border border-violet-500/40 text-violet-300 rounded-lg text-xs font-bold hover:bg-violet-500/30 transition-colors disabled:opacity-50">
@@ -264,12 +261,21 @@ export default function AdminActivation() {
   const [adding, setAdding]           = useState(false);
   const [actionId, setActionId]       = useState(null);
 
-  const genMAC = () => Array.from({length: 6}, () => Math.floor(Math.random()*256).toString(16).padStart(2,'0').toUpperCase()).join(':');
-
   const [newMac,      setNewMac]      = useState('');
   const [newUsername, setNewUsername] = useState('');
-  const [newLabel,    setNewLabel]    = useState('');
   const [newMonths,   setNewMonths]   = useState(1);
+
+  const generateRandomMac = () => {
+    const hex = () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0').toUpperCase();
+    setNewMac(`${hex()}:${hex()}:${hex()}:${hex()}:${hex()}:${hex()}`);
+  };
+
+  const formatMacInput = (val) => {
+    // Strip non-hex chars, uppercase, insert colons every 2 chars
+    const clean = val.replace(/[^0-9a-fA-F]/g, '').toUpperCase().slice(0, 12);
+    const parts = clean.match(/.{1,2}/g) || [];
+    setNewMac(parts.join(':'));
+  };
   const [viewMode,    setViewMode]    = useState('grid3'); // 'grid1' | 'grid2' | 'grid3' | 'list'
 
   const handlePasscode = (e) => {
@@ -347,13 +353,12 @@ export default function AdminActivation() {
     const records = await base44.entities.DeviceActivation.filter({ mac });
     if (records.length > 0) {
       await base44.entities.DeviceActivation.update(records[0].id, {
-        label:        newLabel.trim() || undefined,
         username:     newUsername.trim() || undefined,
         expires_at:   expires,
         activated_at: new Date().toISOString(),
       });
     }
-    setNewMac(''); setNewUsername(''); setNewLabel(''); setNewMonths(1);
+    setNewMac(''); setNewUsername(''); setNewMonths(1);
     await loadDevices();
     setAdding(false);
   };
@@ -506,11 +511,8 @@ export default function AdminActivation() {
                   <div key={dev.id} className={`flex items-center gap-4 px-5 py-3.5 ${active ? 'bg-emerald-950/20' : expired ? 'bg-orange-950/15' : 'bg-[#0a0e1a]'}`}>
                     <div className={`w-2 h-2 rounded-full flex-shrink-0 ${active ? 'bg-emerald-400' : expired ? 'bg-orange-400' : 'bg-white/15'}`} />
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-bold text-white">{dev.username || dev.label || '—'}</span>
-                        {dev.label && dev.username && <span className="text-xs text-white/30">{dev.label}</span>}
-                      </div>
-                      <span className="font-mono text-[11px] text-white/30">{dev.mac}</span>
+                      <span className="text-sm font-bold text-white">{dev.username || '—'}</span>
+                      <p className="font-mono text-[11px] text-white/30">{dev.mac}</p>
                     </div>
                     <div className="flex-shrink-0 text-right hidden sm:block">
                       <p className={`text-xs font-bold ${days <= 0 ? 'text-orange-400' : days <= 7 ? 'text-red-400' : days <= 30 ? 'text-yellow-400' : 'text-emerald-400'}`}>
@@ -564,23 +566,19 @@ export default function AdminActivation() {
 
           <div className="space-y-3">
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Device ID / MAC</label>
-              <div className="flex gap-2">
-                <input
-                  value={newMac}
-                  onChange={e => setNewMac(e.target.value)}
-                  placeholder="A1:B2:C3:D4:E5:F6"
-                  className="flex-1 min-w-0 bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono text-cyan-400 placeholder-white/15 outline-none focus:border-cyan-500/40 transition-all"
-                />
-                <button
-                  type="button"
-                  onClick={() => setNewMac(genMAC())}
-                  title="Generate random MAC"
-                  className="flex-shrink-0 px-3 py-2.5 bg-cyan-500/10 border border-cyan-500/25 text-cyan-400 rounded-xl text-xs font-bold hover:bg-cyan-500/20 transition-colors"
-                >
-                  🎲
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Device ID / MAC</label>
+                <button onClick={generateRandomMac} className="text-[10px] text-cyan-400 hover:text-cyan-300 font-bold transition-colors">
+                  ↻ Random
                 </button>
               </div>
+              <input
+                value={newMac}
+                onChange={e => formatMacInput(e.target.value)}
+                placeholder="A1:B2:C3:D4:E5:F6"
+                maxLength={17}
+                className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono text-cyan-400 placeholder-white/15 outline-none focus:border-cyan-500/40 transition-all"
+              />
             </div>
             <div className="space-y-1">
               <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Username</label>
@@ -589,15 +587,6 @@ export default function AdminActivation() {
                 onChange={e => setNewUsername(e.target.value)}
                 placeholder="customer_handle"
                 className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-violet-300 placeholder-white/15 outline-none focus:border-violet-500/40 transition-all"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Customer Name</label>
-              <input
-                value={newLabel}
-                onChange={e => setNewLabel(e.target.value)}
-                placeholder="Full name (optional)"
-                className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder-white/15 outline-none focus:border-white/20 transition-all"
               />
             </div>
             <div className="space-y-1">

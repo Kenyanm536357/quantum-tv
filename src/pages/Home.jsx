@@ -151,6 +151,9 @@ function AppShell() {
         </div>
       </div>
 
+      {/* Hidden admin link */}
+      <a href="/admin/activation" className="fixed bottom-2 right-3 text-[10px] text-white/10 hover:text-white/30 transition-colors z-50 select-none">⚙</a>
+
       {/* Reminder alert */}
       <ReminderChecker credentials={credentials} />
 

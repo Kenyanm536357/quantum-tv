@@ -177,7 +177,7 @@ export default function SettingsSection() {
           <Globe className="w-4 h-4 text-primary" /> Free IPTV Playlist
         </p>
         <p className="text-xs text-muted-foreground">
-          A free, community-maintained M3U playlist with thousands of live channels from around the world.
+          Community-maintained M3U playlists from iptv-org with thousands of live channels.
         </p>
         <a
           href="https://iptv-org.github.io/iptv/index.m3u"
@@ -188,6 +188,9 @@ export default function SettingsSection() {
           <ExternalLink className="w-4 h-4 flex-shrink-0" />
           <span className="truncate">iptv-org.github.io/iptv/index.m3u</span>
         </a>
+        <p className="text-[11px] text-muted-foreground">
+          Go to <span className="text-primary font-medium">Browse</span> to load & explore these playlists with a Netflix-style grid interface.
+        </p>
       </div>
 
       {/* Danger zone */}

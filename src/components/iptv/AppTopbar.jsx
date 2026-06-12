@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Film, Clapperboard, Settings, LogOut, Radio, Tv2, Bookmark, History, Bell, Menu, X, Zap } from 'lucide-react';
+import { Film, Clapperboard, Settings, LogOut, Radio, Tv2, Bookmark, History, Bell, Menu, X, Zap, LayoutGrid } from 'lucide-react';
 import { clearCredentials } from '@/lib/iptv-store';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 export const NAV = [
+  { id: 'browse',    icon: LayoutGrid,   label: 'Browse'    },
   { id: 'epg',       icon: Tv2,          label: 'TV Guide'  },
   { id: 'live',      icon: Radio,        label: 'Live TV'   },
   { id: 'movies',    icon: Film,         label: 'Movies'    },

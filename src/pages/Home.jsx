@@ -11,6 +11,7 @@ import MoviesSection from '@/pages/iptv/MoviesSection';
 import SeriesSection from '@/pages/iptv/SeriesSection';
 import SettingsSection from '@/pages/iptv/SettingsSection';
 import EPGSection from '@/pages/iptv/EPGSection';
+import BrowseSection from '@/pages/iptv/BrowseSection';
 import BookmarksSection from '@/pages/iptv/BookmarksSection';
 import HistorySection from '@/pages/iptv/HistorySection';
 import RemindersSection from '@/pages/iptv/RemindersSection';
@@ -111,6 +112,7 @@ function AppShell() {
           >
             <div className={`h-full ${sectionKey === 'epg' ? 'p-0' : 'p-4 sm:p-6'}`}>
               <Routes location={location}>
+                <Route path="/browse"    element={<BrowseSection />} />
                 <Route path="/live"      element={<LiveSection />} />
                 <Route path="/movies"    element={<MoviesSection />} />
                 <Route path="/series"    element={<SeriesSection />} />
@@ -119,7 +121,7 @@ function AppShell() {
                 <Route path="/history"   element={<HistorySection />} />
                 <Route path="/reminders" element={<RemindersSection />} />
                 <Route path="/settings"  element={<SettingsSection />} />
-                <Route path="*"          element={<Navigate to="/epg" replace />} />
+                <Route path="*"          element={<Navigate to="/browse" replace />} />
               </Routes>
             </div>
           </motion.div>
@@ -135,7 +137,7 @@ function AppShell() {
       <ReminderChecker credentials={credentials} />
 
       {/* Video player overlay — suppressed on EPG (inline preview there) */}
-      {player && sectionKey !== 'epg' && (
+      {player && sectionKey !== 'epg' && sectionKey !== 'browse' && (
         <VideoPlayer src={player.src} title={player.title} type={player.type} />
       )}
     </div>

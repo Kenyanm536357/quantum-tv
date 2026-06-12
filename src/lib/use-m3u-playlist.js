@@ -8,26 +8,43 @@ const CACHE_KEY = 'qtv_browse_cache_v2';
 const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
 async function fetchWithProxy(url, timeout = 30000) {
-  const proxies = [
-    (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
-    (u) => `https://cors-anywhere.herokuapp.com/${u}`,
-  ];
-  for (const makeProxy of proxies) {
-    try {
-      const proxyUrl = makeProxy(url);
-      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(timeout) });
-      if (!res.ok) continue;
-      if (proxyUrl.includes('allorigins')) {
-        const json = await res.json();
-        if (json.contents?.includes('#EXTINF')) return json.contents;
-        continue;
-      }
+  // 1. Try direct (works for GitHub raw URLs which allow CORS)
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(timeout) });
+    if (res.ok) {
       const text = await res.text();
-      if (text.includes('#EXTINF')) return text;
-    } catch (_) {}
-  }
-  throw new Error('Failed to load playlist — all proxies failed.');
+      if (text.includes('#EXTINF') || text.includes('#EXTM3U')) return text;
+    }
+  } catch (_) {}
+
+  // 2. corsproxy.io
+  try {
+    const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(timeout) });
+    if (res.ok) {
+      const text = await res.text();
+      if (text.includes('#EXTINF') || text.includes('#EXTM3U')) return text;
+    }
+  } catch (_) {}
+
+  // 3. allorigins
+  try {
+    const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(timeout) });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.contents?.includes('#EXTINF')) return json.contents;
+    }
+  } catch (_) {}
+
+  // 4. jsonp.su (another open proxy)
+  try {
+    const res = await fetch(`https://jsonp.su/proxy?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(timeout) });
+    if (res.ok) {
+      const text = await res.text();
+      if (text.includes('#EXTINF') || text.includes('#EXTM3U')) return text;
+    }
+  } catch (_) {}
+
+  throw new Error('Could not load playlist. Please check your internet connection or sync the playlist from the Admin panel.');
 }
 
 function getCachedPlaylist() {

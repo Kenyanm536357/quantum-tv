@@ -10,6 +10,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 // Add page imports here
 import Home from './pages/Home';
 import Login from './pages/Login';
+import AdminActivation from './pages/AdminActivation';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError } = useAuth();
@@ -30,6 +31,7 @@ const AuthenticatedApp = () => {
     <Routes>
       {/* Public auth routes */}
       <Route path="/login" element={<Login />} />
+      <Route path="/admin/activation" element={<AdminActivation />} />
 
       {/* Protected app routes — unauthenticated users go to /login */}
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>

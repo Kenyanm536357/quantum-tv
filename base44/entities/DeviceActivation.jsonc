@@ -1,0 +1,31 @@
+{
+  "name": "DeviceActivation",
+  "type": "object",
+  "properties": {
+    "mac": {
+      "type": "string",
+      "description": "Device MAC address / unique device ID"
+    },
+    "activated": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this device is activated"
+    },
+    "activated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the device was activated"
+    },
+    "label": {
+      "type": "string",
+      "description": "Optional customer name or label"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Admin notes"
+    }
+  },
+  "required": [
+    "mac"
+  ]
+}

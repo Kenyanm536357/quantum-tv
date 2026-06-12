@@ -170,6 +170,25 @@ export default function SettingsSection() {
         </button>
       </div>
 
+      {/* Free IPTV Sources */}
+      <div className="bg-card border border-border rounded-2xl p-5 space-y-3">
+        <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Globe className="w-4 h-4 text-primary" /> Free IPTV Playlist
+        </p>
+        <p className="text-xs text-muted-foreground">
+          A free, community-maintained M3U playlist with thousands of live channels from around the world.
+        </p>
+        <a
+          href="https://iptv-org.github.io/iptv/index.m3u"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 px-4 py-2.5 bg-primary/10 border border-primary/25 text-primary rounded-xl text-sm font-medium hover:bg-primary/20 transition-all w-full truncate"
+        >
+          <ExternalLink className="w-4 h-4 flex-shrink-0" />
+          <span className="truncate">iptv-org.github.io/iptv/index.m3u</span>
+        </a>
+      </div>
+
       {/* Danger zone */}
       <div className="bg-card border border-destructive/20 rounded-2xl p-5">
         <p className="text-sm font-semibold text-foreground mb-1">Danger Zone</p>

@@ -147,7 +147,7 @@ export default function AppTopbar() {
         <button onClick={() => go('epg')} className="flex items-center gap-2 flex-shrink-0">
           <div className="w-7 h-7 rounded-lg overflow-hidden">
             <img src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/7cb772c8e_QUANTUMTVLOGOver2.png"
-              alt="QuantumTV" className="w-full h-full object-cover" />
+              alt="QuantumTV" className="w-full h-full object-cover rounded-lg" />
           </div>
           <span className="text-[15px] font-black tracking-tight text-white">Quantum<span className="text-primary">TV</span></span>
         </button>

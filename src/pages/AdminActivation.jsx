@@ -417,7 +417,7 @@ export default function AdminActivation() {
       <div className="sticky top-0 z-10 border-b border-white/6 bg-[#07090f]/90 backdrop-blur-xl flex-shrink-0">
         <div className="px-6 py-4 flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-violet-500/15 border border-violet-500/30 flex items-center justify-center">
-            <img src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/7cb772c8e_QUANTUMTVLOGOver2.png" alt="Quantum TV" className="w-4 h-4 object-cover rounded" />
+            <img src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/7cb772c8e_QUANTUMTVLOGOver2.png" alt="Quantum TV" className="w-full h-full object-cover rounded-lg" />
           </div>
           <div>
             <p className="text-sm font-black text-white leading-none">Quantum TV</p>

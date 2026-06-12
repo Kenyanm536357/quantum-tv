@@ -5,8 +5,8 @@ import { useAuth } from '@/lib/AuthContext';
 const ALLOWED_EMAILS = ['kenyan@quantumtek.net', 'kenyanmcgarr@gmail.com'];
 import {
   Monitor, CheckCircle, XCircle, Plus, Trash2, Loader2,
-  RefreshCw, Shield, Lock, User, Calendar, Clock,
-  Tv2, Signal, AlertTriangle, ChevronDown,
+  RefreshCw, Shield, Lock, LockOpen, User, Calendar, Clock,
+  Tv2, Signal, AlertTriangle, ChevronDown, Pencil, X,
   LayoutGrid, List, Columns2
 } from 'lucide-react';
 
@@ -39,10 +39,17 @@ function daysLeft(expires_at) {
   return Math.ceil((new Date(expires_at) - new Date()) / (1000 * 60 * 60 * 24));
 }
 
-function StatusBadge({ activated, expires_at }) {
+function StatusBadge({ activated, expires_at, locked }) {
   const expired = isExpired(expires_at);
   const days = daysLeft(expires_at);
 
+  if (locked) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-yellow-500/15 border border-yellow-500/30 text-yellow-400">
+        <Lock className="w-3 h-3" /> LOCKED
+      </span>
+    );
+  }
   if (activated && !expired) {
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
@@ -80,31 +87,41 @@ function StatCard({ icon: IconComp, label, value, color }) {
   );
 }
 
-function DeviceCard({ dev, onActivate, onDeactivate, onRenew, onDelete, isLoading }) {
+function DeviceCard({ dev, onActivate, onDeactivate, onRenew, onDelete, onLock, onEdit, isLoading }) {
   const expired = isExpired(dev.expires_at);
   const days    = daysLeft(dev.expires_at);
   const active  = dev.activated && !expired;
+  const locked  = !!dev.locked;
+
   const [showRenew, setShowRenew] = useState(false);
+  const [showEdit,  setShowEdit]  = useState(false);
+  const [editUser,  setEditUser]  = useState(dev.username || '');
+  const [editLabel, setEditLabel] = useState(dev.label || '');
   const [renewMonths, setRenewMonths] = useState(1);
 
-  const handleRenew = () => {
-    onRenew(dev.id, dev.mac, renewMonths, dev.expires_at);
-    setShowRenew(false);
-  };
+  const handleRenew = () => { onRenew(dev.id, dev.mac, renewMonths, dev.expires_at); setShowRenew(false); };
+  const handleEdit  = () => { onEdit(dev.id, { username: editUser.trim(), label: editLabel.trim() }); setShowEdit(false); };
+
+  const borderColor = locked
+    ? 'border-yellow-500/25'
+    : active ? 'border-emerald-500/20' : expired ? 'border-orange-500/15' : 'border-white/8';
+  const bgColor = locked
+    ? 'bg-gradient-to-br from-yellow-950/30 to-[#080c14]'
+    : active ? 'bg-gradient-to-br from-emerald-950/40 to-[#080c14]'
+    : expired ? 'bg-gradient-to-br from-orange-950/30 to-[#080c14]'
+    : 'bg-gradient-to-br from-[#0d1117] to-[#080c14]';
+  const barColor = locked
+    ? 'bg-gradient-to-r from-yellow-500 to-amber-400'
+    : active ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
+    : expired ? 'bg-gradient-to-r from-orange-500 to-amber-400'
+    : 'bg-gradient-to-r from-slate-700 to-slate-600';
 
   return (
-    <div className={`relative rounded-2xl border overflow-hidden transition-all ${
-      active
-        ? 'bg-gradient-to-br from-emerald-950/40 to-[#080c14] border-emerald-500/20'
-        : expired
-          ? 'bg-gradient-to-br from-orange-950/30 to-[#080c14] border-orange-500/15'
-          : 'bg-gradient-to-br from-[#0d1117] to-[#080c14] border-white/8'
-    }`}>
-      {/* Top color bar */}
-      <div className={`h-0.5 w-full ${active ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : expired ? 'bg-gradient-to-r from-orange-500 to-amber-400' : 'bg-gradient-to-r from-slate-700 to-slate-600'}`} />
+    <div className={`relative rounded-2xl border overflow-hidden transition-all ${bgColor} ${borderColor}`}>
+      <div className={`h-0.5 w-full ${barColor}`} />
 
       <div className="p-5">
-        {/* Top row: MAC + status */}
+        {/* Top row: info + status */}
         <div className="flex items-start justify-between gap-3 mb-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2 mb-1">
@@ -117,11 +134,9 @@ function DeviceCard({ dev, onActivate, onDeactivate, onRenew, onDelete, isLoadin
                 <p className="text-base font-black text-white truncate">{dev.username}</p>
               </div>
             )}
-            {dev.label && (
-              <p className="text-xs text-white/40 truncate">{dev.label}</p>
-            )}
+            {dev.label && <p className="text-xs text-white/40 truncate">{dev.label}</p>}
           </div>
-          <StatusBadge activated={dev.activated} expires_at={dev.expires_at} />
+          <StatusBadge activated={dev.activated} expires_at={dev.expires_at} locked={locked} />
         </div>
 
         {/* Expiry bar */}
@@ -139,32 +154,42 @@ function DeviceCard({ dev, onActivate, onDeactivate, onRenew, onDelete, isLoadin
             </div>
             {days !== null && (
               <div className="h-1 bg-white/8 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${
-                    days <= 0 ? 'bg-orange-400' : days <= 7 ? 'bg-red-400' : days <= 30 ? 'bg-yellow-400' : 'bg-emerald-400'
-                  }`}
-                  style={{ width: `${Math.max(0, Math.min(100, (days / 365) * 100))}%` }}
-                />
+                <div className={`h-full rounded-full transition-all ${days <= 0 ? 'bg-orange-400' : days <= 7 ? 'bg-red-400' : days <= 30 ? 'bg-yellow-400' : 'bg-emerald-400'}`}
+                  style={{ width: `${Math.max(0, Math.min(100, (days / 365) * 100))}%` }} />
               </div>
             )}
           </div>
         )}
 
-        {/* Renew panel (inline) */}
+        {/* Edit panel */}
+        {showEdit && (
+          <div className="mb-3 p-3 rounded-xl bg-violet-500/8 border border-violet-500/20 space-y-2">
+            <p className="text-[11px] font-bold text-violet-400 uppercase tracking-wider">Edit Customer</p>
+            <input value={editUser} onChange={e => setEditUser(e.target.value)} placeholder="Username"
+              className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-xs text-violet-300 placeholder-white/15 outline-none focus:border-violet-500/40 transition-all" />
+            <input value={editLabel} onChange={e => setEditLabel(e.target.value)} placeholder="Customer name"
+              className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-white/15 outline-none focus:border-white/20 transition-all" />
+            <div className="flex gap-2">
+              <button onClick={handleEdit} disabled={isLoading}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-violet-500/20 border border-violet-500/40 text-violet-300 rounded-lg text-xs font-bold hover:bg-violet-500/30 transition-colors disabled:opacity-50">
+                <CheckCircle className="w-3.5 h-3.5" /> Save
+              </button>
+              <button onClick={() => setShowEdit(false)}
+                className="px-3 py-2 bg-white/4 border border-white/8 text-white/30 rounded-lg text-xs font-bold hover:text-white transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Renew panel */}
         {showRenew && (
           <div className="mb-3 p-3 rounded-xl bg-cyan-500/8 border border-cyan-500/20 space-y-2">
             <p className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider">Extend Subscription</p>
             <div className="grid grid-cols-3 gap-1.5">
               {DURATION_OPTIONS.map(o => (
-                <button
-                  key={o.months}
-                  onClick={() => setRenewMonths(o.months)}
-                  className={`py-2 rounded-lg text-[11px] font-bold border transition-all ${
-                    renewMonths === o.months
-                      ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300'
-                      : 'bg-white/4 border-white/8 text-white/40 hover:text-white'
-                  }`}
-                >
+                <button key={o.months} onClick={() => setRenewMonths(o.months)}
+                  className={`py-2 rounded-lg text-[11px] font-bold border transition-all ${renewMonths === o.months ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300' : 'bg-white/4 border-white/8 text-white/40 hover:text-white'}`}>
                   {o.label}
                 </button>
               ))}
@@ -173,70 +198,57 @@ function DeviceCard({ dev, onActivate, onDeactivate, onRenew, onDelete, isLoadin
               New expiry: <span className="text-emerald-400 font-bold">{formatDate(addMonths(dev.expires_at || new Date(), renewMonths))}</span>
             </p>
             <div className="flex gap-2">
-              <button
-                onClick={handleRenew}
-                disabled={isLoading}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 rounded-lg text-xs font-bold hover:bg-cyan-500/30 transition-colors disabled:opacity-50"
-              >
+              <button onClick={handleRenew} disabled={isLoading}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 rounded-lg text-xs font-bold hover:bg-cyan-500/30 transition-colors disabled:opacity-50">
                 {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                Confirm Renewal
+                Confirm
               </button>
-              <button
-                onClick={() => setShowRenew(false)}
-                className="px-3 py-2 bg-white/4 border border-white/8 text-white/30 rounded-lg text-xs font-bold hover:text-white transition-colors"
-              >
+              <button onClick={() => setShowRenew(false)}
+                className="px-3 py-2 bg-white/4 border border-white/8 text-white/30 rounded-lg text-xs font-bold hover:text-white transition-colors">
                 Cancel
               </button>
             </div>
           </div>
         )}
 
-        {/* Actions */}
-        <div className="flex items-center gap-2">
-          {isLoading && !showRenew ? (
-            <div className="flex-1 flex items-center justify-center py-2">
-              <Loader2 className="w-4 h-4 text-white/40 animate-spin" />
-            </div>
-          ) : active ? (
-            <>
-              <button
-                onClick={() => setShowRenew(s => !s)}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-xl text-xs font-bold hover:bg-cyan-500/20 transition-colors"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> Renew
-              </button>
-              <button
-                onClick={() => onDeactivate(dev.mac, dev.id)}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-xs font-bold hover:bg-red-500/20 transition-colors"
-              >
-                <XCircle className="w-3.5 h-3.5" /> Off
-              </button>
-            </>
-          ) : (
-            <>
-              {dev.expires_at && (
-                <button
-                  onClick={() => setShowRenew(s => !s)}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-xl text-xs font-bold hover:bg-cyan-500/20 transition-colors"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" /> Renew
-                </button>
-              )}
-              <button
-                onClick={() => onActivate(dev.mac, dev.id, 1)}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs font-bold hover:bg-emerald-500/20 transition-colors"
-              >
-                <CheckCircle className="w-3.5 h-3.5" /> Activate
-              </button>
-            </>
-          )}
-          <button
-            onClick={() => onDelete(dev.id)}
-            className="w-9 h-9 rounded-xl bg-white/4 hover:bg-red-500/10 text-white/20 hover:text-red-400 flex items-center justify-center transition-colors border border-white/6"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
+        {/* Action buttons */}
+        {isLoading && !showRenew && !showEdit ? (
+          <div className="flex items-center justify-center py-2">
+            <Loader2 className="w-4 h-4 text-white/40 animate-spin" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-4 gap-1.5">
+            {/* Renew */}
+            <button onClick={() => { setShowRenew(s => !s); setShowEdit(false); }}
+              title="Renew"
+              className="flex flex-col items-center gap-1 py-2 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-xl text-[10px] font-bold hover:bg-cyan-500/20 transition-colors">
+              <RefreshCw className="w-3.5 h-3.5" /> Renew
+            </button>
+            {/* Edit */}
+            <button onClick={() => { setShowEdit(s => !s); setShowRenew(false); }}
+              title="Edit"
+              className="flex flex-col items-center gap-1 py-2 bg-violet-500/10 border border-violet-500/20 text-violet-400 rounded-xl text-[10px] font-bold hover:bg-violet-500/20 transition-colors">
+              <Pencil className="w-3.5 h-3.5" /> Edit
+            </button>
+            {/* Lock / Unlock */}
+            <button onClick={() => onLock(dev.id, !locked)}
+              title={locked ? 'Unlock' : 'Lock'}
+              className={`flex flex-col items-center gap-1 py-2 border rounded-xl text-[10px] font-bold transition-colors ${
+                locked
+                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
+                  : 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400 hover:bg-yellow-500/20'
+              }`}>
+              {locked ? <LockOpen className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+              {locked ? 'Unlock' : 'Lock'}
+            </button>
+            {/* Delete */}
+            <button onClick={() => onDelete(dev.id)}
+              title="Delete"
+              className="flex flex-col items-center gap-1 py-2 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-[10px] font-bold hover:bg-red-500/20 transition-colors">
+              <Trash2 className="w-3.5 h-3.5" /> Delete
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -307,6 +319,20 @@ export default function AdminActivation() {
     setActionId(id);
     await base44.entities.DeviceActivation.delete(id);
     setDevices(d => d.filter(dev => dev.id !== id));
+    setActionId(null);
+  };
+
+  const lockDevice = async (id, lock) => {
+    setActionId(id);
+    await base44.entities.DeviceActivation.update(id, { locked: lock });
+    await loadDevices();
+    setActionId(null);
+  };
+
+  const editDevice = async (id, fields) => {
+    setActionId(id);
+    await base44.entities.DeviceActivation.update(id, fields);
+    await loadDevices();
     setActionId(null);
   };
 
@@ -512,6 +538,8 @@ export default function AdminActivation() {
                   onDeactivate={deactivate}
                   onRenew={renew}
                   onDelete={deleteDevice}
+                  onLock={lockDevice}
+                  onEdit={editDevice}
                   isLoading={actionId === dev.id}
                 />
               ))}

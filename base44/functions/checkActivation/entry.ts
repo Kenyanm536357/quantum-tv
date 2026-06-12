@@ -60,9 +60,10 @@ Deno.serve(async (req) => {
 
     // Default: just check activation status (no auth required — device polls this)
     const records = await base44.asServiceRole.entities.DeviceActivation.filter({ mac: normalizedMac });
-    const isActivated = records.length > 0 && records[0].activated === true;
+    const record = records[0];
+    const isActivated = record && record.activated === true && !record.locked;
 
-    return Response.json({ activated: isActivated, mac: normalizedMac });
+    return Response.json({ activated: isActivated, mac: normalizedMac, locked: record?.locked ?? false });
 
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });

@@ -11,6 +11,11 @@
       "default": false,
       "description": "Whether this device is activated"
     },
+    "locked": {
+      "type": "boolean",
+      "default": false,
+      "description": "Temporarily locked \u2014 prevents playback without deactivating"
+    },
     "activated_at": {
       "type": "string",
       "format": "date-time",

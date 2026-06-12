@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useStore } from '@/lib/use-store';
 import { saveCredentials, clearCredentials, apiUrl } from '@/lib/iptv-store';
-import { Settings, Globe, User, Lock, Eye, EyeOff, CheckCircle, XCircle, Loader2, LogOut, RefreshCw } from 'lucide-react';
+import { base44 } from '@/api/base44Client';
+import { Settings, Globe, User, Lock, Eye, EyeOff, CheckCircle, XCircle, Loader2, LogOut, RefreshCw, Github, ExternalLink } from 'lucide-react';
 
 export default function SettingsSection() {
   const { credentials } = useStore();
@@ -11,6 +12,11 @@ export default function SettingsSection() {
   const [testResult, setTestResult] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [repoName, setRepoName] = useState('quantum-tv-iptv');
+  const [repoDesc, setRepoDesc] = useState('Quantum TV IPTV Media Player');
+  const [repoPrivate, setRepoPrivate] = useState(false);
+  const [creatingRepo, setCreatingRepo] = useState(false);
+  const [repoResult, setRepoResult] = useState(null);
 
   const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setTestResult(null); setSaved(false); };
 
@@ -31,6 +37,23 @@ export default function SettingsSection() {
       setTestResult({ ok: false, msg: 'Connection failed. Check the URL.' });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const createRepo = async () => {
+    setCreatingRepo(true);
+    setRepoResult(null);
+    try {
+      const res = await base44.functions.invoke('createGithubRepo', {
+        name: repoName,
+        description: repoDesc,
+        isPrivate: repoPrivate,
+      });
+      setRepoResult({ ok: true, url: res.data.url, full_name: res.data.full_name });
+    } catch (e) {
+      setRepoResult({ ok: false, msg: e?.response?.data?.error || e.message });
+    } finally {
+      setCreatingRepo(false);
     }
   };
 
@@ -107,6 +130,44 @@ export default function SettingsSection() {
             {saved ? 'Saved!' : 'Save Changes'}
           </button>
         </div>
+      </div>
+
+      {/* GitHub Repository */}
+      <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+        <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Github className="w-4 h-4 text-primary" /> Create GitHub Repository
+        </p>
+        <p className="text-xs text-muted-foreground">Create a new GitHub repo for your IPTV project.</p>
+
+        <div className="space-y-3">
+          <InputRow label="Repository Name" icon={Github}>
+            <input type="text" value={repoName} onChange={e => setRepoName(e.target.value)}
+              placeholder="quantum-tv-iptv" className="field-input font-mono text-sm" />
+          </InputRow>
+          <InputRow label="Description" icon={Globe}>
+            <input type="text" value={repoDesc} onChange={e => setRepoDesc(e.target.value)}
+              placeholder="My IPTV project" className="field-input text-sm" />
+          </InputRow>
+          <label className="flex items-center gap-2 cursor-pointer text-sm text-muted-foreground select-none">
+            <input type="checkbox" checked={repoPrivate} onChange={e => setRepoPrivate(e.target.checked)}
+              className="accent-primary w-4 h-4 rounded" />
+            Private repository
+          </label>
+        </div>
+
+        {repoResult && (
+          <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm ${repoResult.ok ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-destructive/10 text-destructive border border-destructive/20'}`}>
+            {repoResult.ok
+              ? <><CheckCircle className="w-4 h-4 flex-shrink-0" /> Repo created! <a href={repoResult.url} target="_blank" rel="noopener noreferrer" className="underline flex items-center gap-1">{repoResult.full_name} <ExternalLink className="w-3 h-3" /></a></>
+              : <><XCircle className="w-4 h-4 flex-shrink-0" /> {repoResult.msg}</>}
+          </div>
+        )}
+
+        <button onClick={createRepo} disabled={creatingRepo || !repoName}
+          className="flex items-center gap-2 px-4 py-2 bg-secondary border border-border rounded-xl text-sm font-medium text-foreground hover:bg-secondary/80 transition-all disabled:opacity-50">
+          {creatingRepo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Github className="w-4 h-4" />}
+          {creatingRepo ? 'Creating…' : 'Create Repository'}
+        </button>
       </div>
 
       {/* Danger zone */}

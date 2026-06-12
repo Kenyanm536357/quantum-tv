@@ -2,19 +2,37 @@ import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Monitor, CheckCircle, XCircle, Plus, Trash2, Loader2, RefreshCw, Shield, Lock } from 'lucide-react';
 
-const ADMIN_KEY = 'quantum-admin-2024'; // must match backend env var QUANTUM_ADMIN_KEY
-const PANEL_PASSWORD = 'quantumtv-admin'; // change this to your private password
+const ADMIN_KEY = 'quantum-admin-2024';
+const ALLOWED_EMAILS = ['kenyan@quantumtek.net', 'kenyanmcgarr@gmail.com'];
 
 export default function AdminActivation() {
-  const [authed, setAuthed] = useState(() => sessionStorage.getItem('qtv-admin') === '1');
-  const [pwInput, setPwInput] = useState('');
-  const [pwError, setPwError] = useState(false);
+  const [authed, setAuthed] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const [denied, setDenied] = useState(false);
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newMac, setNewMac] = useState('');
   const [newLabel, setNewLabel] = useState('');
   const [adding, setAdding] = useState(false);
   const [actionId, setActionId] = useState(null);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const user = await base44.auth.me();
+        if (user && ALLOWED_EMAILS.includes(user.email)) {
+          setAuthed(true);
+        } else {
+          setDenied(true);
+        }
+      } catch {
+        setDenied(true);
+      } finally {
+        setChecking(false);
+      }
+    };
+    checkAuth();
+  }, []);
 
   const loadDevices = async () => {
     setLoading(true);
@@ -24,45 +42,6 @@ export default function AdminActivation() {
   };
 
   useEffect(() => { if (authed) loadDevices(); }, [authed]);
-
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (pwInput === PANEL_PASSWORD) {
-      sessionStorage.setItem('qtv-admin', '1');
-      setAuthed(true);
-    } else {
-      setPwError(true);
-      setTimeout(() => setPwError(false), 2000);
-    }
-  };
-
-  if (!authed) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6" style={{ background: '#07090f' }}>
-        <form onSubmit={handleLogin} className="w-full max-w-xs flex flex-col items-center gap-5">
-          <div className="w-12 h-12 rounded-2xl bg-violet-500/10 border border-violet-500/30 flex items-center justify-center">
-            <Lock className="w-6 h-6 text-violet-400" />
-          </div>
-          <div className="text-center">
-            <h1 className="text-lg font-black text-white">Admin Access</h1>
-            <p className="text-xs text-white/30 mt-1">Quantum TV · Device Manager</p>
-          </div>
-          <input
-            type="password"
-            value={pwInput}
-            onChange={e => setPwInput(e.target.value)}
-            placeholder="Enter admin password"
-            autoFocus
-            className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 outline-none transition-colors ${pwError ? 'border-red-500/60' : 'border-white/10 focus:border-violet-500/50'}`}
-          />
-          {pwError && <p className="text-xs text-red-400 -mt-2">Incorrect password</p>}
-          <button type="submit" className="w-full py-3 bg-gradient-to-r from-violet-500 to-cyan-500 text-white font-bold rounded-xl text-sm">
-            Sign In
-          </button>
-        </form>
-      </div>
-    );
-  }
 
   const activate = async (mac, id) => {
     setActionId(id || mac);
@@ -93,7 +72,6 @@ export default function AdminActivation() {
       action: 'activate',
       adminKey: ADMIN_KEY,
     });
-    // Also update label if provided
     if (newLabel.trim()) {
       const records = await base44.entities.DeviceActivation.filter({ mac: newMac.trim().toUpperCase() });
       if (records.length > 0) {
@@ -110,6 +88,29 @@ export default function AdminActivation() {
     if (!iso) return '—';
     return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
+
+  if (checking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#07090f' }}>
+        <Loader2 className="w-7 h-7 text-violet-400 animate-spin" />
+      </div>
+    );
+  }
+
+  if (denied) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6" style={{ background: '#07090f' }}>
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center">
+            <Lock className="w-6 h-6 text-red-400" />
+          </div>
+          <h1 className="text-lg font-black text-white">Access Denied</h1>
+          <p className="text-xs text-white/30">You are not authorized to view this page.</p>
+          <a href="/login" className="text-xs text-violet-400 hover:underline mt-2">← Back to Login</a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen p-6" style={{ background: '#07090f' }}>
@@ -176,10 +177,7 @@ export default function AdminActivation() {
             <div className="divide-y divide-white/5">
               {devices.map(dev => (
                 <div key={dev.id} className="flex items-center gap-4 px-5 py-4">
-                  {/* Status indicator */}
                   <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${dev.activated ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'bg-red-500/60'}`} />
-
-                  {/* Info */}
                   <div className="flex-1 min-w-0">
                     <p className="font-mono text-sm font-bold text-cyan-400 truncate">{dev.mac}</p>
                     <div className="flex items-center gap-2 mt-0.5">
@@ -196,8 +194,6 @@ export default function AdminActivation() {
                       )}
                     </div>
                   </div>
-
-                  {/* Actions */}
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {actionId === dev.id ? (
                       <Loader2 className="w-4 h-4 text-white/40 animate-spin" />

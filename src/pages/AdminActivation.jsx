@@ -5,9 +5,8 @@ import { useAuth } from '@/lib/AuthContext';
 const ALLOWED_EMAILS = ['kenyan@quantumtek.net', 'kenyanmcgarr@gmail.com'];
 import {
   Monitor, CheckCircle, XCircle, Plus, Trash2, Loader2,
-  RefreshCw, Shield, Lock, LockOpen, User, Calendar, Clock,
-  Tv2, Signal, AlertTriangle, ChevronDown, Pencil, X,
-  LayoutGrid, List, Columns2
+  RefreshCw, Shield, Lock, LockOpen, Calendar,
+  Tv2, Signal, AlertTriangle
 } from 'lucide-react';
 
 const ADMIN_PASSCODE = 'quantum-admin-2024';
@@ -87,7 +86,14 @@ function StatCard({ icon: IconComp, label, value, color }) {
   );
 }
 
-function DeviceCard({ dev, onActivate, onDeactivate, onRenew, onDelete, onLock, onEdit, isLoading }) {
+function getInitials(username) {
+  if (!username) return '??';
+  const parts = username.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return username.slice(0, 2).toUpperCase();
+}
+
+function DeviceCard({ dev, onRenew, onDelete, onLock, onEdit, isLoading }) {
   const expired = isExpired(dev.expires_at);
   const days    = daysLeft(dev.expires_at);
   const active  = dev.activated && !expired;
@@ -96,92 +102,85 @@ function DeviceCard({ dev, onActivate, onDeactivate, onRenew, onDelete, onLock, 
   const [showRenew, setShowRenew] = useState(false);
   const [showEdit,  setShowEdit]  = useState(false);
   const [editUser,  setEditUser]  = useState(dev.username || '');
-  const [editLabel, setEditLabel] = useState(dev.label || '');
   const [renewMonths, setRenewMonths] = useState(1);
 
   const handleRenew = () => { onRenew(dev.id, dev.mac, renewMonths, dev.expires_at); setShowRenew(false); };
-  const handleEdit  = () => { onEdit(dev.id, { username: editUser.trim(), label: editLabel.trim() }); setShowEdit(false); };
+  const handleEdit  = () => { onEdit(dev.id, { username: editUser.trim() }); setShowEdit(false); };
 
-  const borderColor = locked
-    ? 'border-yellow-500/25'
-    : active ? 'border-emerald-500/20' : expired ? 'border-orange-500/15' : 'border-white/8';
-  const bgColor = locked
-    ? 'bg-gradient-to-br from-yellow-950/30 to-[#080c14]'
-    : active ? 'bg-gradient-to-br from-emerald-950/40 to-[#080c14]'
-    : expired ? 'bg-gradient-to-br from-orange-950/30 to-[#080c14]'
-    : 'bg-gradient-to-br from-[#0d1117] to-[#080c14]';
-  const barColor = locked
-    ? 'bg-gradient-to-r from-yellow-500 to-amber-400'
-    : active ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
-    : expired ? 'bg-gradient-to-r from-orange-500 to-amber-400'
-    : 'bg-gradient-to-r from-slate-700 to-slate-600';
+  const statusColor = locked
+    ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30'
+    : active ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+    : expired ? 'bg-orange-500/20 text-orange-300 border-orange-500/30'
+    : 'bg-red-500/20 text-red-300 border-red-500/30';
+  const statusLabel = locked ? 'Locked' : active ? 'Active' : expired ? 'Expired' : 'Inactive';
+
+  const daysColor = days === null ? '' : days <= 0 ? 'text-orange-400' : days <= 7 ? 'text-red-400' : days <= 30 ? 'text-yellow-400' : 'text-white/60';
 
   return (
-    <div className={`relative rounded-2xl border overflow-hidden transition-all ${bgColor} ${borderColor}`}>
-      <div className={`h-0.5 w-full ${barColor}`} />
-
-      <div className="p-5">
-        {/* Top row: info + status */}
-        <div className="flex items-start justify-between gap-3 mb-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <Monitor className="w-3.5 h-3.5 text-white/30 flex-shrink-0" />
-              <p className="font-mono text-xs text-white/40 truncate">{dev.mac}</p>
-            </div>
-            {dev.username && (
-              <div className="flex items-center gap-1.5 mb-1">
-                <User className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
-                <p className="text-base font-black text-white truncate">{dev.username}</p>
-              </div>
-            )}
-          </div>
-          <StatusBadge activated={dev.activated} expires_at={dev.expires_at} locked={locked} />
+    <div className="rounded-2xl border border-white/8 overflow-hidden" style={{ background: '#111827' }}>
+      {/* Main row */}
+      <div className="flex items-center gap-4 px-5 py-4">
+        {/* Avatar */}
+        <div className="w-12 h-12 rounded-full flex-shrink-0 flex items-center justify-center text-sm font-bold text-white"
+          style={{ background: 'linear-gradient(135deg, #7c3aed, #6d28d9)' }}>
+          {getInitials(dev.username)}
         </div>
 
-        {/* Expiry bar */}
+        {/* Name + MAC */}
+        <div className="flex-1 min-w-0">
+          <p className="text-base font-bold text-white leading-tight">{dev.username || '—'}</p>
+          <p className="font-mono text-xs text-white/40 mt-0.5">MAC: {dev.mac}</p>
+        </div>
+
+        {/* Status badge */}
+        <span className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold border ${statusColor}`}>
+          {statusLabel}
+        </span>
+
+        {/* Days left */}
         {dev.expires_at && (
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[11px] text-white/30 flex items-center gap-1">
-                <Calendar className="w-3 h-3" /> Expires {formatDate(dev.expires_at)}
-              </span>
-              {days !== null && (
-                <span className={`text-[11px] font-bold ${days <= 0 ? 'text-orange-400' : days <= 7 ? 'text-red-400' : days <= 30 ? 'text-yellow-400' : 'text-emerald-400'}`}>
-                  {days > 0 ? `${days}d left` : 'Expired'}
-                </span>
-              )}
-            </div>
-            {days !== null && (
-              <div className="h-1 bg-white/8 rounded-full overflow-hidden">
-                <div className={`h-full rounded-full transition-all ${days <= 0 ? 'bg-orange-400' : days <= 7 ? 'bg-red-400' : days <= 30 ? 'bg-yellow-400' : 'bg-emerald-400'}`}
-                  style={{ width: `${Math.max(0, Math.min(100, (days / 365) * 100))}%` }} />
-              </div>
-            )}
+          <div className="flex-shrink-0 text-right hidden sm:block">
+            <p className={`text-sm font-bold ${daysColor}`}>
+              {days !== null ? (days > 0 ? `${days} days left` : 'Expired') : '—'}
+            </p>
           </div>
         )}
 
-        {/* Edit panel */}
-        {showEdit && (
-          <div className="mb-3 p-3 rounded-xl bg-violet-500/8 border border-violet-500/20 space-y-2">
-            <p className="text-[11px] font-bold text-violet-400 uppercase tracking-wider">Edit Customer</p>
-            <input value={editUser} onChange={e => setEditUser(e.target.value)} placeholder="Username"
-              className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-xs text-violet-300 placeholder-white/15 outline-none focus:border-violet-500/40 transition-all" />
-            <div className="flex gap-2">
-              <button onClick={handleEdit} disabled={isLoading}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-violet-500/20 border border-violet-500/40 text-violet-300 rounded-lg text-xs font-bold hover:bg-violet-500/30 transition-colors disabled:opacity-50">
-                <CheckCircle className="w-3.5 h-3.5" /> Save
-              </button>
-              <button onClick={() => setShowEdit(false)}
-                className="px-3 py-2 bg-white/4 border border-white/8 text-white/30 rounded-lg text-xs font-bold hover:text-white transition-colors">
-                Cancel
-              </button>
-            </div>
+        {/* Expiry date */}
+        {dev.expires_at && (
+          <div className="flex-shrink-0 hidden md:block text-right">
+            <p className="text-[11px] text-white/35">Expiry on</p>
+            <p className="text-sm font-semibold text-white/70">{formatDate(dev.expires_at)}</p>
           </div>
         )}
 
-        {/* Renew panel */}
-        {showRenew && (
-          <div className="mb-3 p-3 rounded-xl bg-cyan-500/8 border border-cyan-500/20 space-y-2">
+        {/* Action icon buttons */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {isLoading ? (
+            <Loader2 className="w-4 h-4 text-white/40 animate-spin" />
+          ) : (
+            <>
+              <button onClick={() => onLock(dev.id, !locked)} title={locked ? 'Unlock' : 'Lock'}
+                className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-white/40 hover:text-yellow-400 hover:border-yellow-500/30 transition-colors">
+                {locked ? <LockOpen className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+              </button>
+              <button onClick={() => { setShowRenew(s => !s); setShowEdit(false); }} title="Renew"
+                className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-white/40 hover:text-cyan-400 hover:border-cyan-500/30 transition-colors">
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={() => onDelete(dev.id)} title="Delete"
+                className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-white/40 hover:text-red-400 hover:border-red-500/30 transition-colors">
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Renew panel */}
+      {showRenew && (
+        <div className="px-5 pb-4 pt-0">
+          <div className="p-3 rounded-xl bg-cyan-500/8 border border-cyan-500/20 space-y-2">
             <p className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider">Extend Subscription</p>
             <div className="grid grid-cols-3 gap-1.5">
               {DURATION_OPTIONS.map(o => (
@@ -195,10 +194,9 @@ function DeviceCard({ dev, onActivate, onDeactivate, onRenew, onDelete, onLock, 
               New expiry: <span className="text-emerald-400 font-bold">{formatDate(addMonths(dev.expires_at || new Date(), renewMonths))}</span>
             </p>
             <div className="flex gap-2">
-              <button onClick={handleRenew} disabled={isLoading}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 rounded-lg text-xs font-bold hover:bg-cyan-500/30 transition-colors disabled:opacity-50">
-                {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                Confirm
+              <button onClick={handleRenew}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 rounded-lg text-xs font-bold hover:bg-cyan-500/30 transition-colors">
+                <CheckCircle className="w-3.5 h-3.5" /> Confirm
               </button>
               <button onClick={() => setShowRenew(false)}
                 className="px-3 py-2 bg-white/4 border border-white/8 text-white/30 rounded-lg text-xs font-bold hover:text-white transition-colors">
@@ -206,47 +204,8 @@ function DeviceCard({ dev, onActivate, onDeactivate, onRenew, onDelete, onLock, 
               </button>
             </div>
           </div>
-        )}
-
-        {/* Action buttons */}
-        {isLoading && !showRenew && !showEdit ? (
-          <div className="flex items-center justify-center py-2">
-            <Loader2 className="w-4 h-4 text-white/40 animate-spin" />
-          </div>
-        ) : (
-          <div className="grid grid-cols-4 gap-1.5">
-            {/* Renew */}
-            <button onClick={() => { setShowRenew(s => !s); setShowEdit(false); }}
-              title="Renew"
-              className="flex flex-col items-center gap-1 py-2 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-xl text-[10px] font-bold hover:bg-cyan-500/20 transition-colors">
-              <RefreshCw className="w-3.5 h-3.5" /> Renew
-            </button>
-            {/* Edit */}
-            <button onClick={() => { setShowEdit(s => !s); setShowRenew(false); }}
-              title="Edit"
-              className="flex flex-col items-center gap-1 py-2 bg-violet-500/10 border border-violet-500/20 text-violet-400 rounded-xl text-[10px] font-bold hover:bg-violet-500/20 transition-colors">
-              <Pencil className="w-3.5 h-3.5" /> Edit
-            </button>
-            {/* Lock / Unlock */}
-            <button onClick={() => onLock(dev.id, !locked)}
-              title={locked ? 'Unlock' : 'Lock'}
-              className={`flex flex-col items-center gap-1 py-2 border rounded-xl text-[10px] font-bold transition-colors ${
-                locked
-                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
-                  : 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400 hover:bg-yellow-500/20'
-              }`}>
-              {locked ? <LockOpen className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-              {locked ? 'Unlock' : 'Lock'}
-            </button>
-            {/* Delete */}
-            <button onClick={() => onDelete(dev.id)}
-              title="Delete"
-              className="flex flex-col items-center gap-1 py-2 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-[10px] font-bold hover:bg-red-500/20 transition-colors">
-              <Trash2 className="w-3.5 h-3.5" /> Delete
-            </button>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -276,8 +235,6 @@ export default function AdminActivation() {
     const parts = clean.match(/.{1,2}/g) || [];
     setNewMac(parts.join(':'));
   };
-  const [viewMode,    setViewMode]    = useState('grid3'); // 'grid1' | 'grid2' | 'grid3' | 'list'
-
   const handlePasscode = (e) => {
     e.preventDefault();
     if (passcode === ADMIN_PASSCODE) {
@@ -464,30 +421,9 @@ export default function AdminActivation() {
             <StatCard icon={XCircle}       label="Inactive"      value={inactiveCount}  color="bg-red-500/15" />
           </div>
 
-          {/* Device grid header */}
+          {/* Device list header */}
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <h2 className="text-sm font-bold text-white">Registered Devices <span className="text-white/25 font-normal">({devices.length})</span></h2>
-            <div className="flex items-center gap-1 bg-white/4 border border-white/8 rounded-xl p-1">
-              {[
-                { mode: 'list',  icon: List,       title: 'List' },
-                { mode: 'grid1', icon: Monitor,    title: '1 col' },
-                { mode: 'grid2', icon: Columns2,   title: '2 cols' },
-                { mode: 'grid3', icon: LayoutGrid, title: '3 cols' },
-              ].map(({ mode, icon: Icon, title }) => (
-                <button
-                  key={mode}
-                  onClick={() => setViewMode(mode)}
-                  title={title}
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
-                    viewMode === mode
-                      ? 'bg-violet-500/30 text-violet-300'
-                      : 'text-white/25 hover:text-white/60'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                </button>
-              ))}
-            </div>
+            <h2 className="text-lg font-bold text-white">Registered Devices <span className="text-white/25 font-normal text-sm">({devices.length})</span></h2>
           </div>
 
           {loading ? (
@@ -501,45 +437,12 @@ export default function AdminActivation() {
               </div>
               <p className="text-sm text-white/25">No devices registered yet</p>
             </div>
-          ) : viewMode === 'list' ? (
-            <div className="rounded-2xl border border-white/8 overflow-hidden divide-y divide-white/6">
-              {devices.map(dev => {
-                const expired = isExpired(dev.expires_at);
-                const days = daysLeft(dev.expires_at);
-                const active = dev.activated && !expired;
-                return (
-                  <div key={dev.id} className={`flex items-center gap-4 px-5 py-3.5 ${active ? 'bg-emerald-950/20' : expired ? 'bg-orange-950/15' : 'bg-[#0a0e1a]'}`}>
-                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${active ? 'bg-emerald-400' : expired ? 'bg-orange-400' : 'bg-white/15'}`} />
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-bold text-white">{dev.username || '—'}</span>
-                      <p className="font-mono text-[11px] text-white/30">{dev.mac}</p>
-                    </div>
-                    <div className="flex-shrink-0 text-right hidden sm:block">
-                      <p className={`text-xs font-bold ${days <= 0 ? 'text-orange-400' : days <= 7 ? 'text-red-400' : days <= 30 ? 'text-yellow-400' : 'text-emerald-400'}`}>
-                        {dev.expires_at ? (days > 0 ? `${days}d left` : 'Expired') : '—'}
-                      </p>
-                      <p className="text-[11px] text-white/25">{formatDate(dev.expires_at)}</p>
-                    </div>
-                    <StatusBadge activated={dev.activated} expires_at={dev.expires_at} />
-                    <button onClick={() => deleteDevice(dev.id)} className="w-7 h-7 rounded-lg bg-white/3 hover:bg-red-500/10 text-white/15 hover:text-red-400 flex items-center justify-center transition-colors flex-shrink-0">
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
           ) : (
-            <div className={`grid gap-4 ${
-              viewMode === 'grid1' ? 'grid-cols-1' :
-              viewMode === 'grid2' ? 'grid-cols-1 sm:grid-cols-2' :
-              'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
-            }`}>
+            <div className="space-y-3">
               {devices.map(dev => (
                 <DeviceCard
                   key={dev.id}
                   dev={dev}
-                  onActivate={activate}
-                  onDeactivate={deactivate}
                   onRenew={renew}
                   onDelete={deleteDevice}
                   onLock={lockDevice}

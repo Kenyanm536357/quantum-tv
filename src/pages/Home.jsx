@@ -87,7 +87,7 @@ function AppShell() {
       // Load the hardcoded Quantum TV M3U source silently
       saveCredentials({
         type: 'm3u',
-        baseUrl: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us.m3u',
+        baseUrl: 'https://iptv-org.github.io/iptv/index.m3u',
         label: 'Quantum TV',
         mac: getDeviceMAC(),
       });

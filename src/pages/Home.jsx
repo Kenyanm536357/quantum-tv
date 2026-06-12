@@ -151,8 +151,7 @@ function AppShell() {
         </div>
       </div>
 
-      {/* Hidden admin link */}
-      <a href="/admin/activation" className="fixed top-3 right-4 text-white/40 hover:text-white transition-colors z-[100] select-none text-xl">⚙</a>
+
 
       {/* Reminder alert */}
       <ReminderChecker credentials={credentials} />
@@ -181,5 +180,10 @@ export default function Home() {
     );
   }
 
-  return <AppShell />;
+  return (
+    <>
+      <AppShell />
+      <a href="/admin/activation" className="fixed top-3 right-4 text-white/40 hover:text-white transition-colors z-[200] select-none text-xl">⚙</a>
+    </>
+  );
 }

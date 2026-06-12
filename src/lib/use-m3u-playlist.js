@@ -4,7 +4,12 @@ import { setState } from './iptv-store';
 import { cleanName } from './clean-name';
 
 const QUANTUM_M3U_URL = 'https://iptv-org.github.io/iptv/index.m3u';
-const CACHE_KEY = 'qtv_browse_cache_v3';
+const CACHE_KEY = 'qtv_browse_cache_v4'; // bumped to clear old oversized cache
+
+// Clear any old cache keys that may be bloating localStorage
+['qtv_browse_cache_v1','qtv_browse_cache_v2','qtv_browse_cache_v3'].forEach(k => {
+  try { localStorage.removeItem(k); } catch(_) {}
+});
 const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
 function getCachedPlaylist() {

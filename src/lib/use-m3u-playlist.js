@@ -1,51 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
-import { parseM3U } from './m3u-parser';
 import { setState } from './iptv-store';
 import { cleanName } from './clean-name';
 
-const QUANTUM_M3U_URL = 'http://thisiptv.com:8080/get.php?username=9998220347&password=2576958008&type=m3u_plus';
-const CACHE_KEY = 'qtv_browse_cache_v2';
+const BASE_URL  = 'http://thisiptv.com:8080';
+const USERNAME  = '9998220347';
+const PASSWORD  = '2576958008';
+const API_BASE  = `${BASE_URL}/player_api.php?username=${USERNAME}&password=${PASSWORD}`;
+const STREAM_BASE = `${BASE_URL}/live/${USERNAME}/${PASSWORD}`;
+
+const CACHE_KEY = 'qtv_xtream_cache_v1';
 const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
-
-async function fetchWithProxy(url, timeout = 30000) {
-  // 1. Try direct (works for GitHub raw URLs which allow CORS)
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(timeout) });
-    if (res.ok) {
-      const text = await res.text();
-      if (text.includes('#EXTINF') || text.includes('#EXTM3U')) return text;
-    }
-  } catch (_) {}
-
-  // 2. corsproxy.io
-  try {
-    const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(timeout) });
-    if (res.ok) {
-      const text = await res.text();
-      if (text.includes('#EXTINF') || text.includes('#EXTM3U')) return text;
-    }
-  } catch (_) {}
-
-  // 3. allorigins
-  try {
-    const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(timeout) });
-    if (res.ok) {
-      const json = await res.json();
-      if (json.contents?.includes('#EXTINF')) return json.contents;
-    }
-  } catch (_) {}
-
-  // 4. jsonp.su (another open proxy)
-  try {
-    const res = await fetch(`https://jsonp.su/proxy?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(timeout) });
-    if (res.ok) {
-      const text = await res.text();
-      if (text.includes('#EXTINF') || text.includes('#EXTM3U')) return text;
-    }
-  } catch (_) {}
-
-  throw new Error('Could not load playlist. Please check your internet connection or sync the playlist from the Admin panel.');
-}
 
 function getCachedPlaylist() {
   try {
@@ -57,10 +21,37 @@ function getCachedPlaylist() {
   return null;
 }
 
+async function fetchXtream() {
+  const [catsRes, streamsRes] = await Promise.all([
+    fetch(`${API_BASE}&action=get_live_categories`),
+    fetch(`${API_BASE}&action=get_live_streams`),
+  ]);
+
+  if (!catsRes.ok || !streamsRes.ok) throw new Error('Failed to reach Xtream Codes server.');
+
+  const [categories, rawStreams] = await Promise.all([catsRes.json(), streamsRes.json()]);
+
+  if (!Array.isArray(categories) || !Array.isArray(rawStreams)) {
+    const msg = categories?.error || rawStreams?.error || 'Invalid response from server.';
+    throw new Error(msg);
+  }
+
+  const streams = rawStreams.map(s => ({
+    stream_id:    s.stream_id,
+    name:         s.name,
+    stream_icon:  s.stream_icon,
+    category_id:  s.category_id,
+    direct_url:   `${STREAM_BASE}/${s.stream_id}.m3u8`,
+    url:          `${STREAM_BASE}/${s.stream_id}.m3u8`,
+  }));
+
+  return { categories, streams };
+}
+
 export function useM3UPlaylist() {
   const [playlist, setPlaylist] = useState(() => getCachedPlaylist());
-  const [loading, setLoading] = useState(!getCachedPlaylist());
-  const [error, setError] = useState(null);
+  const [loading, setLoading]   = useState(!getCachedPlaylist());
+  const [error, setError]       = useState(null);
 
   const load = useCallback(async (force = false) => {
     if (!force) {
@@ -70,10 +61,9 @@ export function useM3UPlaylist() {
     setLoading(true);
     setError(null);
     try {
-      const text = await fetchWithProxy(QUANTUM_M3U_URL);
-      const parsed = parseM3U(text);
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ data: parsed, ts: Date.now() }));
-      setPlaylist(parsed);
+      const data = await fetchXtream();
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
+      setPlaylist(data);
     } catch (e) {
       setError(e.message);
     } finally {

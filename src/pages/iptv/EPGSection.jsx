@@ -1,306 +1,209 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useStore } from '@/lib/use-store';
-import { usePlaylist } from '@/lib/use-playlist';
-import { setState, apiUrl } from '@/lib/iptv-store';
-import { Tv2, ChevronLeft, ChevronRight, Radio, Loader2, Play, X } from 'lucide-react';
-import SearchInput from '@/components/iptv/SearchInput';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
+import { useM3UPlaylist, playM3UStream } from '@/lib/use-m3u-playlist';
 import { cleanName } from '@/lib/clean-name';
-import VideoPlayer from '@/components/iptv/VideoPlayer';
+import {
+  Tv2, ChevronLeft, ChevronRight, Search, X, Play, Loader2,
+  Radio, Globe, Zap, Film, Music, Clock
+} from 'lucide-react';
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-const SLOT_WIDTH  = 180;   // px per 30-min slot
-const CHAN_WIDTH  = 220;   // px for the channel label column
-const ROW_HEIGHT  = 54;    // px per channel row
-const MINS_VIS   = 120;   // 2 hours visible
+// ── Constants ──────────────────────────────────────────────────────────────────
+const SLOT_WIDTH  = 200;   // px per 30-min slot
+const CHAN_WIDTH  = 220;   // px for channel column
+const ROW_HEIGHT  = 56;    // px per row
+const SLOTS_VIS   = 6;     // number of 30-min slots visible (3 hours)
 
-const US_STATES = [
-  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA',
-  'HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
-  'MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
-  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC',
-  'SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC',
+const CAT_ICONS = { news: Globe, sports: Zap, movie: Film, film: Film, music: Music, kids: Tv2 };
+function getCatIcon(name = '') {
+  const l = name.toLowerCase();
+  for (const [k, I] of Object.entries(CAT_ICONS)) if (l.includes(k)) return I;
+  return Radio;
+}
+
+const GRADIENTS = [
+  ['#1a0533','#6d28d9'], ['#0c1a2e','#0ea5e9'], ['#1a0a00','#ea580c'],
+  ['#0a1a0a','#16a34a'], ['#1a001a','#db2777'], ['#1a1000','#ca8a04'],
 ];
-
-function extractState(name = '') {
-  const upper = name.toUpperCase();
-  for (const st of US_STATES) {
-    if (new RegExp(`(^|[\\s|\\-(:,])${st}([\\s|\\-):,]|$)`).test(upper)) return st;
-  }
-  return null;
+function gradientFor(name = '') {
+  let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return GRADIENTS[h % GRADIENTS.length];
 }
 
-function decodeBase64(s) {
-  if (!s) return '';
-  try { return atob(s); } catch { return s; }
+function formatTime(unix) {
+  return new Date(unix * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+function formatDay(unix) {
+  return new Date(unix * 1000).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-function toUnix(v) {
-  if (!v) return 0;
-  if (typeof v === 'number') return v;
-  const n = Number(v);
-  if (!isNaN(n)) return n;
-  return Math.floor(new Date(v).getTime() / 1000);
-}
-
-function formatTime(date) {
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatDay(date) {
-  return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-}
-
-function buildSlots(windowStart) {
+// Build array of 30-min slot timestamps
+function buildSlots(windowStart, count = SLOTS_VIS + 2) {
   const rounded = Math.floor(windowStart / 1800) * 1800;
-  const count = Math.ceil(MINS_VIS / 30) + 2;
   return Array.from({ length: count }, (_, i) => rounded + i * 1800);
 }
 
-// ─── Category Picker ─────────────────────────────────────────────────────────
-function CategoryPicker({ categories, onSelect, loading, search, onSearch }) {
+// ── Category picker ───────────────────────────────────────────────────────────
+function CategoryPicker({ categories, catStreamMap, onSelect, search, onSearch }) {
+  const filtered = categories.filter(c =>
+    (catStreamMap[c.category_id]?.length ?? 0) > 0 &&
+    cleanName(c.category_name).toLowerCase().includes(search.toLowerCase())
+  );
+
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-        <h2 className="text-lg font-bold flex items-center gap-2 text-white">
-          <Tv2 className="w-5 h-5 text-primary" /> TV Guide — Select a Category
+    <div className="flex flex-col h-full gap-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap flex-shrink-0">
+        <h2 className="text-xl font-black text-white flex items-center gap-2">
+          <Tv2 className="w-5 h-5 text-cyan-400" /> TV Guide
         </h2>
-        <div className="w-52">
-          <SearchInput value={search} onChange={onSearch} placeholder="Search categories…" />
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/25 pointer-events-none" />
+          <input value={search} onChange={e => onSearch(e.target.value)} placeholder="Search categories…"
+            className="bg-white/5 border border-white/8 rounded-xl pl-9 pr-8 py-2 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-cyan-500/40 transition-all w-48" />
+          {search && <button onClick={() => onSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"><X className="w-3.5 h-3.5" /></button>}
         </div>
       </div>
-      {loading ? (
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="w-7 h-7 text-primary animate-spin" />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 overflow-y-auto">
-          {categories
-            .filter(c => cleanName(c.category_name || '').toLowerCase().includes(search.toLowerCase()))
-            .map((cat, i) => (
-              <button key={cat.category_id || i} onClick={() => onSelect(cat)}
-                className="flex items-center gap-3.5 p-4 bg-white/4 border border-white/8 hover:border-primary/40 hover:bg-primary/5 rounded-xl transition-all text-left">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                  <Tv2 className="w-5 h-5 text-primary" />
+
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {filtered.map(cat => {
+            const Icon = getCatIcon(cat.category_name);
+            const [g1, g2] = gradientFor(cat.category_name);
+            const count = catStreamMap[cat.category_id]?.length ?? 0;
+            return (
+              <button key={cat.category_id} onClick={() => onSelect(cat)}
+                className="group relative flex items-center gap-3 p-4 rounded-xl border border-white/8 hover:border-cyan-500/30 hover:bg-white/4 transition-all text-left">
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{ background: `linear-gradient(135deg, ${g1}, ${g2})` }}>
+                  <Icon className="w-5 h-5 text-white/70" />
                 </div>
-                <p className="text-sm font-semibold text-white truncate">{cleanName(cat.category_name)}</p>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-white truncate">{cleanName(cat.category_name)}</p>
+                  <p className="text-[11px] text-white/35">{count} channels</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/50 transition-colors" />
               </button>
-            ))}
+            );
+          })}
+          {filtered.length === 0 && <p className="col-span-full text-center text-white/25 py-16 text-sm">No categories found.</p>}
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
-// ─── Kodi-style EPG Grid ──────────────────────────────────────────────────────
-function EPGGrid({ channels, epgMap, windowStart, onWatch, onSelectProgram, loadingChans, loadingEpg, search, stateFilter, availableStates, onStateFilter, player }) {
-  const gridRef = useRef(null);
-  const now     = Date.now() / 1000;
-  const slots   = buildSlots(windowStart);
-  const totalW  = slots.length * SLOT_WIDTH;
-  const nowOff  = ((now - windowStart) / 1800) * SLOT_WIDTH;
+// ── TV Guide Grid ─────────────────────────────────────────────────────────────
+function TVGuideGrid({ channels, search, windowStart, nowPlaying, onWatch }) {
+  const now = Math.floor(Date.now() / 1000);
+  const slots = buildSlots(windowStart);
+  const totalW = slots.length * SLOT_WIDTH;
+  const nowOff = Math.max(0, ((now - slots[0]) / 1800) * SLOT_WIDTH);
 
-  const filtered = channels.filter(c => {
-    const matchSearch = cleanName(c.name).toLowerCase().includes(search.toLowerCase());
-    const matchState  = stateFilter === 'ALL' || extractState(c.name) === stateFilter;
-    return matchSearch && matchState;
-  });
+  const filtered = search
+    ? channels.filter(c => cleanName(c.name).toLowerCase().includes(search.toLowerCase()))
+    : channels;
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-
-      {/* ── Top split: video preview + current program info ── */}
-      <div className="flex flex-col sm:flex-row bg-[#0a0e1a] border-b border-white/8 flex-shrink-0">
-        {/* Video pane */}
-        <div className="relative bg-black flex items-center justify-center flex-shrink-0 w-full sm:w-80"
-          style={{ minHeight: 160 }}>
-          {player?.src ? (
-            <video
-              key={player.src}
-              src={player.src}
-              autoPlay muted
-              className="w-full h-full object-contain"
-              style={{ maxHeight: 180 }}
-            />
-          ) : (
-            <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-white/20">
-              <Tv2 className="w-10 h-10" />
-              <span className="text-xs">Select a channel to preview</span>
-            </div>
-          )}
+    <div className="flex flex-col h-full overflow-hidden rounded-xl border border-white/8 bg-[#080c14]">
+      {/* Time header row */}
+      <div className="flex bg-[#070a10] border-b border-white/8 flex-shrink-0 overflow-hidden">
+        <div className="flex-shrink-0 border-r border-white/8 flex items-center px-4"
+          style={{ width: CHAN_WIDTH, minHeight: 40 }}>
+          <p className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider">{formatDay(now)}</p>
         </div>
-
-        {/* Program info */}
-        <div className="flex-1 flex flex-col justify-center px-6 py-4 min-w-0">
-          {player ? (
-            <>
-              <p className="text-[11px] font-bold text-primary uppercase tracking-widest mb-1">Now Playing</p>
-              <h2 className="text-xl font-bold text-white truncate">{player.title || 'Live Stream'}</h2>
-              {(() => {
-                const epg = epgMap[channels.find(c => c.name === player.title)?.stream_id];
-                const now2 = Date.now() / 1000;
-                const cur  = epg?.find(p => toUnix(p.start) <= now2 && toUnix(p.stop) > now2);
-                if (!cur) return null;
-                const title = cleanName(decodeBase64(cur.title));
-                const desc  = decodeBase64(cur.description || '');
-                const start = toUnix(cur.start);
-                const stop  = toUnix(cur.stop);
-                const pct   = Math.round(((now2 - start) / (stop - start)) * 100);
-                return (
-                  <div className="mt-2">
-                    <p className="text-sm text-white/80 font-medium">{title}</p>
-                    <p className="text-xs text-white/40 mt-0.5">{formatTime(new Date(start * 1000))} — {formatTime(new Date(stop * 1000))}&nbsp;&nbsp;·&nbsp;&nbsp;{Math.round((stop - start) / 60)} min</p>
-                    {desc && <p className="text-xs text-white/40 mt-1.5 line-clamp-2">{desc}</p>}
-                    <div className="mt-2 h-1 bg-white/10 rounded-full overflow-hidden w-48">
-                      <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })()}
-            </>
-          ) : (
-            <p className="text-sm text-white/30">Click a channel to start watching</p>
-          )}
+        <div className="flex-1 overflow-hidden relative">
+          <div className="flex" style={{ width: totalW }}>
+            {slots.map((s, i) => (
+              <div key={i} style={{ width: SLOT_WIDTH, flexShrink: 0, minHeight: 40 }}
+                className="border-l border-white/6 flex items-center px-3">
+                <p className="text-[11px] font-bold text-white/50">{formatTime(s)}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* ── State filter pills ── */}
-      {availableStates.length > 0 && (
-        <div className="flex items-center gap-2 overflow-x-auto px-3 py-2 bg-[#0a0e1a] border-b border-white/6"
-          style={{ scrollbarWidth: 'none' }}>
-          {['ALL', ...availableStates].map(st => (
-            <button key={st} onClick={() => onStateFilter(st === stateFilter ? 'ALL' : st)}
-              className={`flex-shrink-0 px-3 py-0.5 rounded-full text-[11px] font-bold transition-colors border ${
-                stateFilter === st
-                  ? 'bg-primary text-black border-primary'
-                  : 'bg-white/5 text-white/40 border-white/8 hover:text-white/70'
-              }`}>
-              {st === 'ALL' ? 'All' : st}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* ── EPG Scrollable grid ── */}
-      <div ref={gridRef} className="flex-1 overflow-auto min-h-0" style={{ position: 'relative' }}>
+      {/* Channel rows */}
+      <div className="flex-1 overflow-auto min-h-0">
         <div style={{ minWidth: CHAN_WIDTH + totalW }}>
+          {filtered.length === 0 && (
+            <p className="text-center text-white/25 py-16 text-sm">No channels found.</p>
+          )}
+          {filtered.map((ch, idx) => {
+            const name = cleanName(ch.name);
+            const isPlaying = nowPlaying === (ch.stream_id || ch.url);
+            const [g1, g2] = gradientFor(name);
 
-          {/* Sticky time header */}
-          <div className="sticky top-0 z-20 flex bg-[#080c14] border-b border-white/8">
-            {/* Corner */}
-            <div className="flex-shrink-0 bg-[#080c14] border-r border-white/8 flex items-center px-3"
-              style={{ width: CHAN_WIDTH, minHeight: 36 }}>
-              <p className="text-[10px] font-bold text-primary uppercase tracking-wider">
-                {formatDay(new Date())}
-              </p>
-            </div>
-            {/* Time slots */}
-            {slots.map((s, i) => (
-              <div key={i} style={{ width: SLOT_WIDTH, minHeight: 36, flexShrink: 0 }}
-                className="border-l border-white/6 flex flex-col justify-center px-2">
-                <p className="text-[11px] font-bold text-white/60">{formatTime(new Date(s * 1000))}</p>
-              </div>
-            ))}
-            {/* NOW line in header */}
-            {nowOff >= 0 && nowOff < totalW && (
-              <div className="absolute top-0 bottom-0 w-px bg-primary/80 pointer-events-none z-30"
-                style={{ left: CHAN_WIDTH + nowOff }} />
-            )}
-          </div>
-
-          {/* Loading */}
-          {loadingChans ? (
-            <div className="flex items-center justify-center py-24">
-              <Loader2 className="w-6 h-6 text-primary animate-spin" />
-            </div>
-          ) : filtered.length === 0 ? (
-            <p className="text-center text-white/30 py-16 text-sm">No channels found.</p>
-          ) : filtered.map((ch, idx) => {
-            const epg    = epgMap[ch.stream_id] || [];
-            const isPlaying = player?.title === cleanName(ch.name);
+            // Each channel gets a single "LIVE NOW" block spanning the current 30-min slot
+            const currentSlot = Math.floor(now / 1800) * 1800;
+            const blockLeft = Math.max(0, ((currentSlot - slots[0]) / 1800) * SLOT_WIDTH);
+            const blockWidth = SLOT_WIDTH - 2;
 
             return (
-              <div key={ch.stream_id}
-                className={`flex border-b border-white/5 group transition-colors ${isPlaying ? 'bg-primary/8' : 'hover:bg-white/3'}`}
+              <div key={ch.stream_id || ch.url || idx}
+                className={`flex border-b border-white/5 group transition-colors ${isPlaying ? 'bg-cyan-500/6' : 'hover:bg-white/2'}`}
                 style={{ height: ROW_HEIGHT }}>
 
                 {/* Channel label — sticky left */}
                 <div
                   onClick={() => onWatch(ch)}
-                  className={`flex-shrink-0 flex items-center gap-2.5 px-3 border-r border-white/6 sticky left-0 z-10 cursor-pointer transition-colors ${
-                    isPlaying ? 'bg-primary/15' : 'bg-[#0a0e1a] group-hover:bg-white/5'
+                  className={`flex-shrink-0 flex items-center gap-2.5 px-3 border-r border-white/6 sticky left-0 z-10 cursor-pointer transition-colors select-none ${
+                    isPlaying ? 'bg-cyan-500/12' : 'bg-[#080c14] group-hover:bg-white/4'
                   }`}
                   style={{ width: CHAN_WIDTH, height: ROW_HEIGHT }}>
-                  {/* Number */}
-                  <span className="text-[11px] text-white/25 w-5 text-right flex-shrink-0">{idx + 1}</span>
+                  <span className="text-[10px] text-white/20 w-5 text-right flex-shrink-0">{idx + 1}</span>
                   {/* Logo */}
-                  <div className="w-8 h-8 rounded bg-white/5 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                    {ch.stream_icon ? (
-                      <img src={ch.stream_icon} alt="" className="w-full h-full object-contain"
-                        onError={e => { e.target.style.display = 'none'; }} />
-                    ) : (
-                      <Radio className="w-4 h-4 text-white/20" />
-                    )}
+                  <div className="w-8 h-8 rounded overflow-hidden flex-shrink-0"
+                    style={{ background: `linear-gradient(135deg, ${g1}, ${g2})` }}>
+                    {ch.stream_icon
+                      ? <img src={ch.stream_icon} alt="" className="w-full h-full object-contain"
+                          onError={e => { e.target.style.display = 'none'; }} />
+                      : null}
                   </div>
-                  {/* Name */}
-                  <p className={`text-[12px] font-semibold truncate flex-1 ${isPlaying ? 'text-primary' : 'text-white/75'}`}>
-                    {cleanName(ch.name)}
+                  <p className={`text-[12px] font-semibold truncate flex-1 leading-tight ${isPlaying ? 'text-cyan-400' : 'text-white/75'}`}>
+                    {name}
                   </p>
-                  {isPlaying && <Play className="w-3 h-3 text-primary flex-shrink-0" />}
+                  {isPlaying && <Play className="w-3 h-3 text-cyan-400 flex-shrink-0" />}
                 </div>
 
                 {/* Program track */}
-                <div className="relative flex-1 overflow-hidden" style={{ height: ROW_HEIGHT }}>
+                <div className="relative flex-1" style={{ height: ROW_HEIGHT }}>
                   <div style={{ position: 'absolute', inset: 0, width: totalW }}>
-                    {/* Grid lines */}
+                    {/* Slot grid lines */}
                     {slots.map((_, si) => (
                       <div key={si} className="absolute inset-y-0 border-l border-white/4"
                         style={{ left: si * SLOT_WIDTH }} />
                     ))}
 
-                    {loadingEpg && epg.length === 0 ? (
-                      <div className="absolute inset-0 flex items-center px-3">
-                        <div className="h-1.5 w-16 bg-white/8 rounded-full animate-pulse" />
-                      </div>
-                    ) : epg.length === 0 ? (
-                      <div className="absolute inset-0 flex items-center px-4">
-                        <span className="text-[11px] text-white/20">No information</span>
-                      </div>
-                    ) : epg.map((prog, pi) => {
-                      const start = toUnix(prog.start);
-                      const stop  = toUnix(prog.stop);
-                      if (stop < windowStart || start > windowStart + MINS_VIS * 60) return null;
-                      const left  = ((start - windowStart) / 1800) * SLOT_WIDTH;
-                      const width = Math.max(((stop - start) / 1800) * SLOT_WIDTH - 2, 4);
-                      const isNow = now >= start && now < stop;
-                      const pct   = isNow ? Math.round(((now - start) / (stop - start)) * 100) : 0;
-                      const title = cleanName(decodeBase64(prog.title) || 'No information');
+                    {/* LIVE NOW block */}
+                    <button
+                      onClick={() => onWatch(ch)}
+                      style={{ left: blockLeft + 1, width: blockWidth, top: 5, bottom: 5, position: 'absolute' }}
+                      className={`rounded-lg text-left flex items-center px-3 gap-2 overflow-hidden transition-all hover:brightness-125 ${
+                        isPlaying
+                          ? 'bg-cyan-500/25 border border-cyan-500/60'
+                          : 'bg-cyan-500/10 border border-cyan-500/25 hover:bg-cyan-500/20'
+                      }`}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+                      <span className="text-[11px] font-bold text-white/75 truncate">LIVE NOW</span>
+                      <span className="text-[9px] text-white/30 ml-auto flex-shrink-0">
+                        {formatTime(currentSlot)} – {formatTime(currentSlot + 1800)}
+                      </span>
+                    </button>
 
-                      return (
-                        <button key={pi}
-                          onClick={() => onSelectProgram(prog, ch)}
-                          style={{ left: left + 1, width, top: 3, bottom: 3, position: 'absolute' }}
-                          className={`rounded text-left flex flex-col justify-center px-2 overflow-hidden transition-all hover:brightness-125 hover:z-10 ${
-                            isNow
-                              ? 'bg-primary/20 border border-primary/50 text-white'
-                              : 'bg-white/5 border border-white/8 text-white/55 hover:bg-white/10'
-                          }`}
-                          title={title}>
-                          {isNow && (
-                            <div className="absolute bottom-0 left-0 h-0.5 bg-primary rounded-full"
-                              style={{ width: `${pct}%` }} />
-                          )}
-                          <span className="text-[11px] font-semibold truncate leading-tight">{title}</span>
-                          <span className="text-[9px] text-white/35 truncate">
-                            {formatTime(new Date(start * 1000))} – {formatTime(new Date(stop * 1000))}
-                          </span>
-                        </button>
-                      );
-                    })}
+                    {/* Future empty slots */}
+                    {slots.slice(1).map((s, si) => s > currentSlot && (
+                      <div key={si}
+                        style={{ left: ((s - slots[0]) / 1800) * SLOT_WIDTH + 1, width: blockWidth, top: 5, bottom: 5, position: 'absolute' }}
+                        className="rounded-lg bg-white/3 border border-white/6 flex items-center px-3">
+                        <span className="text-[10px] text-white/15 truncate">
+                          {formatTime(s)} – {formatTime(s + 1800)}
+                        </span>
+                      </div>
+                    ))}
                   </div>
 
-                  {/* NOW red line per row */}
+                  {/* NOW red line */}
                   {nowOff >= 0 && nowOff < totalW && (
-                    <div className="absolute inset-y-0 w-px bg-red-500/60 pointer-events-none z-20"
+                    <div className="absolute inset-y-0 w-0.5 bg-red-500/70 pointer-events-none z-20"
                       style={{ left: nowOff }} />
                   )}
                 </div>
@@ -313,180 +216,120 @@ function EPGGrid({ channels, epgMap, windowStart, onWatch, onSelectProgram, load
   );
 }
 
-// ─── Program Detail Drawer ────────────────────────────────────────────────────
-function ProgramDrawer({ prog, channel, onClose, onWatch }) {
-  if (!prog) return null;
-  const title  = cleanName(decodeBase64(prog.title) || 'No Info');
-  const desc   = decodeBase64(prog.description || '');
-  const start  = toUnix(prog.start);
-  const stop   = toUnix(prog.stop);
-  const now    = Date.now() / 1000;
-  const isNow  = now >= start && now < stop;
+// ── Main EPGSection ───────────────────────────────────────────────────────────
+export default function EPGSection() {
+  const { playlist, loading, error, refresh } = useM3UPlaylist();
+  const [selectedCat, setSelectedCat] = useState(null);
+  const [search, setSearch] = useState('');
+  const [nowPlaying, setNowPlaying] = useState(null);
+  const [windowStart, setWindowStart] = useState(() =>
+    Math.floor(Date.now() / 1000 / 1800) * 1800 - 1800
+  );
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-      <div className="relative bg-[#0d1117] border border-white/10 rounded-2xl w-full max-w-md p-5 shadow-2xl"
-        onClick={e => e.stopPropagation()}>
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <div>
-            {isNow && <span className="inline-block mb-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary text-black">ON NOW</span>}
-            <h3 className="text-base font-bold text-white">{title}</h3>
-            <p className="text-xs text-white/40 mt-0.5">
-              {cleanName(channel.name)} · {formatTime(new Date(start * 1000))} – {formatTime(new Date(stop * 1000))}
-            </p>
-          </div>
-          <button onClick={onClose} className="text-white/30 hover:text-white/70"><X className="w-5 h-5" /></button>
-        </div>
-        {desc && <p className="text-sm text-white/60 leading-relaxed mb-4">{desc}</p>}
-        {isNow && (
-          <button onClick={() => { onWatch(channel); onClose(); }}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-black font-bold text-sm">
-            <Play className="w-4 h-4 fill-black" /> Watch Now
-          </button>
-        )}
-      </div>
+  const catStreamMap = useMemo(() => {
+    if (!playlist) return {};
+    const map = {};
+    for (const s of playlist.streams) {
+      if (!map[s.category_id]) map[s.category_id] = [];
+      map[s.category_id].push(s);
+    }
+    return map;
+  }, [playlist]);
+
+  const channels = useMemo(() => {
+    if (!selectedCat) return [];
+    return catStreamMap[selectedCat.category_id] || [];
+  }, [selectedCat, catStreamMap]);
+
+  const handleWatch = useCallback((stream) => {
+    setNowPlaying(stream.stream_id || stream.url);
+    playM3UStream(stream);
+  }, []);
+
+  const handleBack = () => { setSelectedCat(null); setSearch(''); setNowPlaying(null); };
+
+  if (loading) return (
+    <div className="h-full flex flex-col items-center justify-center gap-4">
+      <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+      <p className="text-sm text-white/40">Loading TV Guide…</p>
     </div>
   );
-}
 
-// ─── Main EPGSection ──────────────────────────────────────────────────────────
-export default function EPGSection() {
-  const { credentials, player } = useStore();
-  const { fetchAction, resolveStreamUrl } = usePlaylist(credentials);
+  if (error) return (
+    <div className="h-full flex flex-col items-center justify-center gap-4 px-6 text-center">
+      <Tv2 className="w-10 h-10 text-white/15" />
+      <p className="text-sm text-white/40">{error}</p>
+      <button onClick={refresh} className="px-5 py-2.5 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 text-sm font-semibold hover:bg-cyan-500/25 transition-colors">
+        Try Again
+      </button>
+    </div>
+  );
 
-  const [categories, setCategories]   = useState([]);
-  const [channels, setChannels]       = useState([]);
-  const [selectedCat, setSelectedCat] = useState(null);
-  const [epgMap, setEpgMap]           = useState({});
-  const [search, setSearch]           = useState('');
-  const [loadingCats, setLoadingCats] = useState(false);
-  const [loadingChans, setLoadingChans] = useState(false);
-  const [loadingEpg, setLoadingEpg]   = useState(false);
-  const [selectedProg, setSelectedProg] = useState(null);
-  const [windowStart, setWindowStart] = useState(() => Math.floor(Date.now() / 1000 / 1800) * 1800 - 1800);
-  const [stateFilter, setStateFilter] = useState('ALL');
-
-  useEffect(() => {
-    setLoadingCats(true);
-    fetchAction('get_live_categories').then(data => {
-      if (data) setCategories(data);
-      setLoadingCats(false);
-    });
-  }, [fetchAction]);
-
-  const selectCategory = async (cat) => {
-    setSelectedCat(cat);
-    setSearch('');
-    setEpgMap({});
-    setStateFilter('ALL');
-    setLoadingChans(true);
-    const data = await fetchAction('get_live_streams', { category_id: cat.category_id });
-    const chans = data || [];
-    setChannels(chans);
-    setLoadingChans(false);
-
-    if (chans.length) {
-      setLoadingEpg(true);
-      const batch = chans.slice(0, 60);
-      const results = await Promise.all(
-        batch.map(async ch => {
-          try {
-            const url = apiUrl(credentials, 'get_short_epg', { stream_id: ch.stream_id, limit: 10 });
-            const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-            if (!res.ok) return { id: ch.stream_id, listings: [] };
-            const json = await res.json();
-            return { id: ch.stream_id, listings: json?.epg_listings ?? [] };
-          } catch {
-            return { id: ch.stream_id, listings: [] };
-          }
-        })
-      );
-      const map = {};
-      results.forEach(r => { map[r.id] = r.listings; });
-      setEpgMap(map);
-      setLoadingEpg(false);
-    }
-  };
-
-  const watchChannel = useCallback(async (ch) => {
-    const src = await resolveStreamUrl(ch, 'live');
-    setState({ player: { src, title: cleanName(ch.name), type: 'live' } });
-  }, [resolveStreamUrl]);
-
-  const availableStates = [...new Set(channels.map(c => extractState(c.name)).filter(Boolean))].sort();
-
+  // ── Category picker ──
   if (!selectedCat) {
     return (
-      <CategoryPicker
-        categories={categories}
-        onSelect={selectCategory}
-        loading={loadingCats}
-        search={search}
-        onSearch={setSearch}
-      />
+      <div className="h-full overflow-hidden p-4 sm:p-6">
+        <CategoryPicker
+          categories={playlist?.categories ?? []}
+          catStreamMap={catStreamMap}
+          onSelect={(cat) => { setSelectedCat(cat); setSearch(''); }}
+          search={search}
+          onSearch={setSearch}
+        />
+      </div>
     );
   }
 
+  // ── TV Guide grid ──
   return (
-    <div className="flex flex-col" style={{ height: '100%', overflow: 'hidden' }}>
+    <div className="flex flex-col h-full overflow-hidden p-0">
       {/* Toolbar */}
-      <div className="flex items-center gap-3 flex-wrap px-0 pb-2 flex-shrink-0">
-        <button onClick={() => { setSelectedCat(null); setChannels([]); setEpgMap({}); }}
-          className="flex items-center gap-1.5 text-sm text-white/50 hover:text-white transition-colors">
-          <ChevronLeft className="w-4 h-4" /> Categories
+      <div className="flex items-center gap-3 flex-wrap px-4 sm:px-6 py-3 flex-shrink-0 border-b border-white/6 bg-[#07090f]">
+        <button onClick={handleBack}
+          className="flex items-center gap-1.5 text-sm text-white/40 hover:text-white transition-colors">
+          <ChevronLeft className="w-4 h-4" /> TV Guide
         </button>
         <span className="text-white/20">/</span>
         <h2 className="text-sm font-bold text-white flex items-center gap-1.5">
-          <Tv2 className="w-4 h-4 text-primary" />
+          <Tv2 className="w-4 h-4 text-cyan-400" />
           {cleanName(selectedCat.category_name)}
+          <span className="text-white/25 font-normal ml-1">({channels.length})</span>
         </h2>
+
         <div className="ml-auto flex items-center gap-2">
-          <div className="w-44">
-            <SearchInput value={search} onChange={setSearch} placeholder="Filter channels…" />
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/25 pointer-events-none" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter channels…"
+              className="bg-white/5 border border-white/8 rounded-xl pl-9 pr-8 py-1.5 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-cyan-500/40 transition-all w-36" />
+            {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"><X className="w-3.5 h-3.5" /></button>}
           </div>
+          {/* Time nav */}
           <button onClick={() => setWindowStart(w => w - 3600)}
             className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/60 hover:text-white transition-colors">
             <ChevronLeft className="w-4 h-4" />
           </button>
           <button onClick={() => setWindowStart(Math.floor(Date.now() / 1000 / 1800) * 1800 - 1800)}
-            className="px-3 h-8 rounded-lg bg-primary/15 hover:bg-primary/25 text-primary text-xs font-bold transition-colors">
+            className="px-3 h-8 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-400 text-xs font-bold transition-colors">
             NOW
           </button>
           <button onClick={() => setWindowStart(w => w + 3600)}
             className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/60 hover:text-white transition-colors">
             <ChevronRight className="w-4 h-4" />
           </button>
-          {loadingEpg && <Loader2 className="w-4 h-4 text-primary animate-spin" />}
         </div>
       </div>
 
-      {/* Main EPG grid */}
-      <div className="flex-1 overflow-hidden rounded-xl border border-white/8 bg-[#0a0e1a]">
-        <EPGGrid
+      {/* Grid */}
+      <div className="flex-1 overflow-hidden px-4 sm:px-6 py-4">
+        <TVGuideGrid
           channels={channels}
-          epgMap={epgMap}
-          windowStart={windowStart}
-          onWatch={watchChannel}
-          onSelectProgram={(prog, ch) => setSelectedProg({ prog, channel: ch })}
-          loadingChans={loadingChans}
-          loadingEpg={loadingEpg}
           search={search}
-          stateFilter={stateFilter}
-          availableStates={availableStates}
-          onStateFilter={setStateFilter}
-          player={player}
+          windowStart={windowStart}
+          nowPlaying={nowPlaying}
+          onWatch={handleWatch}
         />
       </div>
-
-      {selectedProg && (
-        <ProgramDrawer
-          prog={selectedProg.prog}
-          channel={selectedProg.channel}
-          onClose={() => setSelectedProg(null)}
-          onWatch={watchChannel}
-        />
-      )}
     </div>
   );
 }

@@ -28,7 +28,7 @@ export function AppSidebar() {
       <div className="flex items-center gap-2.5 px-4 py-4 border-b border-white/6 flex-shrink-0">
         <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0">
           <img src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/7cb772c8e_QUANTUMTVLOGOver2.png"
-            alt="QuantumTV" className="w-full h-full object-cover" />
+            alt="QuantumTV" className="w-full h-full object-cover rounded-lg" />
         </div>
         <span className="text-[15px] font-black tracking-tight text-white">
           Quantum<span className="text-primary">TV</span>

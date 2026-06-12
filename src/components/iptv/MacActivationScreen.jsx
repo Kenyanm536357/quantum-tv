@@ -162,7 +162,7 @@ export default function MacActivationScreen({ onActivated }) {
               <div className="flex items-start gap-2.5 bg-violet-500/8 border border-violet-500/20 rounded-xl px-3 py-2.5 text-left">
                 <Shield className="w-4 h-4 text-violet-400 flex-shrink-0 mt-0.5" />
                 <p className="text-xs text-white/55 leading-relaxed">
-                  Share this Device ID with <span className="text-violet-300 font-semibold">QuantumTek</span> to activate your subscription. The app will unlock automatically once approved.
+                  Share this Device ID with <span className="text-violet-300 font-semibold">Quantum TV</span> to activate your subscription. Once activated, the app will load automatically.
                 </p>
               </div>
             </div>

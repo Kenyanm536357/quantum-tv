@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '@/lib/use-store';
 import { saveCredentials, clearCredentials, apiUrl } from '@/lib/iptv-store';
-import { Settings, Globe, User, Lock, Eye, EyeOff, CheckCircle, XCircle, Loader2, LogOut, RefreshCw } from 'lucide-react';
+import { Settings, Globe, User, Lock, Eye, EyeOff, CheckCircle, XCircle, Loader2, LogOut, RefreshCw, ShieldOff } from 'lucide-react';
+import { base44 } from '@/api/base44Client';
 
 export default function SettingsSection() {
   const { credentials } = useStore();
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [checkingRole, setCheckingRole] = useState(true);
   const [form, setForm] = useState({
     baseUrl: credentials?.baseUrl || '',
     username: credentials?.username || '',
@@ -16,6 +19,29 @@ export default function SettingsSection() {
   const [testResult, setTestResult] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    base44.auth.me().then(u => {
+      setIsAdmin(u?.role === 'admin');
+      setCheckingRole(false);
+    }).catch(() => setCheckingRole(false));
+  }, []);
+
+  if (checkingRole) {
+    return <div className="flex items-center justify-center py-24"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>;
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
+        <div className="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+          <ShieldOff className="w-7 h-7 text-red-400" />
+        </div>
+        <p className="text-base font-bold text-white">Admin Access Required</p>
+        <p className="text-sm text-white/30 max-w-xs">Settings are restricted to admin users only.</p>
+      </div>
+    );
+  }
 
   const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setTestResult(null); setSaved(false); };
 

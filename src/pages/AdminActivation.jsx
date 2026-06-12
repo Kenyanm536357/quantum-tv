@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Monitor, CheckCircle, XCircle, Plus, Trash2, Loader2, RefreshCw, Shield, Lock, User, Calendar, Clock } from 'lucide-react';
+import {
+  Monitor, CheckCircle, XCircle, Plus, Trash2, Loader2,
+  RefreshCw, Shield, Lock, User, Calendar, Clock,
+  Tv2, Signal, AlertTriangle, ChevronDown
+} from 'lucide-react';
 
 const ADMIN_PASSCODE = 'quantum-admin-2024';
 
 const DURATION_OPTIONS = [
-  { label: '1 Month',   months: 1  },
-  { label: '6 Months',  months: 6  },
-  { label: '12 Months', months: 12 },
+  { label: '1 Month',   months: 1,  color: 'from-slate-600 to-slate-500' },
+  { label: '6 Months',  months: 6,  color: 'from-violet-600 to-purple-500' },
+  { label: '12 Months', months: 12, color: 'from-cyan-600 to-teal-500' },
 ];
 
 function addMonths(date, months) {
@@ -28,8 +32,144 @@ function isExpired(expires_at) {
 
 function daysLeft(expires_at) {
   if (!expires_at) return null;
-  const diff = Math.ceil((new Date(expires_at) - new Date()) / (1000 * 60 * 60 * 24));
-  return diff;
+  return Math.ceil((new Date(expires_at) - new Date()) / (1000 * 60 * 60 * 24));
+}
+
+function StatusBadge({ activated, expires_at }) {
+  const expired = isExpired(expires_at);
+  const days = daysLeft(expires_at);
+
+  if (activated && !expired) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+        ACTIVE {days !== null && days <= 30 ? `· ${days}d left` : ''}
+      </span>
+    );
+  }
+  if (expired) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-orange-500/15 border border-orange-500/30 text-orange-400">
+        <AlertTriangle className="w-3 h-3" /> EXPIRED
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-500/15 border border-red-500/30 text-red-400">
+      <span className="w-1.5 h-1.5 rounded-full bg-red-400" /> INACTIVE
+    </span>
+  );
+}
+
+function StatCard({ icon: IconComp, label, value, color }) {
+  const Icon = IconComp;
+  return (
+    <div className="bg-white/3 border border-white/8 rounded-2xl p-4 flex items-center gap-4">
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${color}`}>
+        <Icon className="w-5 h-5 text-white" />
+      </div>
+      <div>
+        <p className="text-2xl font-black text-white">{value}</p>
+        <p className="text-xs text-white/40">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+function DeviceCard({ dev, onActivate, onDeactivate, onDelete, isLoading }) {
+  const expired = isExpired(dev.expires_at);
+  const days    = daysLeft(dev.expires_at);
+  const active  = dev.activated && !expired;
+
+  return (
+    <div className={`relative rounded-2xl border overflow-hidden transition-all ${
+      active
+        ? 'bg-gradient-to-br from-emerald-950/40 to-[#080c14] border-emerald-500/20'
+        : expired
+          ? 'bg-gradient-to-br from-orange-950/30 to-[#080c14] border-orange-500/15'
+          : 'bg-gradient-to-br from-[#0d1117] to-[#080c14] border-white/8'
+    }`}>
+      {/* Top color bar */}
+      <div className={`h-0.5 w-full ${active ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : expired ? 'bg-gradient-to-r from-orange-500 to-amber-400' : 'bg-gradient-to-r from-slate-700 to-slate-600'}`} />
+
+      <div className="p-5">
+        {/* Top row: MAC + status */}
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <Monitor className="w-3.5 h-3.5 text-white/30 flex-shrink-0" />
+              <p className="font-mono text-xs text-white/40 truncate">{dev.mac}</p>
+            </div>
+            {dev.username && (
+              <div className="flex items-center gap-1.5 mb-1">
+                <User className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
+                <p className="text-base font-black text-white truncate">{dev.username}</p>
+              </div>
+            )}
+            {dev.label && (
+              <p className="text-xs text-white/40 truncate">{dev.label}</p>
+            )}
+          </div>
+          <StatusBadge activated={dev.activated} expires_at={dev.expires_at} />
+        </div>
+
+        {/* Expiry bar */}
+        {dev.expires_at && (
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] text-white/30 flex items-center gap-1">
+                <Calendar className="w-3 h-3" /> Expires {formatDate(dev.expires_at)}
+              </span>
+              {days !== null && (
+                <span className={`text-[11px] font-bold ${days <= 7 ? 'text-orange-400' : days <= 30 ? 'text-yellow-400' : 'text-white/30'}`}>
+                  {days > 0 ? `${days} days remaining` : 'Expired'}
+                </span>
+              )}
+            </div>
+            {days !== null && (
+              <div className="h-1 bg-white/8 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    days <= 7 ? 'bg-orange-400' : days <= 30 ? 'bg-yellow-400' : 'bg-emerald-400'
+                  }`}
+                  style={{ width: `${Math.max(0, Math.min(100, (days / 365) * 100))}%` }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="flex items-center gap-2">
+          {isLoading ? (
+            <div className="flex-1 flex items-center justify-center py-2">
+              <Loader2 className="w-4 h-4 text-white/40 animate-spin" />
+            </div>
+          ) : active ? (
+            <button
+              onClick={() => onDeactivate(dev.mac, dev.id)}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-xs font-bold hover:bg-red-500/20 transition-colors"
+            >
+              <XCircle className="w-3.5 h-3.5" /> Deactivate
+            </button>
+          ) : (
+            <button
+              onClick={() => onActivate(dev.mac, dev.id, 1)}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs font-bold hover:bg-emerald-500/20 transition-colors"
+            >
+              <CheckCircle className="w-3.5 h-3.5" /> Activate
+            </button>
+          )}
+          <button
+            onClick={() => onDelete(dev.id)}
+            className="w-9 h-9 rounded-xl bg-white/4 hover:bg-red-500/10 text-white/20 hover:text-red-400 flex items-center justify-center transition-colors border border-white/6"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function AdminActivation() {
@@ -41,7 +181,6 @@ export default function AdminActivation() {
   const [adding, setAdding]           = useState(false);
   const [actionId, setActionId]       = useState(null);
 
-  // New device form
   const [newMac,      setNewMac]      = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [newLabel,    setNewLabel]    = useState('');
@@ -51,7 +190,6 @@ export default function AdminActivation() {
     e.preventDefault();
     if (passcode === ADMIN_PASSCODE) {
       setAuthed(true);
-      setPasscodeError('');
     } else {
       setPasscodeError('Incorrect passcode.');
       setPasscode('');
@@ -68,7 +206,7 @@ export default function AdminActivation() {
   useEffect(() => { if (authed) loadDevices(); }, [authed]);
 
   const activate = async (mac, id, months) => {
-    setActionId(id || mac);
+    setActionId(id);
     await base44.functions.invoke('checkActivation', { mac, action: 'activate', adminKey: ADMIN_PASSCODE });
     const expires = addMonths(new Date(), months || 1);
     await base44.entities.DeviceActivation.update(id, { activated: true, activated_at: new Date().toISOString(), expires_at: expires });
@@ -77,7 +215,7 @@ export default function AdminActivation() {
   };
 
   const deactivate = async (mac, id) => {
-    setActionId(id || mac);
+    setActionId(id);
     await base44.functions.invoke('checkActivation', { mac, action: 'deactivate', adminKey: ADMIN_PASSCODE });
     await loadDevices();
     setActionId(null);
@@ -105,206 +243,184 @@ export default function AdminActivation() {
         activated_at: new Date().toISOString(),
       });
     }
-    setNewMac('');
-    setNewUsername('');
-    setNewLabel('');
-    setNewMonths(1);
+    setNewMac(''); setNewUsername(''); setNewLabel(''); setNewMonths(1);
     await loadDevices();
     setAdding(false);
   };
 
+  const activeCount   = devices.filter(d => d.activated && !isExpired(d.expires_at)).length;
+  const expiredCount  = devices.filter(d => isExpired(d.expires_at)).length;
+  const inactiveCount = devices.filter(d => !d.activated && !isExpired(d.expires_at)).length;
+
+  // ── Passcode Gate ─────────────────────────────────────────────
   if (!authed) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6" style={{ background: '#07090f' }}>
-        <form onSubmit={handlePasscode} className="w-full max-w-xs flex flex-col items-center gap-5">
-          <div className="w-12 h-12 rounded-2xl bg-violet-500/10 border border-violet-500/30 flex items-center justify-center">
-            <Lock className="w-6 h-6 text-violet-400" />
+      <div className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden" style={{ background: '#07090f' }}>
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] rounded-full blur-[120px]"
+            style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.2) 0%, transparent 70%)' }} />
+        </div>
+        <form onSubmit={handlePasscode} className="relative w-full max-w-xs flex flex-col items-center gap-5">
+          <div className="w-16 h-16 rounded-2xl bg-violet-500/10 border border-violet-500/30 flex items-center justify-center"
+            style={{ boxShadow: '0 0 40px rgba(139,92,246,0.3)' }}>
+            <Shield className="w-8 h-8 text-violet-400" />
           </div>
           <div className="text-center">
-            <h1 className="text-lg font-black text-white">Admin Access</h1>
+            <h1 className="text-2xl font-black text-white">Admin Panel</h1>
             <p className="text-xs text-white/30 mt-1">Quantum TV · Device Manager</p>
           </div>
           <input
-            type="password"
-            value={passcode}
+            type="password" value={passcode}
             onChange={e => setPasscode(e.target.value)}
             placeholder="Enter passcode"
-            autoFocus
-            required
-            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 outline-none focus:border-violet-500/50 tracking-widest text-center"
+            autoFocus required
+            className="w-full bg-white/4 border border-white/10 rounded-2xl px-5 py-3.5 text-sm text-white placeholder-white/20 outline-none focus:border-violet-500/50 tracking-widest text-center transition-all"
           />
           {passcodeError && <p className="text-xs text-red-400 -mt-2 text-center">{passcodeError}</p>}
           <button type="submit"
-            className="w-full py-3 bg-gradient-to-r from-violet-500 to-cyan-500 text-white font-bold rounded-xl text-sm">
-            Enter
+            className="w-full py-3.5 bg-gradient-to-r from-violet-600 to-cyan-500 text-white font-bold rounded-2xl text-sm hover:opacity-90 transition-opacity"
+            style={{ boxShadow: '0 0 30px rgba(139,92,246,0.4)' }}>
+            Enter Admin Panel
           </button>
         </form>
       </div>
     );
   }
 
+  // ── Main Panel ────────────────────────────────────────────────
   return (
-    <div className="min-h-screen p-6" style={{ background: '#07090f' }}>
-      <div className="max-w-4xl mx-auto space-y-6">
-
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/30 flex items-center justify-center">
-            <Shield className="w-5 h-5 text-violet-400" />
+    <div className="min-h-screen" style={{ background: '#07090f' }}>
+      {/* Top header bar */}
+      <div className="sticky top-0 z-10 border-b border-white/6 bg-[#07090f]/90 backdrop-blur-xl">
+        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-violet-500/15 border border-violet-500/30 flex items-center justify-center">
+            <Tv2 className="w-4 h-4 text-violet-400" />
           </div>
           <div>
-            <h1 className="text-xl font-black text-white">Device Activation Manager</h1>
-            <p className="text-xs text-white/40">Manage customer devices and subscriptions</p>
+            <p className="text-sm font-black text-white leading-none">Quantum TV</p>
+            <p className="text-[11px] text-white/30">Device Activation Manager</p>
           </div>
-          <button onClick={loadDevices} className="ml-auto w-9 h-9 rounded-xl bg-white/5 border border-white/8 flex items-center justify-center text-white/40 hover:text-white transition-colors">
-            <RefreshCw className="w-4 h-4" />
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button onClick={loadDevices}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/8 rounded-lg text-xs text-white/50 hover:text-white transition-colors">
+              <RefreshCw className="w-3.5 h-3.5" /> Refresh
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
+
+        {/* Stats row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <StatCard icon={Monitor}      label="Total Devices"  value={devices.length} color="bg-white/5" />
+          <StatCard icon={Signal}       label="Active"         value={activeCount}    color="bg-emerald-500/15" />
+          <StatCard icon={AlertTriangle} label="Expired"       value={expiredCount}   color="bg-orange-500/15" />
+          <StatCard icon={XCircle}      label="Inactive"       value={inactiveCount}  color="bg-red-500/15" />
         </div>
 
-        {/* Add new device */}
-        <div className="bg-white/4 border border-white/8 rounded-2xl p-5 space-y-3">
-          <p className="text-sm font-bold text-white">Activate New Device</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <input
-              value={newMac}
-              onChange={e => setNewMac(e.target.value)}
-              placeholder="Device ID / MAC (e.g. A1:B2:C3:D4:E5:F6)"
-              className="bg-black/30 border border-white/10 rounded-xl px-4 py-2.5 text-sm font-mono text-cyan-400 placeholder-white/20 outline-none focus:border-violet-500/50"
-            />
-            <input
-              value={newUsername}
-              onChange={e => setNewUsername(e.target.value)}
-              placeholder="Username (your internal ID)"
-              className="bg-black/30 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-violet-300 placeholder-white/20 outline-none focus:border-violet-500/50"
-            />
-            <input
-              value={newLabel}
-              onChange={e => setNewLabel(e.target.value)}
-              placeholder="Customer name (optional)"
-              className="bg-black/30 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-violet-500/50"
-            />
-            <div className="flex gap-2">
-              <select
-                value={newMonths}
-                onChange={e => setNewMonths(Number(e.target.value))}
-                className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-violet-500/50 appearance-none cursor-pointer"
-                style={{ backgroundImage: 'none' }}
-              >
+        {/* Add new device form */}
+        <div className="rounded-2xl border border-violet-500/20 overflow-hidden"
+          style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.08) 0%, rgba(8,12,20,1) 60%)' }}>
+          <div className="px-5 py-4 border-b border-violet-500/15 flex items-center gap-2">
+            <Plus className="w-4 h-4 text-violet-400" />
+            <p className="text-sm font-bold text-white">Activate New Device</p>
+          </div>
+          <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Device ID / MAC</label>
+              <input
+                value={newMac}
+                onChange={e => setNewMac(e.target.value)}
+                placeholder="A1:B2:C3:D4:E5:F6"
+                className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-2.5 text-sm font-mono text-cyan-400 placeholder-white/15 outline-none focus:border-cyan-500/40 transition-all"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Username</label>
+              <input
+                value={newUsername}
+                onChange={e => setNewUsername(e.target.value)}
+                placeholder="customer_handle"
+                className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-violet-300 placeholder-white/15 outline-none focus:border-violet-500/40 transition-all"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Customer Name</label>
+              <input
+                value={newLabel}
+                onChange={e => setNewLabel(e.target.value)}
+                placeholder="Full name (optional)"
+                className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/15 outline-none focus:border-white/20 transition-all"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Subscription Duration</label>
+              <div className="grid grid-cols-3 gap-2">
                 {DURATION_OPTIONS.map(o => (
-                  <option key={o.months} value={o.months} style={{ background: '#0d1117' }}>
+                  <button
+                    key={o.months}
+                    onClick={() => setNewMonths(o.months)}
+                    className={`py-2.5 rounded-xl text-xs font-bold border transition-all ${
+                      newMonths === o.months
+                        ? 'bg-gradient-to-br from-violet-600 to-cyan-600 border-violet-500/50 text-white'
+                        : 'bg-white/4 border-white/8 text-white/40 hover:text-white hover:border-white/20'
+                    }`}
+                  >
                     {o.label}
-                  </option>
+                  </button>
                 ))}
-              </select>
-              <button
-                onClick={addDevice}
-                disabled={adding || !newMac.trim()}
-                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-violet-500 to-cyan-500 text-white font-bold text-sm rounded-xl disabled:opacity-50 transition-all whitespace-nowrap"
-              >
-                {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                Activate
-              </button>
+              </div>
             </div>
           </div>
+          <div className="px-5 pb-5">
+            <button
+              onClick={addDevice}
+              disabled={adding || !newMac.trim()}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-violet-600 to-cyan-600 text-white font-bold text-sm rounded-xl disabled:opacity-40 transition-all hover:opacity-90"
+              style={{ boxShadow: adding || !newMac.trim() ? 'none' : '0 0 30px rgba(139,92,246,0.3)' }}
+            >
+              {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              {adding ? 'Activating…' : `Activate · ${DURATION_OPTIONS.find(o => o.months === newMonths)?.label}`}
+            </button>
+          </div>
         </div>
 
-        {/* Device list */}
-        <div className="bg-white/4 border border-white/8 rounded-2xl overflow-hidden">
-          <div className="px-5 py-3 border-b border-white/6 flex items-center justify-between">
-            <p className="text-sm font-bold text-white">Registered Devices</p>
-            <span className="text-xs text-white/30">{devices.length} total</span>
+        {/* Device grid */}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold text-white">Registered Devices</h2>
+            <span className="text-xs text-white/25">{devices.length} total</span>
           </div>
 
           {loading ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="w-6 h-6 text-violet-400 animate-spin" />
+            <div className="flex items-center justify-center py-24">
+              <Loader2 className="w-7 h-7 text-violet-400 animate-spin" />
             </div>
           ) : devices.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-3 text-white/20">
-              <Monitor className="w-10 h-10" />
-              <p className="text-sm">No devices registered yet</p>
+            <div className="flex flex-col items-center justify-center py-24 gap-3">
+              <div className="w-16 h-16 rounded-2xl bg-white/3 border border-white/8 flex items-center justify-center">
+                <Monitor className="w-8 h-8 text-white/15" />
+              </div>
+              <p className="text-sm text-white/25">No devices registered yet</p>
             </div>
           ) : (
-            <div className="divide-y divide-white/5">
-              {devices.map(dev => {
-                const expired = isExpired(dev.expires_at);
-                const days    = daysLeft(dev.expires_at);
-                return (
-                  <div key={dev.id} className="flex items-center gap-4 px-5 py-4">
-                    {/* Status dot */}
-                    <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                      dev.activated && !expired
-                        ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]'
-                        : expired && dev.activated
-                          ? 'bg-orange-400'
-                          : 'bg-red-500/60'
-                    }`} />
-
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-mono text-sm font-bold text-cyan-400">{dev.mac}</p>
-                        {dev.username && (
-                          <span className="flex items-center gap-1 text-xs text-violet-300 font-semibold bg-violet-500/10 border border-violet-500/20 rounded-full px-2 py-0.5">
-                            <User className="w-3 h-3" /> {dev.username}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        {dev.label && <span className="text-xs text-white/50">{dev.label}</span>}
-                        {dev.label && <span className="text-white/20">·</span>}
-                        <span className={`text-xs font-semibold ${
-                          dev.activated && !expired ? 'text-emerald-400' : expired ? 'text-orange-400' : 'text-red-400'
-                        }`}>
-                          {dev.activated && !expired ? 'Active' : expired ? 'Expired' : 'Inactive'}
-                        </span>
-                        {dev.expires_at && (
-                          <>
-                            <span className="text-white/20">·</span>
-                            <span className={`text-xs flex items-center gap-1 ${days !== null && days <= 7 ? 'text-orange-400' : 'text-white/30'}`}>
-                              <Calendar className="w-3 h-3" />
-                              Expires {formatDate(dev.expires_at)}
-                              {days !== null && days > 0 && <span className="text-white/20">({days}d left)</span>}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {actionId === dev.id ? (
-                        <Loader2 className="w-4 h-4 text-white/40 animate-spin" />
-                      ) : dev.activated && !expired ? (
-                        <button
-                          onClick={() => deactivate(dev.mac, dev.id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg text-xs font-semibold hover:bg-red-500/20 transition-colors"
-                        >
-                          <XCircle className="w-3.5 h-3.5" /> Deactivate
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => activate(dev.mac, dev.id, 1)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg text-xs font-semibold hover:bg-emerald-500/20 transition-colors"
-                        >
-                          <CheckCircle className="w-3.5 h-3.5" /> Activate
-                        </button>
-                      )}
-                      <button
-                        onClick={() => deleteDevice(dev.id)}
-                        className="w-8 h-8 rounded-lg bg-white/4 hover:bg-red-500/10 text-white/20 hover:text-red-400 flex items-center justify-center transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {devices.map(dev => (
+                <DeviceCard
+                  key={dev.id}
+                  dev={dev}
+                  onActivate={activate}
+                  onDeactivate={deactivate}
+                  onDelete={deleteDevice}
+                  isLoading={actionId === dev.id}
+                />
+              ))}
             </div>
           )}
         </div>
 
-        <p className="text-center text-xs text-white/15">
+        <p className="text-center text-xs text-white/10 pb-4">
           Quantum TV Admin · Device Manager
         </p>
       </div>

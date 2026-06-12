@@ -31,6 +31,8 @@ const AuthenticatedApp = () => {
     <Routes>
       {/* Public auth routes */}
       <Route path="/login" element={<Login />} />
+
+      {/* Admin panel — fully public route (password protected internally) */}
       <Route path="/admin/activation" element={<AdminActivation />} />
 
       {/* Protected app routes — unauthenticated users go to /login */}

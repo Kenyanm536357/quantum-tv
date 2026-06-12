@@ -16,9 +16,21 @@ export default function AdminActivation() {
   const [adding, setAdding] = useState(false);
   const [actionId, setActionId] = useState(null);
 
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [needsLogin, setNeedsLogin] = useState(false);
+
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        const isAuth = await base44.auth.isAuthenticated();
+        if (!isAuth) {
+          setNeedsLogin(true);
+          setChecking(false);
+          return;
+        }
         const user = await base44.auth.me();
         if (user && ALLOWED_EMAILS.includes(user.email)) {
           setAuthed(true);
@@ -26,13 +38,33 @@ export default function AdminActivation() {
           setDenied(true);
         }
       } catch {
-        setDenied(true);
+        setNeedsLogin(true);
       } finally {
         setChecking(false);
       }
     };
     checkAuth();
   }, []);
+
+  const handleAdminLogin = async (e) => {
+    e.preventDefault();
+    setLoggingIn(true);
+    setLoginError('');
+    try {
+      await base44.auth.loginViaEmailPassword(loginEmail, loginPassword);
+      // After login, check if email is allowed
+      if (ALLOWED_EMAILS.includes(loginEmail.toLowerCase())) {
+        window.location.reload();
+      } else {
+        setLoginError('This email is not authorized for admin access.');
+        await base44.auth.logout();
+      }
+    } catch {
+      setLoginError('Invalid email or password.');
+    } finally {
+      setLoggingIn(false);
+    }
+  };
 
   const loadDevices = async () => {
     setLoading(true);
@@ -93,6 +125,45 @@ export default function AdminActivation() {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: '#07090f' }}>
         <Loader2 className="w-7 h-7 text-violet-400 animate-spin" />
+      </div>
+    );
+  }
+
+  if (needsLogin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6" style={{ background: '#07090f' }}>
+        <form onSubmit={handleAdminLogin} className="w-full max-w-xs flex flex-col items-center gap-5">
+          <div className="w-12 h-12 rounded-2xl bg-violet-500/10 border border-violet-500/30 flex items-center justify-center">
+            <Lock className="w-6 h-6 text-violet-400" />
+          </div>
+          <div className="text-center">
+            <h1 className="text-lg font-black text-white">Admin Login</h1>
+            <p className="text-xs text-white/30 mt-1">Quantum TV · Device Manager</p>
+          </div>
+          <input
+            type="email"
+            value={loginEmail}
+            onChange={e => setLoginEmail(e.target.value)}
+            placeholder="Admin email"
+            autoFocus
+            required
+            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 outline-none focus:border-violet-500/50"
+          />
+          <input
+            type="password"
+            value={loginPassword}
+            onChange={e => setLoginPassword(e.target.value)}
+            placeholder="Password"
+            required
+            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 outline-none focus:border-violet-500/50"
+          />
+          {loginError && <p className="text-xs text-red-400 -mt-2 text-center">{loginError}</p>}
+          <button type="submit" disabled={loggingIn}
+            className="w-full py-3 bg-gradient-to-r from-violet-500 to-cyan-500 text-white font-bold rounded-xl text-sm disabled:opacity-50 flex items-center justify-center gap-2">
+            {loggingIn && <Loader2 className="w-4 h-4 animate-spin" />}
+            Sign In
+          </button>
+        </form>
       </div>
     );
   }

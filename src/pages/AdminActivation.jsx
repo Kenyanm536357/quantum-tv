@@ -3,7 +3,8 @@ import { base44 } from '@/api/base44Client';
 import {
   Monitor, CheckCircle, XCircle, Plus, Trash2, Loader2,
   RefreshCw, Shield, Lock, User, Calendar, Clock,
-  Tv2, Signal, AlertTriangle, ChevronDown
+  Tv2, Signal, AlertTriangle, ChevronDown,
+  LayoutGrid, List, Columns2
 } from 'lucide-react';
 
 const ADMIN_PASSCODE = 'quantum-admin-2024';
@@ -128,7 +129,7 @@ function DeviceCard({ dev, onActivate, onDeactivate, onRenew, onDelete, isLoadin
                 <Calendar className="w-3 h-3" /> Expires {formatDate(dev.expires_at)}
               </span>
               {days !== null && (
-                <span className={`text-[11px] font-bold ${days <= 7 ? 'text-orange-400' : days <= 30 ? 'text-yellow-400' : 'text-white/30'}`}>
+                <span className={`text-[11px] font-bold ${days <= 0 ? 'text-orange-400' : days <= 7 ? 'text-red-400' : days <= 30 ? 'text-yellow-400' : 'text-emerald-400'}`}>
                   {days > 0 ? `${days}d left` : 'Expired'}
                 </span>
               )}
@@ -137,7 +138,7 @@ function DeviceCard({ dev, onActivate, onDeactivate, onRenew, onDelete, isLoadin
               <div className="h-1 bg-white/8 rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${
-                    days <= 7 ? 'bg-orange-400' : days <= 30 ? 'bg-yellow-400' : 'bg-emerald-400'
+                    days <= 0 ? 'bg-orange-400' : days <= 7 ? 'bg-red-400' : days <= 30 ? 'bg-yellow-400' : 'bg-emerald-400'
                   }`}
                   style={{ width: `${Math.max(0, Math.min(100, (days / 365) * 100))}%` }}
                 />
@@ -166,7 +167,7 @@ function DeviceCard({ dev, onActivate, onDeactivate, onRenew, onDelete, isLoadin
               ))}
             </div>
             <p className="text-[10px] text-white/25">
-              New expiry: <span className="text-cyan-400 font-bold">{formatDate(addMonths(dev.expires_at || new Date(), renewMonths))}</span>
+              New expiry: <span className="text-emerald-400 font-bold">{formatDate(addMonths(dev.expires_at || new Date(), renewMonths))}</span>
             </p>
             <div className="flex gap-2">
               <button

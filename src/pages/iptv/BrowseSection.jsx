@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useStore } from '@/lib/use-store';
 import { setState } from '@/lib/iptv-store';
 import { parseM3U } from '@/lib/m3u-parser';
@@ -161,6 +161,9 @@ function CategoryShelf({ category, streams, credentials, onPlay }) {
   );
 }
 
+// The one source of truth — your quantum-tv repo's M3U index
+const QUANTUM_M3U = 'https://raw.githubusercontent.com/quantumtviptv/quantum-tv/main/index.m3u';
+
 // ─── Main BrowseSection ───────────────────────────────────────────────────────
 export default function BrowseSection() {
   const { credentials } = useStore();
@@ -170,24 +173,11 @@ export default function BrowseSection() {
     if (!raw) return null;
     try { return JSON.parse(raw); } catch { return null; }
   });
-  const [loadingUrl, setLoadingUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [selectedCat, setSelectedCat] = useState(null);
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
-
-  // M3U URLs to offer
-  const M3U_SOURCES = [
-    { label: 'All Channels', url: 'https://iptv-org.github.io/iptv/index.m3u' },
-    { label: 'English', url: 'https://iptv-org.github.io/iptv/languages/eng.m3u' },
-    { label: 'News', url: 'https://iptv-org.github.io/iptv/categories/news.m3u' },
-    { label: 'Sports', url: 'https://iptv-org.github.io/iptv/categories/sports.m3u' },
-    { label: 'Movies', url: 'https://iptv-org.github.io/iptv/categories/movies.m3u' },
-    { label: 'Music', url: 'https://iptv-org.github.io/iptv/categories/music.m3u' },
-    { label: 'Kids', url: 'https://iptv-org.github.io/iptv/categories/kids.m3u' },
-    { label: 'Documentary', url: 'https://iptv-org.github.io/iptv/categories/documentary.m3u' },
-  ];
 
   const loadM3U = useCallback(async (url) => {
     if (!url) return;
@@ -209,6 +199,11 @@ export default function BrowseSection() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  // Auto-load on first visit
+  useEffect(() => {
+    if (!playlist && !loading) loadM3U(QUANTUM_M3U);
   }, []);
 
   const playStream = useCallback((stream) => {
@@ -238,48 +233,26 @@ export default function BrowseSection() {
     return map;
   }, [playlist]);
 
-  // ── No playlist loaded ──
-  if (!playlist && !loading) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center gap-6 px-4">
-        <div className="text-center">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-4">
-            <Tv2 className="w-8 h-8 text-primary" />
-          </div>
-          <h2 className="text-xl font-bold text-white mb-1">Browse Free Channels</h2>
-          <p className="text-sm text-white/40 max-w-xs">
-            Load a free M3U playlist from iptv-org to start browsing thousands of live channels.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full max-w-xl">
-          {M3U_SOURCES.map(src => {
-            const Icon = getCatIcon(src.label);
-            return (
-              <button key={src.label} onClick={() => loadM3U(src.url)}
-                className="flex flex-col items-center gap-2 p-3.5 rounded-xl bg-white/4 border border-white/8 hover:border-primary/40 hover:bg-primary/5 transition-all">
-                <Icon className="w-5 h-5 text-primary" />
-                <span className="text-[11px] font-semibold text-white/70">{src.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {error && (
-          <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-xl px-4 py-3">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
-          </div>
-        )}
-      </div>
-    );
-  }
-
   // ── Loading ──
   if (loading) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-4">
         <Loader2 className="w-8 h-8 text-primary animate-spin" />
-        <p className="text-sm text-white/40">Importing channels…</p>
+        <p className="text-sm text-white/40">Loading channels…</p>
+      </div>
+    );
+  }
+
+  // ── Error ──
+  if (error && !playlist) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-4">
+        <AlertCircle className="w-8 h-8 text-destructive" />
+        <p className="text-sm text-white/50">{error}</p>
+        <button onClick={() => loadM3U(QUANTUM_M3U)}
+          className="flex items-center gap-2 px-4 py-2 bg-primary/10 border border-primary/25 text-primary rounded-xl text-sm font-medium hover:bg-primary/20 transition-all">
+          <RefreshCw className="w-4 h-4" /> Retry
+        </button>
       </div>
     );
   }
@@ -322,11 +295,7 @@ export default function BrowseSection() {
           </button>
         </div>
 
-        {/* Reload */}
-        <button onClick={() => { setPlaylist(null); localStorage.removeItem('browse_m3u'); }}
-          className="p-2 rounded-xl bg-white/5 border border-white/8 text-white/40 hover:text-white hover:border-white/20 transition-colors flex-shrink-0">
-          <RefreshCw className="w-3.5 h-3.5" />
-        </button>
+
       </div>
 
       {/* ── Category pills ── */}

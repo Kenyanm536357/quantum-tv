@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '@/lib/use-store';
 import { saveCredentials, clearCredentials, apiUrl } from '@/lib/iptv-store';
-import { base44 } from '@/api/base44Client';
-import { Settings, Globe, User, Lock, Eye, EyeOff, CheckCircle, XCircle, Loader2, LogOut, RefreshCw, Github, ExternalLink } from 'lucide-react';
+import { Settings, Globe, User, Lock, Eye, EyeOff, CheckCircle, XCircle, Loader2, LogOut, RefreshCw } from 'lucide-react';
 
 export default function SettingsSection() {
   const { credentials } = useStore();
@@ -12,12 +11,6 @@ export default function SettingsSection() {
   const [testResult, setTestResult] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [repoName, setRepoName] = useState('quantum-tv-iptv');
-  const [repoDesc, setRepoDesc] = useState('Quantum TV IPTV Media Player');
-  const [repoPrivate, setRepoPrivate] = useState(false);
-  const [creatingRepo, setCreatingRepo] = useState(false);
-  const [repoResult, setRepoResult] = useState(null);
-
   const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setTestResult(null); setSaved(false); };
 
   const testConnection = async () => {
@@ -37,19 +30,6 @@ export default function SettingsSection() {
       setTestResult({ ok: false, msg: 'Connection failed. Check the URL.' });
     } finally {
       setTesting(false);
-    }
-  };
-
-  const createRepo = async () => {
-    setCreatingRepo(true);
-    setRepoResult(null);
-    try {
-      const res = await base44.functions.invoke('createGithubRepo', {});
-      setRepoResult({ ok: true, url: res.data.url, full_name: res.data.full_name, created: res.data.created });
-    } catch (e) {
-      setRepoResult({ ok: false, msg: e?.response?.data?.error || e.message });
-    } finally {
-      setCreatingRepo(false);
     }
   };
 
@@ -126,71 +106,6 @@ export default function SettingsSection() {
             {saved ? 'Saved!' : 'Save Changes'}
           </button>
         </div>
-      </div>
-
-      {/* GitHub Repository */}
-      <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
-        <p className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <Github className="w-4 h-4 text-primary" /> Create GitHub Repository
-        </p>
-        <p className="text-xs text-muted-foreground">Create a new GitHub repo for your IPTV project.</p>
-
-        <div className="space-y-3">
-          <InputRow label="Repository Name" icon={Github}>
-            <input type="text" value={repoName} onChange={e => setRepoName(e.target.value)}
-              placeholder="quantum-tv-iptv" className="field-input font-mono text-sm" />
-          </InputRow>
-          <InputRow label="Description" icon={Globe}>
-            <input type="text" value={repoDesc} onChange={e => setRepoDesc(e.target.value)}
-              placeholder="My IPTV project" className="field-input text-sm" />
-          </InputRow>
-          <label className="flex items-center gap-2 cursor-pointer text-sm text-muted-foreground select-none">
-            <input type="checkbox" checked={repoPrivate} onChange={e => setRepoPrivate(e.target.checked)}
-              className="accent-primary w-4 h-4 rounded" />
-            Private repository
-          </label>
-        </div>
-
-        {repoResult && (
-          <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm ${repoResult.ok ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-destructive/10 text-destructive border border-destructive/20'}`}>
-            {repoResult.ok
-              ? <><CheckCircle className="w-4 h-4 flex-shrink-0" />
-                  {repoResult.created ? 'Repo created!' : 'Found repo!'}&nbsp;
-                  <a href={repoResult.url} target="_blank" rel="noopener noreferrer" className="underline flex items-center gap-1">
-                    {repoResult.full_name} <ExternalLink className="w-3 h-3" />
-                  </a>
-                </>
-              : <><XCircle className="w-4 h-4 flex-shrink-0" /> {repoResult.msg}</>}
-          </div>
-        )}
-
-        <button onClick={createRepo} disabled={creatingRepo}
-          className="flex items-center gap-2 px-4 py-2 bg-secondary border border-border rounded-xl text-sm font-medium text-foreground hover:bg-secondary/80 transition-all disabled:opacity-50">
-          {creatingRepo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Github className="w-4 h-4" />}
-          {creatingRepo ? 'Connecting…' : 'Find / Create quantum-tv Repo'}
-        </button>
-      </div>
-
-      {/* Free IPTV Sources */}
-      <div className="bg-card border border-border rounded-2xl p-5 space-y-3">
-        <p className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <Globe className="w-4 h-4 text-primary" /> Free IPTV Playlist
-        </p>
-        <p className="text-xs text-muted-foreground">
-          Community-maintained M3U playlists from iptv-org with thousands of live channels.
-        </p>
-        <a
-          href="https://iptv-org.github.io/iptv/index.m3u"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 px-4 py-2.5 bg-primary/10 border border-primary/25 text-primary rounded-xl text-sm font-medium hover:bg-primary/20 transition-all w-full truncate"
-        >
-          <ExternalLink className="w-4 h-4 flex-shrink-0" />
-          <span className="truncate">iptv-org.github.io/iptv/index.m3u</span>
-        </a>
-        <p className="text-[11px] text-muted-foreground">
-          Go to <span className="text-primary font-medium">Browse</span> to load & explore these playlists with a Netflix-style grid interface.
-        </p>
       </div>
 
       {/* Danger zone */}

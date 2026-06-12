@@ -172,18 +172,25 @@ export default function Home() {
     setBooting(false);
   }, []);
 
+  const adminLink = (
+    <a href="/admin/activation" className="fixed top-3 right-4 text-white/40 hover:text-white transition-colors z-[200] select-none text-xl">⚙</a>
+  );
+
   if (booting) {
     return (
-      <div className="min-h-screen bg-[#07090f] flex items-center justify-center">
-        <div className="w-9 h-9 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
-      </div>
+      <>
+        <div className="min-h-screen bg-[#07090f] flex items-center justify-center">
+          <div className="w-9 h-9 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+        </div>
+        {adminLink}
+      </>
     );
   }
 
   return (
     <>
       <AppShell />
-      <a href="/admin/activation" className="fixed top-3 right-4 text-white/40 hover:text-white transition-colors z-[200] select-none text-xl">⚙</a>
+      {adminLink}
     </>
   );
 }

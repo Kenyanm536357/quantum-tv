@@ -119,7 +119,7 @@ function AppShell() {
               <Route path="/history"   element={<HistorySection />} />
               <Route path="/reminders" element={<RemindersSection />} />
               <Route path="/settings"  element={<SettingsSection />} />
-              <Route path="*"          element={<Navigate to="/live" replace />} />
+              <Route path="*"          element={<Navigate to="/epg" replace />} />
             </Routes>
           </motion.div>
         </AnimatePresence>
@@ -128,7 +128,7 @@ function AppShell() {
       {/* Reminder alert */}
       <ReminderChecker credentials={credentials} />
 
-      {/* Video player overlay — suppressed on EPG page (MiniPlayer handles it there) */}
+      {/* Video player overlay — suppressed on EPG page (inline preview handles it there) */}
       {player && sectionKey !== 'epg' && (
         <VideoPlayer src={player.src} title={player.title} type={player.type} />
       )}

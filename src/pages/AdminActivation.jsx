@@ -71,6 +71,16 @@ function StatusBadge({ activated, expires_at, locked }) {
   );
 }
 
+function LegendItem({ color, label, count, pulse }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${color} ${pulse ? 'animate-pulse' : ''}`} />
+      <span className="text-xs text-white/40">{label}</span>
+      <span className="text-xs font-bold text-white/70">{count}</span>
+    </div>
+  );
+}
+
 function StatCard({ icon: IconComp, label, value, color }) {
   const Icon = IconComp;
   return (
@@ -420,6 +430,73 @@ export default function AdminActivation() {
             <StatCard icon={AlertTriangle} label="Expired"       value={expiredCount}   color="bg-orange-500/15" />
             <StatCard icon={XCircle}       label="Inactive"      value={inactiveCount}  color="bg-red-500/15" />
           </div>
+
+          {/* Status Summary Dashboard */}
+          {devices.length > 0 && !loading && (() => {
+            const expiringSoon  = devices.filter(d => { const dl = daysLeft(d.expires_at); return d.activated && dl !== null && dl > 0 && dl <= 7; });
+            const expiringMonth = devices.filter(d => { const dl = daysLeft(d.expires_at); return d.activated && dl !== null && dl > 7 && dl <= 30; });
+            const healthy       = devices.filter(d => { const dl = daysLeft(d.expires_at); return d.activated && dl !== null && dl > 30; });
+            const locked        = devices.filter(d => d.locked);
+            const totalActive   = devices.filter(d => d.activated && !isExpired(d.expires_at)).length;
+
+            return (
+              <div className="rounded-2xl border border-white/8 overflow-hidden" style={{ background: '#0d1117' }}>
+                {/* Header */}
+                <div className="px-5 py-3.5 border-b border-white/6 flex items-center justify-between">
+                  <p className="text-sm font-bold text-white">Status Overview</p>
+                  <span className="text-xs text-white/30">{totalActive} active of {devices.length} total</span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="px-5 pt-4">
+                  <div className="flex h-2.5 rounded-full overflow-hidden gap-px">
+                    {healthy.length > 0 && (
+                      <div className="bg-emerald-500 transition-all" style={{ width: `${(healthy.length / devices.length) * 100}%` }} title={`${healthy.length} healthy`} />
+                    )}
+                    {expiringMonth.length > 0 && (
+                      <div className="bg-yellow-400 transition-all" style={{ width: `${(expiringMonth.length / devices.length) * 100}%` }} title={`${expiringMonth.length} expiring soon`} />
+                    )}
+                    {expiringSoon.length > 0 && (
+                      <div className="bg-red-500 animate-pulse transition-all" style={{ width: `${(expiringSoon.length / devices.length) * 100}%` }} title={`${expiringSoon.length} critical`} />
+                    )}
+                    {expiredCount > 0 && (
+                      <div className="bg-orange-500/60 transition-all" style={{ width: `${(expiredCount / devices.length) * 100}%` }} />
+                    )}
+                    {inactiveCount > 0 && (
+                      <div className="bg-white/10 transition-all" style={{ width: `${(inactiveCount / devices.length) * 100}%` }} />
+                    )}
+                  </div>
+                </div>
+
+                {/* Legend */}
+                <div className="px-5 py-4 flex flex-wrap gap-4">
+                  <LegendItem color="bg-emerald-500" label="Healthy" count={healthy.length} />
+                  <LegendItem color="bg-yellow-400" label="Expiring ≤30d" count={expiringMonth.length} />
+                  <LegendItem color="bg-red-500" label="Critical ≤7d" count={expiringSoon.length} pulse />
+                  <LegendItem color="bg-orange-500/70" label="Expired" count={expiredCount} />
+                  <LegendItem color="bg-white/15" label="Inactive" count={inactiveCount} />
+                  {locked.length > 0 && <LegendItem color="bg-yellow-500" label="Locked" count={locked.length} />}
+                </div>
+
+                {/* Critical alerts */}
+                {expiringSoon.length > 0 && (
+                  <div className="mx-5 mb-4 p-3 rounded-xl bg-red-500/8 border border-red-500/20">
+                    <p className="text-xs font-bold text-red-400 mb-2 flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5" /> {expiringSoon.length} device{expiringSoon.length > 1 ? 's' : ''} expiring within 7 days
+                    </p>
+                    <div className="space-y-1">
+                      {expiringSoon.map(d => (
+                        <div key={d.id} className="flex items-center justify-between">
+                          <span className="text-xs text-white/60">{d.username || d.mac}</span>
+                          <span className="text-xs font-bold text-red-400">{daysLeft(d.expires_at)}d left</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Device list header */}
           <div className="flex items-center justify-between gap-3 flex-wrap">

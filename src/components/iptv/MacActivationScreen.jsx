@@ -111,7 +111,7 @@ export default function MacActivationScreen({ onActivated }) {
             <div className="w-20 h-20 rounded-[1.5rem] overflow-hidden border-2 border-violet-500/50"
               style={{ boxShadow: '0 0 40px rgba(167,139,250,0.5), 0 0 80px rgba(139,92,246,0.2)' }}>
               <img
-                src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/3349a49f0_QUANTUMTVLOGOver2.png"
+                src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/7cb772c8e_QUANTUMTVLOGOver2.png"
                 alt="Quantum TV"
                 className="w-full h-full object-cover scale-110"
               />

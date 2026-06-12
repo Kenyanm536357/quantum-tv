@@ -5,12 +5,18 @@ import { Settings, Globe, User, Lock, Eye, EyeOff, CheckCircle, XCircle, Loader2
 
 export default function SettingsSection() {
   const { credentials } = useStore();
-  const [form, setForm] = useState({ baseUrl: credentials?.baseUrl || '', username: credentials?.username || '', password: credentials?.password || '', label: credentials?.label || '' });
+  const [form, setForm] = useState({
+    baseUrl: credentials?.baseUrl || '',
+    username: credentials?.username || '',
+    password: credentials?.password || '',
+    label: credentials?.label || ''
+  });
   const [showPwd, setShowPwd] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
   const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setTestResult(null); setSaved(false); };
 
   const testConnection = async () => {
@@ -51,7 +57,7 @@ export default function SettingsSection() {
         </p>
       </div>
 
-      {/* Connection info */}
+      {/* Server Configuration */}
       <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
         <p className="text-sm font-semibold text-foreground">Server Configuration</p>
 
@@ -85,7 +91,6 @@ export default function SettingsSection() {
           </InputRow>
         </div>
 
-        {/* Test result */}
         {testResult && (
           <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm ${testResult.ok ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-destructive/10 text-destructive border border-destructive/20'}`}>
             {testResult.ok ? <CheckCircle className="w-4 h-4 flex-shrink-0" /> : <XCircle className="w-4 h-4 flex-shrink-0" />}
@@ -93,7 +98,6 @@ export default function SettingsSection() {
           </div>
         )}
 
-        {/* Actions */}
         <div className="flex gap-2 pt-1">
           <button onClick={testConnection} disabled={testing || !form.baseUrl}
             className="flex items-center gap-2 px-4 py-2 bg-secondary border border-border rounded-xl text-sm font-medium text-foreground hover:bg-secondary/80 transition-all disabled:opacity-50">
@@ -111,7 +115,7 @@ export default function SettingsSection() {
       {/* Danger zone */}
       <div className="bg-card border border-destructive/20 rounded-2xl p-5">
         <p className="text-sm font-semibold text-foreground mb-1">Danger Zone</p>
-        <p className="text-xs text-muted-foreground mb-4">Remove all credentials and return to login screen.</p>
+        <p className="text-xs text-muted-foreground mb-4">Remove all credentials and return to the setup screen.</p>
         <button onClick={clearCredentials}
           className="flex items-center gap-2 px-4 py-2 bg-destructive/10 border border-destructive/20 text-destructive rounded-xl text-sm font-medium hover:bg-destructive/20 transition-all">
           <LogOut className="w-4 h-4" /> Disconnect & Clear

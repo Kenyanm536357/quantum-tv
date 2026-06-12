@@ -3,7 +3,7 @@ import { parseM3U } from './m3u-parser';
 import { setState } from './iptv-store';
 import { cleanName } from './clean-name';
 
-const QUANTUM_M3U_URL = 'https://raw.githubusercontent.com/kenyanmcgarr/quantum-tv/main/index.m3u';
+const QUANTUM_M3U_URL = 'http://thisiptv.com:8080/get.php?username=9998220347&password=2576958008&type=m3u_plus';
 const CACHE_KEY = 'qtv_browse_cache_v2';
 const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 

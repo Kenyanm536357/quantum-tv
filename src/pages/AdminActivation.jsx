@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Monitor, CheckCircle, XCircle, Plus, Trash2, Loader2, RefreshCw, Shield } from 'lucide-react';
+import { Monitor, CheckCircle, XCircle, Plus, Trash2, Loader2, RefreshCw, Shield, Lock } from 'lucide-react';
 
 const ADMIN_KEY = 'quantum-admin-2024'; // must match backend env var QUANTUM_ADMIN_KEY
+const PANEL_PASSWORD = 'quantumtv-admin'; // change this to your private password
 
 export default function AdminActivation() {
+  const [authed, setAuthed] = useState(() => sessionStorage.getItem('qtv-admin') === '1');
+  const [pwInput, setPwInput] = useState('');
+  const [pwError, setPwError] = useState(false);
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newMac, setNewMac] = useState('');
@@ -19,7 +23,46 @@ export default function AdminActivation() {
     setLoading(false);
   };
 
-  useEffect(() => { loadDevices(); }, []);
+  useEffect(() => { if (authed) loadDevices(); }, [authed]);
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (pwInput === PANEL_PASSWORD) {
+      sessionStorage.setItem('qtv-admin', '1');
+      setAuthed(true);
+    } else {
+      setPwError(true);
+      setTimeout(() => setPwError(false), 2000);
+    }
+  };
+
+  if (!authed) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6" style={{ background: '#07090f' }}>
+        <form onSubmit={handleLogin} className="w-full max-w-xs flex flex-col items-center gap-5">
+          <div className="w-12 h-12 rounded-2xl bg-violet-500/10 border border-violet-500/30 flex items-center justify-center">
+            <Lock className="w-6 h-6 text-violet-400" />
+          </div>
+          <div className="text-center">
+            <h1 className="text-lg font-black text-white">Admin Access</h1>
+            <p className="text-xs text-white/30 mt-1">Quantum TV · Device Manager</p>
+          </div>
+          <input
+            type="password"
+            value={pwInput}
+            onChange={e => setPwInput(e.target.value)}
+            placeholder="Enter admin password"
+            autoFocus
+            className={`w-full bg-black/40 border rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 outline-none transition-colors ${pwError ? 'border-red-500/60' : 'border-white/10 focus:border-violet-500/50'}`}
+          />
+          {pwError && <p className="text-xs text-red-400 -mt-2">Incorrect password</p>}
+          <button type="submit" className="w-full py-3 bg-gradient-to-r from-violet-500 to-cyan-500 text-white font-bold rounded-xl text-sm">
+            Sign In
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   const activate = async (mac, id) => {
     setActionId(id || mac);

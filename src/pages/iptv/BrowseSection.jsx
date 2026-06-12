@@ -201,20 +201,91 @@ function HeroBanner({ stream, onPlay }) {
 }
 
 // ── Loading screen ────────────────────────────────────────────────────────────
-function LoadingScreen() {
+function LoadingScreen({ channelCount, categoryCount, phase }) {
+  const [displayCount, setDisplayCount] = useState(0);
+  const [displayCats, setDisplayCats] = useState(0);
+
+  // Animate the numbers counting up
+  useEffect(() => {
+    if (channelCount === 0) return;
+    const target = channelCount;
+    const start = displayCount;
+    const steps = 40;
+    const increment = Math.max(1, Math.ceil((target - start) / steps));
+    let current = start;
+    const timer = setInterval(() => {
+      current = Math.min(current + increment, target);
+      setDisplayCount(current);
+      if (current >= target) clearInterval(timer);
+    }, 30);
+    return () => clearInterval(timer);
+  }, [channelCount]);
+
+  useEffect(() => {
+    if (categoryCount === 0) return;
+    const target = categoryCount;
+    let current = displayCats;
+    const timer = setInterval(() => {
+      current = Math.min(current + 1, target);
+      setDisplayCats(current);
+      if (current >= target) clearInterval(timer);
+    }, 40);
+    return () => clearInterval(timer);
+  }, [categoryCount]);
+
+  const phases = [
+    { label: 'Connecting to server…', icon: '📡' },
+    { label: 'Parsing playlist…',     icon: '📋' },
+    { label: 'Loading channels…',     icon: '📺' },
+  ];
+  const p = phases[Math.min(phase, phases.length - 1)];
+
   return (
-    <div className="h-full flex flex-col items-center justify-center gap-4">
+    <div className="h-full flex flex-col items-center justify-center gap-8 px-6">
+      {/* Logo pulse */}
       <div className="relative">
-        <div className="w-16 h-16 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
-          <Tv2 className="w-8 h-8 text-cyan-400" />
+        <div className="w-20 h-20 rounded-2xl bg-cyan-500/10 border border-cyan-500/25 flex items-center justify-center shadow-xl">
+          <Tv2 className="w-10 h-10 text-cyan-400" />
         </div>
-        <div className="absolute -inset-1 rounded-2xl border-2 border-cyan-500/30 animate-ping" />
+        <div className="absolute -inset-2 rounded-2xl border border-cyan-500/20 animate-ping" style={{ animationDuration: '1.5s' }} />
+        <div className="absolute -inset-4 rounded-3xl border border-cyan-500/8 animate-ping" style={{ animationDuration: '2s', animationDelay: '0.3s' }} />
       </div>
+
+      {/* Title */}
       <div className="text-center">
-        <p className="text-white/60 text-sm font-medium">Loading Quantum TV</p>
-        <p className="text-white/25 text-xs mt-1">Fetching your channels…</p>
+        <h1 className="text-2xl font-black text-white tracking-tight mb-1">
+          Quantum<span className="text-cyan-400">TV</span>
+        </h1>
+        <p className="text-white/40 text-sm">{p.icon} {p.label}</p>
       </div>
-      <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
+
+      {/* Channel / category counters */}
+      <div className="flex gap-8">
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-4xl font-black text-cyan-400 tabular-nums leading-none" style={{ textShadow: '0 0 30px rgba(34,211,238,0.4)' }}>
+            {displayCats > 0 ? displayCats : <Loader2 className="w-8 h-8 animate-spin" />}
+          </span>
+          <span className="text-[11px] text-white/35 font-medium uppercase tracking-widest">Categories</span>
+        </div>
+        <div className="w-px bg-white/8 self-stretch" />
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-4xl font-black text-white tabular-nums leading-none">
+            {displayCount > 0 ? displayCount.toLocaleString() : <Loader2 className="w-8 h-8 animate-spin text-white/30" />}
+          </span>
+          <span className="text-[11px] text-white/35 font-medium uppercase tracking-widest">Channels</span>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="w-full max-w-xs">
+        <div className="h-1 bg-white/6 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-cyan-500 to-violet-500 rounded-full transition-all duration-300"
+            style={{ width: phase === 0 ? '15%' : phase === 1 ? '55%' : channelCount > 0 ? '90%' : '70%' }}
+          />
+        </div>
+        <p className="text-center text-[10px] text-white/20 mt-2">Please wait…</p>
+      </div>
     </div>
   );
 }
@@ -281,6 +352,9 @@ export default function BrowseSection() {
   const [selectedCat, setSelectedCat] = useState(null);
   const [globalSearch, setGlobalSearch] = useState('');
   const [viewMode, setViewMode] = useState('grid');
+  const [loadPhase, setLoadPhase] = useState(0);
+  const [loadChannelCount, setLoadChannelCount] = useState(0);
+  const [loadCatCount, setLoadCatCount] = useState(0);
 
   // Load from cache or fetch
   useEffect(() => {
@@ -288,7 +362,13 @@ export default function BrowseSection() {
     if (cached) {
       try {
         const { data, ts } = JSON.parse(cached);
-        if (Date.now() - ts < CACHE_TTL) { setPlaylist(data); setLoading(false); return; }
+        if (Date.now() - ts < CACHE_TTL) {
+          setLoadChannelCount(data.streams.length);
+          setLoadCatCount(data.categories.length);
+          setPlaylist(data);
+          setLoading(false);
+          return;
+        }
       } catch (_) {}
     }
     fetchPlaylist();
@@ -297,12 +377,23 @@ export default function BrowseSection() {
   const fetchPlaylist = async () => {
     setLoading(true);
     setError(null);
+    setLoadPhase(0);
+    setLoadChannelCount(0);
+    setLoadCatCount(0);
     try {
+      setLoadPhase(0); // connecting
       const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(QUANTUM_M3U_URL)}`;
       const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(30000) });
       const json = await res.json();
       if (!json.contents?.includes('#EXTINF')) throw new Error('Invalid playlist data');
+      setLoadPhase(1); // parsing
+      await new Promise(r => setTimeout(r, 200)); // let UI update
       const parsed = parseM3U(json.contents);
+      setLoadCatCount(parsed.categories.length);
+      setLoadPhase(2); // loading channels
+      await new Promise(r => setTimeout(r, 150));
+      setLoadChannelCount(parsed.streams.length);
+      await new Promise(r => setTimeout(r, 600)); // show final count briefly
       localStorage.setItem(CACHE_KEY, JSON.stringify({ data: parsed, ts: Date.now() }));
       setPlaylist(parsed);
     } catch (e) {
@@ -335,7 +426,7 @@ export default function BrowseSection() {
     return playlist.streams.filter(s => cleanName(s.name).toLowerCase().includes(q)).slice(0, 100);
   }, [globalSearch, playlist]);
 
-  if (loading) return <LoadingScreen />;
+  if (loading) return <LoadingScreen channelCount={loadChannelCount} categoryCount={loadCatCount} phase={loadPhase} />;
 
   if (error) return (
     <div className="h-full flex flex-col items-center justify-center gap-4 px-6">

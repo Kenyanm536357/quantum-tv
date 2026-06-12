@@ -417,93 +417,19 @@ export default function AdminActivation() {
         </div>
       </div>
 
-      {/* Two-column layout */}
+      {/* Two-column layout: main content left, sidebar right */}
       <div className="flex flex-1 min-h-0">
 
-        {/* ── Left sidebar: Activate New Device ── */}
-        <div className="w-72 flex-shrink-0 border-r border-white/6 overflow-y-auto p-5 space-y-5"
-          style={{ background: 'linear-gradient(180deg, rgba(139,92,246,0.05) 0%, transparent 40%)' }}>
-
-          {/* Stats */}
-          <div className="grid grid-cols-2 gap-2">
-            <StatCard icon={Monitor}       label="Total"    value={devices.length} color="bg-white/5" />
-            <StatCard icon={Signal}        label="Active"   value={activeCount}    color="bg-emerald-500/15" />
-            <StatCard icon={AlertTriangle} label="Expired"  value={expiredCount}   color="bg-orange-500/15" />
-            <StatCard icon={XCircle}       label="Inactive" value={inactiveCount}  color="bg-red-500/15" />
-          </div>
-
-          {/* Divider */}
-          <div className="border-t border-white/6" />
-
-          {/* Add new device form */}
-          <div>
-            <div className="flex items-center gap-2 mb-4">
-              <Plus className="w-4 h-4 text-violet-400" />
-              <p className="text-sm font-bold text-white">Activate New Device</p>
-            </div>
-
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Device ID / MAC</label>
-                <input
-                  value={newMac}
-                  onChange={e => setNewMac(e.target.value)}
-                  placeholder="A1:B2:C3:D4:E5:F6"
-                  className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono text-cyan-400 placeholder-white/15 outline-none focus:border-cyan-500/40 transition-all"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Username</label>
-                <input
-                  value={newUsername}
-                  onChange={e => setNewUsername(e.target.value)}
-                  placeholder="customer_handle"
-                  className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-violet-300 placeholder-white/15 outline-none focus:border-violet-500/40 transition-all"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Customer Name</label>
-                <input
-                  value={newLabel}
-                  onChange={e => setNewLabel(e.target.value)}
-                  placeholder="Full name (optional)"
-                  className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder-white/15 outline-none focus:border-white/20 transition-all"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Duration</label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {DURATION_OPTIONS.map(o => (
-                    <button
-                      key={o.months}
-                      onClick={() => setNewMonths(o.months)}
-                      className={`py-2 rounded-xl text-xs font-bold border transition-all ${
-                        newMonths === o.months
-                          ? 'bg-gradient-to-br from-violet-600 to-cyan-600 border-violet-500/50 text-white'
-                          : 'bg-white/4 border-white/8 text-white/40 hover:text-white hover:border-white/20'
-                      }`}
-                    >
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                onClick={addDevice}
-                disabled={adding || !newMac.trim()}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-violet-600 to-cyan-600 text-white font-bold text-sm rounded-xl disabled:opacity-40 transition-all hover:opacity-90"
-                style={{ boxShadow: adding || !newMac.trim() ? 'none' : '0 0 24px rgba(139,92,246,0.35)' }}
-              >
-                {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                {adding ? 'Activating…' : `Activate · ${DURATION_OPTIONS.find(o => o.months === newMonths)?.label}`}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Main content: Device list ── */}
+        {/* ── Main content: Device list (full width) ── */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+
+          {/* Stats banner */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatCard icon={Monitor}       label="Total Devices" value={devices.length} color="bg-white/5" />
+            <StatCard icon={Signal}        label="Active"        value={activeCount}    color="bg-emerald-500/15" />
+            <StatCard icon={AlertTriangle} label="Expired"       value={expiredCount}   color="bg-orange-500/15" />
+            <StatCard icon={XCircle}       label="Inactive"      value={inactiveCount}  color="bg-red-500/15" />
+          </div>
 
           {/* Device grid header */}
           <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -595,6 +521,74 @@ export default function AdminActivation() {
           <p className="text-center text-xs text-white/10 pb-4">
             Quantum TV Admin · Device Manager
           </p>
+        </div>
+
+        {/* ── Right sidebar: Activate New Device ── */}
+        <div className="w-72 flex-shrink-0 border-l border-white/6 overflow-y-auto p-5 space-y-5"
+          style={{ background: 'linear-gradient(180deg, rgba(139,92,246,0.06) 0%, transparent 50%)' }}>
+
+          <div className="flex items-center gap-2">
+            <Plus className="w-4 h-4 text-violet-400" />
+            <p className="text-sm font-bold text-white">Activate New Device</p>
+          </div>
+
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Device ID / MAC</label>
+              <input
+                value={newMac}
+                onChange={e => setNewMac(e.target.value)}
+                placeholder="A1:B2:C3:D4:E5:F6"
+                className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono text-cyan-400 placeholder-white/15 outline-none focus:border-cyan-500/40 transition-all"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Username</label>
+              <input
+                value={newUsername}
+                onChange={e => setNewUsername(e.target.value)}
+                placeholder="customer_handle"
+                className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-violet-300 placeholder-white/15 outline-none focus:border-violet-500/40 transition-all"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Customer Name</label>
+              <input
+                value={newLabel}
+                onChange={e => setNewLabel(e.target.value)}
+                placeholder="Full name (optional)"
+                className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder-white/15 outline-none focus:border-white/20 transition-all"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Duration</label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {DURATION_OPTIONS.map(o => (
+                  <button
+                    key={o.months}
+                    onClick={() => setNewMonths(o.months)}
+                    className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                      newMonths === o.months
+                        ? 'bg-gradient-to-br from-violet-600 to-cyan-600 border-violet-500/50 text-white'
+                        : 'bg-white/4 border-white/8 text-white/40 hover:text-white hover:border-white/20'
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={addDevice}
+              disabled={adding || !newMac.trim()}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-violet-600 to-cyan-600 text-white font-bold text-sm rounded-xl disabled:opacity-40 transition-all hover:opacity-90"
+              style={{ boxShadow: adding || !newMac.trim() ? 'none' : '0 0 24px rgba(139,92,246,0.35)' }}
+            >
+              {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              {adding ? 'Activating…' : `Activate · ${DURATION_OPTIONS.find(o => o.months === newMonths)?.label}`}
+            </button>
+          </div>
         </div>
       </div>
     </div>

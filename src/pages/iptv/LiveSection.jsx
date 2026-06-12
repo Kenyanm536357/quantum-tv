@@ -1,145 +1,244 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useStore } from '@/lib/use-store';
-import { usePlaylist } from '@/lib/use-playlist';
-import { setState } from '@/lib/iptv-store';
-import CategoryGrid from '@/components/iptv/CategoryGrid';
-import MediaCard from '@/components/iptv/MediaCard';
-import SearchInput from '@/components/iptv/SearchInput';
-import SkeletonGrid from '@/components/iptv/SkeletonGrid';
-import { Radio, ChevronLeft, ArrowUpDown } from 'lucide-react';
+import React, { useState, useMemo, useRef } from 'react';
+import { useM3UPlaylist, playM3UStream } from '@/lib/use-m3u-playlist.js';
+import { cleanName } from '@/lib/clean-name';
+import {
+  Radio, ChevronLeft, ChevronRight, Search, X, Play, Loader2,
+  Globe, Zap, Film, Music, Tv2, Grid3X3, List
+} from 'lucide-react';
 
-const SORT_OPTIONS = [
-  { value: 'az',    label: 'A → Z' },
-  { value: 'za',    label: 'Z → A' },
-  { value: 'newest', label: 'Newest' },
-  { value: 'oldest', label: 'Oldest' },
-];
-
-function sortItems(items, sort, nameKey = 'name', dateKey = 'added') {
-  const arr = [...items];
-  if (sort === 'az') return arr.sort((a, b) => (a[nameKey] || '').localeCompare(b[nameKey] || ''));
-  if (sort === 'za') return arr.sort((a, b) => (b[nameKey] || '').localeCompare(a[nameKey] || ''));
-  if (sort === 'newest') return arr.sort((a, b) => (Number(b[dateKey]) || 0) - (Number(a[dateKey]) || 0));
-  if (sort === 'oldest') return arr.sort((a, b) => (Number(a[dateKey]) || 0) - (Number(b[dateKey]) || 0));
-  return arr;
+const CAT_ICONS = { news: Globe, sports: Zap, movies: Film, music: Music, kids: Tv2, entertainment: Tv2 };
+function getCatIcon(name = '') {
+  const l = name.toLowerCase();
+  for (const [k, I] of Object.entries(CAT_ICONS)) if (l.includes(k)) return I;
+  return Radio;
 }
 
-function SortSelect({ value, onChange }) {
+const GRADIENTS = [
+  ['#1a0533','#6d28d9'], ['#0c1a2e','#0ea5e9'], ['#1a0a00','#ea580c'],
+  ['#0a1a0a','#16a34a'], ['#1a001a','#db2777'], ['#1a1000','#ca8a04'],
+];
+function gradientFor(name = '') {
+  let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return GRADIENTS[h % GRADIENTS.length];
+}
+
+function ChannelCard({ stream, onPlay }) {
+  const name = cleanName(stream.name);
+  const [g1, g2] = gradientFor(name);
+  const Icon = getCatIcon(stream.category_name || name);
+  const [imgOk, setImgOk] = useState(!!stream.stream_icon);
+
   return (
-    <div className="relative">
-      <ArrowUpDown className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-      <select
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        className="pl-8 pr-3 py-2 text-xs rounded-lg border border-border bg-card text-foreground appearance-none cursor-pointer focus:outline-none focus:border-primary/50"
-      >
-        {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
+    <div onClick={() => onPlay(stream)}
+      className="group relative rounded-xl overflow-hidden cursor-pointer border border-white/6 hover:border-white/25 transition-all duration-200 hover:scale-[1.03] hover:shadow-xl"
+      style={{ background: '#0d1220' }}>
+      <div className="relative aspect-video overflow-hidden"
+        style={{ background: `linear-gradient(135deg, ${g1}cc, ${g2}cc)` }}>
+        {imgOk && stream.stream_icon
+          ? <img src={stream.stream_icon} alt={name}
+              className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+              onError={() => setImgOk(false)} />
+          : <div className="w-full h-full flex items-center justify-center">
+              <Icon className="w-10 h-10 text-white/15" />
+            </div>
+        }
+        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+          <div className="w-11 h-11 rounded-full bg-white/90 flex items-center justify-center">
+            <Play className="w-5 h-5 text-black fill-black ml-0.5" />
+          </div>
+        </div>
+        <div className="absolute top-2 left-2 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm">
+          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+          <span className="text-[9px] font-bold text-white tracking-wider">LIVE</span>
+        </div>
+      </div>
+      <div className="px-2.5 py-2">
+        <p className="text-[11px] font-semibold text-white/75 truncate">{name}</p>
+      </div>
     </div>
   );
 }
 
-export default function LiveSection() {
-  const { credentials } = useStore();
-  const { loading, error, fetchAction, resolveStreamUrl } = usePlaylist(credentials);
-
-  const [categories, setCategories] = useState([]);
-  const [channels, setChannels] = useState([]);
-  const [selectedCat, setSelectedCat] = useState(null);
-  const [search, setSearch] = useState('');
-  const [sort, setSort] = useState('az');
-  const [loadingChannels, setLoadingChannels] = useState(false);
-
-  useEffect(() => {
-    fetchAction('get_live_categories').then(data => { if (data) setCategories(data); });
-  }, [fetchAction]);
-
-  const selectCategory = async (cat) => {
-    setSelectedCat(cat);
-    setSearch('');
-    setLoadingChannels(true);
-    const data = await fetchAction('get_live_streams', { category_id: cat.category_id });
-    if (data) setChannels(data);
-    setLoadingChannels(false);
-  };
-
-  const back = () => { setSelectedCat(null); setChannels([]); setSearch(''); };
-
-  const displayedCats = useMemo(() => {
-    const filtered = search
-      ? categories.filter(c => c.category_name?.toLowerCase().includes(search.toLowerCase()))
-      : categories;
-    return sortItems(filtered, sort, 'category_name');
-  }, [categories, search, sort]);
-
-  const displayedChannels = useMemo(() => {
-    const filtered = search
-      ? channels.filter(c => c.name?.toLowerCase().includes(search.toLowerCase()))
-      : channels;
-    return sortItems(filtered, sort, 'name', 'added');
-  }, [channels, search, sort]);
+function Shelf({ title, icon: Icon, color = 'text-cyan-400', streams, onPlay, onViewAll }) {
+  const ref = useRef(null);
+  const scroll = (dir) => ref.current?.scrollBy({ left: dir * 210, behavior: 'smooth' });
+  if (!streams?.length) return null;
 
   return (
-    <div className="flex flex-col gap-5 h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
-          {selectedCat && (
-            <button onClick={back}
-              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-              <ChevronLeft className="w-4 h-4" /> Back
-            </button>
-          )}
+    <section className="mb-8">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          {Icon && <Icon className={`w-4 h-4 ${color}`} />}
+          <h3 className="text-sm font-black text-white">{title}</h3>
+          <span className="text-[10px] text-white/20">{streams.length}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {onViewAll && <button onClick={onViewAll} className="text-[11px] font-bold text-red-400 hover:text-red-300 mr-2 transition-colors">See all →</button>}
+          <button onClick={() => scroll(-1)} className="w-6 h-6 rounded-lg bg-white/6 hover:bg-white/12 flex items-center justify-center text-white/40 hover:text-white transition-colors"><ChevronLeft className="w-3.5 h-3.5" /></button>
+          <button onClick={() => scroll(1)} className="w-6 h-6 rounded-lg bg-white/6 hover:bg-white/12 flex items-center justify-center text-white/40 hover:text-white transition-colors"><ChevronRight className="w-3.5 h-3.5" /></button>
+        </div>
+      </div>
+      <div ref={ref} className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: 'none' }}>
+        {streams.slice(0, 40).map(s => (
+          <div key={s.stream_id || s.url} style={{ width: 190, flexShrink: 0 }}>
+            <ChannelCard stream={s} onPlay={onPlay} />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export default function LiveSection() {
+  const { playlist, loading, error, refresh } = useM3UPlaylist();
+  const [selectedCat, setSelectedCat] = useState(null);
+  const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState('grid');
+
+  const catStreamMap = useMemo(() => {
+    if (!playlist) return {};
+    const map = {};
+    for (const s of playlist.streams) {
+      if (!map[s.category_id]) map[s.category_id] = [];
+      map[s.category_id].push(s);
+    }
+    return map;
+  }, [playlist]);
+
+  const allCats = useMemo(() => {
+    if (!playlist) return [];
+    return playlist.categories.filter(c => (catStreamMap[c.category_id]?.length ?? 0) > 0);
+  }, [playlist, catStreamMap]);
+
+  const displayedItems = useMemo(() => {
+    if (!selectedCat) return [];
+    const streams = catStreamMap[selectedCat.category_id] || [];
+    if (!search) return streams;
+    return streams.filter(s => cleanName(s.name).toLowerCase().includes(search.toLowerCase()));
+  }, [selectedCat, catStreamMap, search]);
+
+  const globalSearch = useMemo(() => {
+    if (!search || selectedCat) return [];
+    const q = search.toLowerCase();
+    return playlist?.streams.filter(s => cleanName(s.name).toLowerCase().includes(q)).slice(0, 60) || [];
+  }, [search, selectedCat, playlist]);
+
+  if (loading) return (
+    <div className="h-full flex flex-col items-center justify-center gap-4">
+      <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+      <p className="text-sm text-white/40">Loading live TV…</p>
+    </div>
+  );
+
+  if (error) return (
+    <div className="h-full flex flex-col items-center justify-center gap-4 px-6 text-center">
+      <Radio className="w-10 h-10 text-white/15" />
+      <p className="text-sm text-white/40">{error}</p>
+      <button onClick={refresh} className="px-5 py-2.5 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 text-sm font-semibold hover:bg-cyan-500/25 transition-colors">Try Again</button>
+    </div>
+  );
+
+  // ── Category drill-down ──
+  if (selectedCat) {
+    return (
+      <div className="flex flex-col h-full gap-4">
+        <div className="flex items-center gap-3 flex-wrap flex-shrink-0">
+          <button onClick={() => { setSelectedCat(null); setSearch(''); }}
+            className="flex items-center gap-1.5 text-sm text-white/40 hover:text-white transition-colors">
+            <ChevronLeft className="w-4 h-4" /> Live TV
+          </button>
           <div>
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              <Radio className="w-5 h-5 text-primary" />
-              {selectedCat ? selectedCat.category_name : 'Live TV'}
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              {selectedCat
-                ? `${displayedChannels.length} channel${displayedChannels.length !== 1 ? 's' : ''}`
-                : `${displayedCats.length} categor${displayedCats.length !== 1 ? 'ies' : 'y'}`}
-            </p>
+            <h2 className="text-xl font-black text-white">{cleanName(selectedCat.category_name)}</h2>
+            <p className="text-xs text-white/30 mt-0.5">{displayedItems.length} channels</p>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/25 pointer-events-none" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search channels…"
+                className="bg-white/5 border border-white/8 rounded-xl pl-9 pr-8 py-2 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-cyan-500/40 transition-all w-44" />
+              {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"><X className="w-3.5 h-3.5" /></button>}
+            </div>
+            <div className="flex items-center bg-white/5 border border-white/8 rounded-xl p-0.5">
+              <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-lg transition-colors ${viewMode === 'grid' ? 'bg-cyan-500/20 text-cyan-400' : 'text-white/35 hover:text-white'}`}><Grid3X3 className="w-3.5 h-3.5" /></button>
+              <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-cyan-500/20 text-cyan-400' : 'text-white/35 hover:text-white'}`}><List className="w-3.5 h-3.5" /></button>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <SortSelect value={sort} onChange={setSort} />
-          <div className="w-52">
-            <SearchInput value={search} onChange={setSearch}
-              placeholder={selectedCat ? 'Search channels…' : 'Search categories…'} />
-          </div>
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {viewMode === 'grid' ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+              {displayedItems.map(s => <ChannelCard key={s.stream_id || s.url} stream={s} onPlay={playM3UStream} />)}
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {displayedItems.map((s, i) => (
+                <div key={s.stream_id || s.url} onClick={() => playM3UStream(s)}
+                  className="group flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-white/4 transition-colors cursor-pointer">
+                  <span className="text-xs text-white/20 w-5 text-right flex-shrink-0">{i + 1}</span>
+                  <div className="w-10 h-6 rounded overflow-hidden flex-shrink-0" style={{ background: `linear-gradient(135deg, ${gradientFor(cleanName(s.name)).join(',')})` }}>
+                    {s.stream_icon && <img src={s.stream_icon} alt="" className="w-full h-full object-contain" onError={e => e.target.style.display='none'} />}
+                  </div>
+                  <p className="text-sm text-white/80 truncate flex-1">{cleanName(s.name)}</p>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                    <Play className="w-3.5 h-3.5 text-white/20 group-hover:text-cyan-400 transition-colors" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {displayedItems.length === 0 && <p className="text-center text-white/25 py-16 text-sm">No channels found.</p>}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Home view with shelves per category ──
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex items-center gap-3 mb-6 flex-shrink-0 flex-wrap">
+        <div>
+          <h2 className="text-xl font-black text-white flex items-center gap-2">
+            <Radio className="w-5 h-5 text-red-400" /> Live TV
+          </h2>
+          <p className="text-xs text-white/30 mt-0.5">
+            {allCats.length} categories · {playlist?.streams.length.toLocaleString()} total channels
+          </p>
+        </div>
+        <div className="ml-auto relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/25 pointer-events-none" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search all channels…"
+            className="bg-white/5 border border-white/8 rounded-xl pl-9 pr-8 py-2 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-cyan-500/40 transition-all w-48" />
+          {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"><X className="w-3.5 h-3.5" /></button>}
         </div>
       </div>
 
-      {error && <div className="bg-destructive/10 border border-destructive/20 rounded-xl px-4 py-3 text-sm text-destructive">{error}</div>}
-
-      {!selectedCat ? (
-        loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-[88px] bg-card border border-border rounded-2xl animate-pulse" />)}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {search ? (
+          <div>
+            <p className="text-xs text-white/35 mb-4">{globalSearch.length} results</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+              {globalSearch.map(s => <ChannelCard key={s.stream_id || s.url} stream={s} onPlay={playM3UStream} />)}
+            </div>
+            {globalSearch.length === 0 && <p className="text-center text-white/25 py-16 text-sm">No channels found.</p>}
           </div>
         ) : (
-          <CategoryGrid categories={displayedCats} onSelect={selectCategory} icon={Radio} />
-        )
-      ) : loadingChannels ? (
-        <SkeletonGrid count={12} aspect="video" />
-      ) : (
-        <>
-          {displayedChannels.length === 0 && (
-            <p className="text-center text-muted-foreground py-20 text-sm">No channels found.</p>
-          )}
-          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-5">
-            {displayedChannels.map(ch => (
-              <MediaCard key={ch.stream_id} item={ch} type="live"
-                onPlay={async () => {
-                  const src = await resolveStreamUrl(ch, 'live');
-                  setState({ player: { src, title: ch.name, type: 'live' } });
-                }}
-              />
-            ))}
-          </div>
-        </>
-      )}
+          <>
+            {allCats.map(cat => {
+              const Icon = getCatIcon(cat.category_name);
+              return (
+                <Shelf key={cat.category_id}
+                  title={cleanName(cat.category_name)}
+                  icon={Icon}
+                  streams={catStreamMap[cat.category_id] || []}
+                  onPlay={playM3UStream}
+                  onViewAll={() => setSelectedCat(cat)} />
+              );
+            })}
+            {allCats.length === 0 && <p className="text-center text-white/25 py-16 text-sm">No channels available.</p>}
+          </>
+        )}
+      </div>
     </div>
   );
 }

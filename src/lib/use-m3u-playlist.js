@@ -25,6 +25,14 @@ async function fetchPlaylist() {
   return parseM3U(text);
 }
 
+function safeCacheSet(key, data) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ data, ts: Date.now() }));
+  } catch (_) {
+    // Quota exceeded — skip caching, data stays in memory only
+  }
+}
+
 export function useM3UPlaylist() {
   const [playlist, setPlaylist] = useState(() => getCachedPlaylist());
   const [loading, setLoading]   = useState(!getCachedPlaylist());
@@ -39,7 +47,7 @@ export function useM3UPlaylist() {
     setError(null);
     try {
       const data = await fetchPlaylist();
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
+      safeCacheSet(CACHE_KEY, data);
       setPlaylist(data);
     } catch (e) {
       setError(e.message);

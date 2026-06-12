@@ -109,17 +109,17 @@ function EPGGrid({ channels, epgMap, windowStart, onWatch, onSelectProgram, load
     <div className="flex flex-col h-full overflow-hidden">
 
       {/* ── Top split: video preview + current program info ── */}
-      <div className="flex gap-0 bg-[#0a0e1a] border-b border-white/8" style={{ minHeight: 200 }}>
+      <div className="flex flex-col sm:flex-row bg-[#0a0e1a] border-b border-white/8 flex-shrink-0">
         {/* Video pane */}
-        <div className="relative bg-black flex-shrink-0 flex items-center justify-center"
-          style={{ width: 340, minHeight: 200 }}>
+        <div className="relative bg-black flex items-center justify-center flex-shrink-0 w-full sm:w-80"
+          style={{ minHeight: 160 }}>
           {player?.src ? (
             <video
               key={player.src}
               src={player.src}
               autoPlay muted
               className="w-full h-full object-contain"
-              style={{ maxHeight: 200 }}
+              style={{ maxHeight: 180 }}
             />
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-white/20">
@@ -181,7 +181,7 @@ function EPGGrid({ channels, epgMap, windowStart, onWatch, onSelectProgram, load
       )}
 
       {/* ── EPG Scrollable grid ── */}
-      <div ref={gridRef} className="flex-1 overflow-auto" style={{ position: 'relative' }}>
+      <div ref={gridRef} className="flex-1 overflow-auto min-h-0" style={{ position: 'relative' }}>
         <div style={{ minWidth: CHAN_WIDTH + totalW }}>
 
           {/* Sticky time header */}
@@ -429,7 +429,7 @@ export default function EPGSection() {
   }
 
   return (
-    <div className="flex flex-col" style={{ height: 'calc(100vh - 3.75rem)', overflow: 'hidden' }}>
+    <div className="flex flex-col" style={{ height: '100%', overflow: 'hidden' }}>
       {/* Toolbar */}
       <div className="flex items-center gap-3 flex-wrap px-0 pb-2 flex-shrink-0">
         <button onClick={() => { setSelectedCat(null); setChannels([]); setEpgMap({}); }}

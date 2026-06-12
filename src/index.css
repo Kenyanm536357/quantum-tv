@@ -6,9 +6,9 @@
 
 @layer base {
   :root {
-    --background: 220 18% 6%;
+    --background: 228 35% 4%;
     --foreground: 220 14% 96%;
-    --card: 220 16% 9%;
+    --card: 226 28% 7%;
     --card-foreground: 220 14% 96%;
     --popover: 220 16% 10%;
     --popover-foreground: 220 14% 96%;
@@ -35,6 +35,7 @@
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', sans-serif;
     overscroll-behavior: none;
+    background: #07090f;
   }
   button, a, [role="button"], nav * {
     user-select: none;
@@ -61,3 +62,27 @@
 /* No native video controls */
 video::-webkit-media-controls { display: none !important; }
 video::-webkit-media-controls-enclosure { display: none !important; }
+
+/* ── Responsive layout helpers ─────────────────────────────────── */
+
+/* Landscape phones: show sidebar, hide bottom bar */
+@media (orientation: landscape) and (max-width: 1023px) {
+  .landscape-sidebar { display: flex !important; }
+  .portrait-bottom-bar { display: none !important; }
+}
+
+/* Portrait phones: hide sidebar, show bottom bar */
+@media (orientation: portrait) and (max-width: 1023px) {
+  .landscape-sidebar { display: none !important; }
+  .portrait-bottom-bar { display: block !important; }
+  /* Add bottom padding so content doesn't hide under tab bar */
+  .content-scroll { padding-bottom: calc(4.5rem + env(safe-area-inset-bottom)) !important; }
+}
+
+/* Desktop: handled by Tailwind lg: classes, no overrides needed */
+
+/* Full-height scroll area */
+.content-scroll {
+  height: 100%;
+  -webkit-overflow-scrolling: touch;
+}

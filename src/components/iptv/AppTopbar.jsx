@@ -1,116 +1,195 @@
 import React, { useState } from 'react';
-import { Film, Clapperboard, Settings, Zap, LogOut, Radio, Tv2, Bookmark, History, Bell, Menu, X } from 'lucide-react';
+import { Film, Clapperboard, Settings, LogOut, Radio, Tv2, Bookmark, History, Bell, Menu, X, Zap } from 'lucide-react';
 import { clearCredentials } from '@/lib/iptv-store';
-import { useStore } from '@/lib/use-store';
 import { useNavigate, useLocation } from 'react-router-dom';
 
-const NAV = [
+export const NAV = [
+  { id: 'epg',       icon: Tv2,          label: 'TV Guide'  },
   { id: 'live',      icon: Radio,        label: 'Live TV'   },
   { id: 'movies',    icon: Film,         label: 'Movies'    },
   { id: 'series',    icon: Clapperboard, label: 'Series'    },
-  { id: 'epg',       icon: Tv2,          label: 'TV Guide'  },
   { id: 'bookmarks', icon: Bookmark,     label: 'Bookmarks' },
   { id: 'history',   icon: History,      label: 'History'   },
   { id: 'reminders', icon: Bell,         label: 'Reminders' },
   { id: 'settings',  icon: Settings,     label: 'Settings'  },
 ];
 
+// ── Sidebar (desktop/landscape) ───────────────────────────────────────────────
+export function AppSidebar() {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const go = (id) => navigate('/' + id);
+
+  return (
+    <aside className="flex flex-col h-full bg-[#07090f] border-r border-white/6 select-none"
+      style={{ width: 200 }}>
+      {/* Brand */}
+      <div className="flex items-center gap-2.5 px-4 py-4 border-b border-white/6 flex-shrink-0">
+        <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0">
+          <img src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/40f2bbd9e_QUANTUMTVLOGOver2.png"
+            alt="QuantumTV" className="w-full h-full object-cover" />
+        </div>
+        <span className="text-[15px] font-black tracking-tight text-white">
+          Quantum<span className="text-primary">TV</span>
+        </span>
+      </div>
+
+      {/* Nav items */}
+      <nav className="flex-1 overflow-y-auto py-2 space-y-0.5 px-2">
+        {NAV.map(item => {
+          const active = pathname.startsWith('/' + item.id);
+          return (
+            <button key={item.id} onClick={() => go(item.id)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                active
+                  ? 'bg-primary/15 text-primary'
+                  : 'text-white/45 hover:text-white hover:bg-white/6'
+              }`}>
+              <item.icon className={`w-4 h-4 flex-shrink-0 ${active ? 'text-primary' : ''}`} />
+              {item.label}
+              {active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Disconnect */}
+      <div className="p-2 border-t border-white/6 flex-shrink-0">
+        <button onClick={clearCredentials}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-all">
+          <LogOut className="w-4 h-4" />
+          Disconnect
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+// ── Bottom tab bar (mobile portrait) ─────────────────────────────────────────
+const BOTTOM_NAV = NAV.slice(0, 5); // show first 5 in bottom bar
+
+export function BottomTabBar() {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const [moreOpen, setMoreOpen] = useState(false);
+  const go = (id) => { navigate('/' + id); setMoreOpen(false); };
+
+  return (
+    <>
+      {/* More drawer */}
+      {moreOpen && (
+        <div className="fixed inset-0 z-50" onClick={() => setMoreOpen(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="absolute bottom-0 left-0 right-0 bg-[#0a0e1a] border-t border-white/10 rounded-t-2xl p-4"
+            style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
+            onClick={e => e.stopPropagation()}>
+            <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4" />
+            <div className="grid grid-cols-3 gap-2">
+              {NAV.slice(5).map(item => {
+                const active = pathname.startsWith('/' + item.id);
+                return (
+                  <button key={item.id} onClick={() => go(item.id)}
+                    className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl text-xs font-medium transition-all ${
+                      active ? 'bg-primary/15 text-primary' : 'text-white/50 hover:bg-white/5 hover:text-white'
+                    }`}>
+                    <item.icon className="w-5 h-5" />
+                    {item.label}
+                  </button>
+                );
+              })}
+              <button onClick={clearCredentials}
+                className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl text-xs font-medium text-red-400/70 hover:bg-red-500/10 hover:text-red-400 transition-all">
+                <LogOut className="w-5 h-5" />
+                Disconnect
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom bar */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 flex bg-[#07090f]/95 backdrop-blur-xl border-t border-white/8"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        {BOTTOM_NAV.map(item => {
+          const active = pathname.startsWith('/' + item.id);
+          return (
+            <button key={item.id} onClick={() => go(item.id)}
+              className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium transition-all select-none ${
+                active ? 'text-primary' : 'text-white/35 hover:text-white/70'
+              }`}>
+              <item.icon className={`w-5 h-5 ${active ? 'text-primary' : ''}`} />
+              {item.label}
+            </button>
+          );
+        })}
+        <button onClick={() => setMoreOpen(v => !v)}
+          className="flex-1 flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium text-white/35 hover:text-white/70 transition-all select-none">
+          <Menu className="w-5 h-5" />
+          More
+        </button>
+      </nav>
+    </>
+  );
+}
+
+// ── Default export (kept for any legacy imports) ──────────────────────────────
 export default function AppTopbar() {
-  const { credentials } = useStore();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
-
   const go = (id) => { navigate('/' + id); setMobileOpen(false); };
 
   return (
     <>
-      {/* Top bar */}
-      <header
-        className="fixed top-0 left-0 right-0 z-50 flex items-center gap-6 px-6 bg-black/80 backdrop-blur-xl border-b border-white/5"
-        style={{
-          height: 'calc(3.75rem + env(safe-area-inset-top))',
-          paddingTop: 'env(safe-area-inset-top)',
-        }}
-      >
-        {/* Brand */}
-        <button onClick={() => go('live')} className="flex items-center gap-2 flex-shrink-0 select-none">
-          <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0">
-            <img src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/40f2bbd9e_QUANTUMTVLOGOver2.png" alt="QuantumTV" className="w-full h-full object-cover" />
+      <header className="fixed top-0 left-0 right-0 z-50 flex items-center gap-4 px-4 bg-[#07090f]/95 backdrop-blur-xl border-b border-white/6 select-none"
+        style={{ height: 'calc(3.25rem + env(safe-area-inset-top))', paddingTop: 'env(safe-area-inset-top)' }}>
+        <button onClick={() => go('epg')} className="flex items-center gap-2 flex-shrink-0">
+          <div className="w-7 h-7 rounded-lg overflow-hidden">
+            <img src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/40f2bbd9e_QUANTUMTVLOGOver2.png"
+              alt="QuantumTV" className="w-full h-full object-cover" />
           </div>
-          <span className="text-[17px] font-black tracking-tight">
-            Quantum<span className="text-primary">TV</span>
-          </span>
+          <span className="text-[15px] font-black tracking-tight text-white">Quantum<span className="text-primary">TV</span></span>
         </button>
-
-        {/* Desktop nav */}
-        <nav className="hidden lg:flex items-center gap-1 flex-1">
+        <nav className="hidden lg:flex items-center gap-0.5 flex-1">
           {NAV.map(item => {
             const active = pathname.startsWith('/' + item.id);
             return (
-              <button
-                key={item.id}
-                onClick={() => go(item.id)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 select-none ${
-                  active
-                    ? 'text-white bg-white/10'
-                    : 'text-white/50 hover:text-white hover:bg-white/5'
-                }`}
-              >
+              <button key={item.id} onClick={() => go(item.id)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                  active ? 'text-white bg-white/10' : 'text-white/45 hover:text-white hover:bg-white/5'
+                }`}>
                 {item.label}
               </button>
             );
           })}
         </nav>
-
-        {/* Disconnect + mobile menu */}
         <div className="flex items-center gap-2 ml-auto">
-          <button
-            onClick={clearCredentials}
-            className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-white/40 hover:text-white/70 hover:bg-white/5 transition-all select-none"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>Disconnect</span>
+          <button onClick={clearCredentials}
+            className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-white/35 hover:text-white/60 hover:bg-white/5 transition-all">
+            <LogOut className="w-3.5 h-3.5" /> Disconnect
           </button>
-          <button
-            onClick={() => setMobileOpen(v => !v)}
-            className="lg:hidden w-9 h-9 flex items-center justify-center rounded-lg bg-white/5 text-white/70 hover:text-white transition-colors select-none"
-          >
-            {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          <button onClick={() => setMobileOpen(v => !v)}
+            className="lg:hidden w-8 h-8 flex items-center justify-center rounded-lg bg-white/5 text-white/60 hover:text-white transition-colors">
+            {mobileOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
           </button>
         </div>
       </header>
-
-      {/* Mobile dropdown */}
       {mobileOpen && (
-        <div
-          className="lg:hidden fixed inset-0 z-40"
-          style={{ top: 'calc(3.75rem + env(safe-area-inset-top))' }}
-        >
+        <div className="lg:hidden fixed inset-0 z-40" style={{ top: 'calc(3.25rem + env(safe-area-inset-top))' }}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
-          <div className="relative bg-[#0d0d0d] border-b border-white/8 grid grid-cols-2 gap-1 p-3">
+          <div className="relative bg-[#0a0e1a] border-b border-white/8 grid grid-cols-2 gap-1 p-3">
             {NAV.map(item => {
               const active = pathname.startsWith('/' + item.id);
               return (
-                <button
-                  key={item.id}
-                  onClick={() => go(item.id)}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all select-none ${
-                    active ? 'bg-primary/15 text-primary' : 'text-white/60 hover:bg-white/5 hover:text-white'
-                  }`}
-                >
+                <button key={item.id} onClick={() => go(item.id)}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                    active ? 'bg-primary/15 text-primary' : 'text-white/55 hover:bg-white/5 hover:text-white'
+                  }`}>
                   <item.icon className="w-4 h-4 flex-shrink-0" />
                   {item.label}
                 </button>
               );
             })}
-            <button
-              onClick={clearCredentials}
-              className="col-span-2 flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-red-400/80 hover:bg-red-500/10 hover:text-red-400 transition-all select-none"
-            >
-              <LogOut className="w-4 h-4" />
-              Disconnect
-            </button>
           </div>
         </div>
       )}

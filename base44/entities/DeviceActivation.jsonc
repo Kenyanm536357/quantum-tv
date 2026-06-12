@@ -16,6 +16,15 @@
       "format": "date-time",
       "description": "When the device was activated"
     },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the subscription expires"
+    },
+    "username": {
+      "type": "string",
+      "description": "Customer username (admin-only identifier)"
+    },
     "label": {
       "type": "string",
       "description": "Optional customer name or label"

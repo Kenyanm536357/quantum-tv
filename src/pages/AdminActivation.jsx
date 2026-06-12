@@ -76,10 +76,17 @@ function StatCard({ icon: IconComp, label, value, color }) {
   );
 }
 
-function DeviceCard({ dev, onActivate, onDeactivate, onDelete, isLoading }) {
+function DeviceCard({ dev, onActivate, onDeactivate, onRenew, onDelete, isLoading }) {
   const expired = isExpired(dev.expires_at);
   const days    = daysLeft(dev.expires_at);
   const active  = dev.activated && !expired;
+  const [showRenew, setShowRenew] = useState(false);
+  const [renewMonths, setRenewMonths] = useState(1);
+
+  const handleRenew = () => {
+    onRenew(dev.id, dev.mac, renewMonths, dev.expires_at);
+    setShowRenew(false);
+  };
 
   return (
     <div className={`relative rounded-2xl border overflow-hidden transition-all ${
@@ -122,7 +129,7 @@ function DeviceCard({ dev, onActivate, onDeactivate, onDelete, isLoading }) {
               </span>
               {days !== null && (
                 <span className={`text-[11px] font-bold ${days <= 7 ? 'text-orange-400' : days <= 30 ? 'text-yellow-400' : 'text-white/30'}`}>
-                  {days > 0 ? `${days} days remaining` : 'Expired'}
+                  {days > 0 ? `${days}d left` : 'Expired'}
                 </span>
               )}
             </div>
@@ -139,26 +146,85 @@ function DeviceCard({ dev, onActivate, onDeactivate, onDelete, isLoading }) {
           </div>
         )}
 
+        {/* Renew panel (inline) */}
+        {showRenew && (
+          <div className="mb-3 p-3 rounded-xl bg-cyan-500/8 border border-cyan-500/20 space-y-2">
+            <p className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider">Extend Subscription</p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {DURATION_OPTIONS.map(o => (
+                <button
+                  key={o.months}
+                  onClick={() => setRenewMonths(o.months)}
+                  className={`py-2 rounded-lg text-[11px] font-bold border transition-all ${
+                    renewMonths === o.months
+                      ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300'
+                      : 'bg-white/4 border-white/8 text-white/40 hover:text-white'
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-white/25">
+              New expiry: <span className="text-cyan-400 font-bold">{formatDate(addMonths(dev.expires_at || new Date(), renewMonths))}</span>
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleRenew}
+                disabled={isLoading}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 rounded-lg text-xs font-bold hover:bg-cyan-500/30 transition-colors disabled:opacity-50"
+              >
+                {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                Confirm Renewal
+              </button>
+              <button
+                onClick={() => setShowRenew(false)}
+                className="px-3 py-2 bg-white/4 border border-white/8 text-white/30 rounded-lg text-xs font-bold hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Actions */}
         <div className="flex items-center gap-2">
-          {isLoading ? (
+          {isLoading && !showRenew ? (
             <div className="flex-1 flex items-center justify-center py-2">
               <Loader2 className="w-4 h-4 text-white/40 animate-spin" />
             </div>
           ) : active ? (
-            <button
-              onClick={() => onDeactivate(dev.mac, dev.id)}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-xs font-bold hover:bg-red-500/20 transition-colors"
-            >
-              <XCircle className="w-3.5 h-3.5" /> Deactivate
-            </button>
+            <>
+              <button
+                onClick={() => setShowRenew(s => !s)}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-xl text-xs font-bold hover:bg-cyan-500/20 transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Renew
+              </button>
+              <button
+                onClick={() => onDeactivate(dev.mac, dev.id)}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-xs font-bold hover:bg-red-500/20 transition-colors"
+              >
+                <XCircle className="w-3.5 h-3.5" /> Off
+              </button>
+            </>
           ) : (
-            <button
-              onClick={() => onActivate(dev.mac, dev.id, 1)}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs font-bold hover:bg-emerald-500/20 transition-colors"
-            >
-              <CheckCircle className="w-3.5 h-3.5" /> Activate
-            </button>
+            <>
+              {dev.expires_at && (
+                <button
+                  onClick={() => setShowRenew(s => !s)}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-xl text-xs font-bold hover:bg-cyan-500/20 transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Renew
+                </button>
+              )}
+              <button
+                onClick={() => onActivate(dev.mac, dev.id, 1)}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs font-bold hover:bg-emerald-500/20 transition-colors"
+              >
+                <CheckCircle className="w-3.5 h-3.5" /> Activate
+              </button>
+            </>
           )}
           <button
             onClick={() => onDelete(dev.id)}
@@ -210,6 +276,16 @@ export default function AdminActivation() {
     await base44.functions.invoke('checkActivation', { mac, action: 'activate', adminKey: ADMIN_PASSCODE });
     const expires = addMonths(new Date(), months || 1);
     await base44.entities.DeviceActivation.update(id, { activated: true, activated_at: new Date().toISOString(), expires_at: expires });
+    await loadDevices();
+    setActionId(null);
+  };
+
+  const renew = async (id, mac, months, currentExpiry) => {
+    setActionId(id);
+    // Extend from current expiry if still valid, otherwise extend from today
+    const base = currentExpiry && new Date(currentExpiry) > new Date() ? currentExpiry : new Date().toISOString();
+    const newExpiry = addMonths(base, months);
+    await base44.entities.DeviceActivation.update(id, { activated: true, expires_at: newExpiry });
     await loadDevices();
     setActionId(null);
   };
@@ -412,6 +488,7 @@ export default function AdminActivation() {
                   dev={dev}
                   onActivate={activate}
                   onDeactivate={deactivate}
+                  onRenew={renew}
                   onDelete={deleteDevice}
                   isLoading={actionId === dev.id}
                 />

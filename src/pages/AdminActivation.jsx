@@ -252,6 +252,7 @@ export default function AdminActivation() {
   const [newUsername, setNewUsername] = useState('');
   const [newLabel,    setNewLabel]    = useState('');
   const [newMonths,   setNewMonths]   = useState(1);
+  const [viewMode,    setViewMode]    = useState('grid3'); // 'grid1' | 'grid2' | 'grid3' | 'list'
 
   const handlePasscode = (e) => {
     e.preventDefault();
@@ -465,9 +466,30 @@ export default function AdminActivation() {
 
         {/* Device grid */}
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-bold text-white">Registered Devices</h2>
-            <span className="text-xs text-white/25">{devices.length} total</span>
+          <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+            <h2 className="text-sm font-bold text-white">Registered Devices <span className="text-white/25 font-normal">({devices.length})</span></h2>
+            {/* View toggle */}
+            <div className="flex items-center gap-1 bg-white/4 border border-white/8 rounded-xl p-1">
+              {[
+                { mode: 'list',  icon: List,        title: 'List' },
+                { mode: 'grid1', icon: Monitor,     title: '1 col' },
+                { mode: 'grid2', icon: Columns2,    title: '2 cols' },
+                { mode: 'grid3', icon: LayoutGrid,  title: '3 cols' },
+              ].map(({ mode, icon: Icon, title }) => (
+                <button
+                  key={mode}
+                  onClick={() => setViewMode(mode)}
+                  title={title}
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                    viewMode === mode
+                      ? 'bg-violet-500/30 text-violet-300'
+                      : 'text-white/25 hover:text-white/60'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                </button>
+              ))}
+            </div>
           </div>
 
           {loading ? (
@@ -481,8 +503,42 @@ export default function AdminActivation() {
               </div>
               <p className="text-sm text-white/25">No devices registered yet</p>
             </div>
+          ) : viewMode === 'list' ? (
+            <div className="rounded-2xl border border-white/8 overflow-hidden divide-y divide-white/6">
+              {devices.map(dev => {
+                const expired = isExpired(dev.expires_at);
+                const days = daysLeft(dev.expires_at);
+                const active = dev.activated && !expired;
+                return (
+                  <div key={dev.id} className={`flex items-center gap-4 px-5 py-3.5 ${active ? 'bg-emerald-950/20' : expired ? 'bg-orange-950/15' : 'bg-[#0a0e1a]'}`}>
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${active ? 'bg-emerald-400' : expired ? 'bg-orange-400' : 'bg-white/15'}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-bold text-white">{dev.username || dev.label || '—'}</span>
+                        {dev.label && dev.username && <span className="text-xs text-white/30">{dev.label}</span>}
+                      </div>
+                      <span className="font-mono text-[11px] text-white/30">{dev.mac}</span>
+                    </div>
+                    <div className="flex-shrink-0 text-right hidden sm:block">
+                      <p className={`text-xs font-bold ${days <= 0 ? 'text-orange-400' : days <= 7 ? 'text-red-400' : days <= 30 ? 'text-yellow-400' : 'text-emerald-400'}`}>
+                        {dev.expires_at ? (days > 0 ? `${days}d left` : 'Expired') : '—'}
+                      </p>
+                      <p className="text-[11px] text-white/25">{formatDate(dev.expires_at)}</p>
+                    </div>
+                    <StatusBadge activated={dev.activated} expires_at={dev.expires_at} />
+                    <button onClick={() => deleteDevice(dev.id)} className="w-7 h-7 rounded-lg bg-white/3 hover:bg-red-500/10 text-white/15 hover:text-red-400 flex items-center justify-center transition-colors flex-shrink-0">
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className={`grid gap-4 ${
+              viewMode === 'grid1' ? 'grid-cols-1' :
+              viewMode === 'grid2' ? 'grid-cols-1 sm:grid-cols-2' :
+              'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+            }`}>
               {devices.map(dev => (
                 <DeviceCard
                   key={dev.id}

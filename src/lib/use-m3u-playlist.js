@@ -3,7 +3,7 @@ import { parseM3U } from './m3u-parser';
 import { setState } from './iptv-store';
 import { cleanName } from './clean-name';
 
-const QUANTUM_M3U_URL = 'https://iptv-org.github.io/iptv/index.m3u';
+const QUANTUM_M3U_URL = 'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8';
 const CACHE_KEY = 'qtv_browse_cache_v4'; // bumped to clear old oversized cache
 
 // Clear any old cache keys that may be bloating localStorage

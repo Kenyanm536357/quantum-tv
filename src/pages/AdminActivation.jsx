@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Monitor, CheckCircle, XCircle, Plus, Trash2, Loader2, RefreshCw, Shield, Lock } from 'lucide-react';
 
-const ADMIN_KEY = 'quantum-admin-2024';
-const ALLOWED_EMAILS = ['kenyan@quantumtek.net', 'kenyanmcgarr@gmail.com'];
+
+const ADMIN_PASSCODE = 'quantum-admin-2024';
 
 export default function AdminActivation() {
   const [authed, setAuthed] = useState(false);
-  const [checking, setChecking] = useState(true);
-  const [denied, setDenied] = useState(false);
+  const [passcode, setPasscode] = useState('');
+  const [passcodeError, setPasscodeError] = useState('');
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newMac, setNewMac] = useState('');
@@ -16,53 +16,14 @@ export default function AdminActivation() {
   const [adding, setAdding] = useState(false);
   const [actionId, setActionId] = useState(null);
 
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
-  const [loggingIn, setLoggingIn] = useState(false);
-  const [needsLogin, setNeedsLogin] = useState(false);
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const isAuth = await base44.auth.isAuthenticated();
-        if (!isAuth) {
-          setNeedsLogin(true);
-          setChecking(false);
-          return;
-        }
-        const user = await base44.auth.me();
-        if (user && ALLOWED_EMAILS.includes(user.email)) {
-          setAuthed(true);
-        } else {
-          setDenied(true);
-        }
-      } catch {
-        setNeedsLogin(true);
-      } finally {
-        setChecking(false);
-      }
-    };
-    checkAuth();
-  }, []);
-
-  const handleAdminLogin = async (e) => {
+  const handlePasscode = (e) => {
     e.preventDefault();
-    setLoggingIn(true);
-    setLoginError('');
-    try {
-      await base44.auth.loginViaEmailPassword(loginEmail, loginPassword);
-      // After login, check if email is allowed
-      if (ALLOWED_EMAILS.includes(loginEmail.toLowerCase())) {
-        window.location.reload();
-      } else {
-        setLoginError('This email is not authorized for admin access.');
-        await base44.auth.logout();
-      }
-    } catch {
-      setLoginError('Invalid email or password.');
-    } finally {
-      setLoggingIn(false);
+    if (passcode === ADMIN_PASSCODE) {
+      setAuthed(true);
+      setPasscodeError('');
+    } else {
+      setPasscodeError('Incorrect passcode.');
+      setPasscode('');
     }
   };
 
@@ -77,14 +38,14 @@ export default function AdminActivation() {
 
   const activate = async (mac, id) => {
     setActionId(id || mac);
-    await base44.functions.invoke('checkActivation', { mac, action: 'activate', adminKey: ADMIN_KEY });
+    await base44.functions.invoke('checkActivation', { mac, action: 'activate', adminKey: ADMIN_PASSCODE });
     await loadDevices();
     setActionId(null);
   };
 
   const deactivate = async (mac, id) => {
     setActionId(id || mac);
-    await base44.functions.invoke('checkActivation', { mac, action: 'deactivate', adminKey: ADMIN_KEY });
+    await base44.functions.invoke('checkActivation', { mac, action: 'deactivate', adminKey: ADMIN_PASSCODE });
     await loadDevices();
     setActionId(null);
   };
@@ -121,64 +82,32 @@ export default function AdminActivation() {
     return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
-  if (checking) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#07090f' }}>
-        <Loader2 className="w-7 h-7 text-violet-400 animate-spin" />
-      </div>
-    );
-  }
-
-  if (needsLogin) {
+  if (!authed) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6" style={{ background: '#07090f' }}>
-        <form onSubmit={handleAdminLogin} className="w-full max-w-xs flex flex-col items-center gap-5">
+        <form onSubmit={handlePasscode} className="w-full max-w-xs flex flex-col items-center gap-5">
           <div className="w-12 h-12 rounded-2xl bg-violet-500/10 border border-violet-500/30 flex items-center justify-center">
             <Lock className="w-6 h-6 text-violet-400" />
           </div>
           <div className="text-center">
-            <h1 className="text-lg font-black text-white">Admin Login</h1>
+            <h1 className="text-lg font-black text-white">Admin Access</h1>
             <p className="text-xs text-white/30 mt-1">Quantum TV · Device Manager</p>
           </div>
           <input
-            type="email"
-            value={loginEmail}
-            onChange={e => setLoginEmail(e.target.value)}
-            placeholder="Admin email"
+            type="password"
+            value={passcode}
+            onChange={e => setPasscode(e.target.value)}
+            placeholder="Enter passcode"
             autoFocus
             required
-            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 outline-none focus:border-violet-500/50"
+            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 outline-none focus:border-violet-500/50 tracking-widest text-center"
           />
-          <input
-            type="password"
-            value={loginPassword}
-            onChange={e => setLoginPassword(e.target.value)}
-            placeholder="Password"
-            required
-            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 outline-none focus:border-violet-500/50"
-          />
-          {loginError && <p className="text-xs text-red-400 -mt-2 text-center">{loginError}</p>}
-          <button type="submit" disabled={loggingIn}
-            className="w-full py-3 bg-gradient-to-r from-violet-500 to-cyan-500 text-white font-bold rounded-xl text-sm disabled:opacity-50 flex items-center justify-center gap-2">
-            {loggingIn && <Loader2 className="w-4 h-4 animate-spin" />}
-            Sign In
+          {passcodeError && <p className="text-xs text-red-400 -mt-2 text-center">{passcodeError}</p>}
+          <button type="submit"
+            className="w-full py-3 bg-gradient-to-r from-violet-500 to-cyan-500 text-white font-bold rounded-xl text-sm">
+            Enter
           </button>
         </form>
-      </div>
-    );
-  }
-
-  if (denied) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6" style={{ background: '#07090f' }}>
-        <div className="flex flex-col items-center gap-4 text-center">
-          <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center">
-            <Lock className="w-6 h-6 text-red-400" />
-          </div>
-          <h1 className="text-lg font-black text-white">Access Denied</h1>
-          <p className="text-xs text-white/30">You are not authorized to view this page.</p>
-          <a href="/login" className="text-xs text-violet-400 hover:underline mt-2">← Back to Login</a>
-        </div>
       </div>
     );
   }

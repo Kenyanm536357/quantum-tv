@@ -185,8 +185,8 @@ function CategoryGridView({ categories, catStreamMap, onSelect, onBack, title })
     : categories;
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex items-center gap-3 mb-6 flex-wrap flex-shrink-0">
+    <div className="flex flex-col">
+      <div className="flex items-center gap-3 mb-6 flex-wrap">
         <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-white/40 hover:text-white transition-colors">
           <ChevronLeft className="w-4 h-4" /> Home
         </button>
@@ -198,7 +198,7 @@ function CategoryGridView({ categories, catStreamMap, onSelect, onBack, title })
           {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"><X className="w-3.5 h-3.5" /></button>}
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
           {filtered.filter(c => (catStreamMap[c.category_id]?.length ?? 0) > 0).map(cat => {
             const Icon = getCatIcon(cat.category_name);
@@ -236,8 +236,8 @@ function ChannelListView({ category, streams, onPlay, onBack }) {
     : streams;
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex items-center gap-3 mb-5 flex-wrap flex-shrink-0">
+    <div className="flex flex-col">
+      <div className="flex items-center gap-3 mb-5 flex-wrap">
         <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-white/40 hover:text-white transition-colors">
           <ChevronLeft className="w-4 h-4" /> Back
         </button>
@@ -259,7 +259,7 @@ function ChannelListView({ category, streams, onPlay, onBack }) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div>
         {viewMode === 'grid' ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {filtered.map(s => <StreamCard key={s.stream_id || s.url} stream={s} onPlay={onPlay} />)}
@@ -391,7 +391,7 @@ export default function BrowseSection() {
   // ── Channel list for selected category ──
   if (selectedCat) {
     return (
-      <div className="h-full overflow-hidden p-4 sm:p-6">
+      <div className="p-4 sm:p-6 min-h-full">
         <ChannelListView
           category={selectedCat}
           streams={catStreamMap[selectedCat.category_id] || []}
@@ -405,7 +405,7 @@ export default function BrowseSection() {
   // ── All categories grid ──
   if (showAllCats) {
     return (
-      <div className="h-full overflow-hidden p-4 sm:p-6">
+      <div className="p-4 sm:p-6 min-h-full">
         <CategoryGridView
           categories={playlist.categories}
           catStreamMap={catStreamMap}
@@ -437,9 +437,9 @@ export default function BrowseSection() {
   const recent = [...playlist.streams].reverse().slice(0, 30);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col min-h-full">
       {/* ── Search + header bar ── */}
-      <div className="flex items-center gap-3 px-4 sm:px-6 pt-4 pb-3 flex-shrink-0">
+      <div className="flex items-center gap-3 px-4 sm:px-6 pt-4 pb-3 flex-shrink-0 sticky top-0 z-10" style={{ background: '#07090f' }}>
         <h1 className="text-base font-black text-white tracking-tight hidden sm:block">
           Quantum<span className="text-cyan-400">TV</span>
         </h1>
@@ -460,8 +460,8 @@ export default function BrowseSection() {
         <span className="text-xs text-white/20 flex-shrink-0 hidden md:block">{playlist.streams.length.toLocaleString()} channels</span>
       </div>
 
-      {/* ── Scrollable content ── */}
-      <div className="flex-1 overflow-y-auto min-h-0 px-4 sm:px-6 pb-6">
+      {/* ── Content ── */}
+      <div className="px-4 sm:px-6 pb-6">
 
         {globalSearch ? (
           /* Search results */

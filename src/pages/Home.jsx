@@ -128,7 +128,7 @@ function AppShell() {
               paddingRight: 'env(safe-area-inset-right)',
             }}
           >
-            <div className={`h-full ${sectionKey === 'epg' ? 'p-0' : 'p-4 sm:p-6'}`}>
+            <div className={`h-full ${sectionKey === 'epg' || sectionKey === 'browse' ? 'p-0' : 'p-4 sm:p-6'}`}>
               <Routes location={location}>
                 <Route path="/browse"    element={<BrowseSection />} />
                 <Route path="/live"      element={<LiveSection />} />

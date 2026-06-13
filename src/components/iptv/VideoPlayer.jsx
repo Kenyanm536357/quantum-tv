@@ -79,33 +79,19 @@ export default function VideoPlayer({ src, title, type }) {
       const hls = new Hls({
         lowLatencyMode: true,
         backBufferLength: 30,
-        maxBufferLength: 30,
+        maxBufferLength: 60,
         enableWorker: true,
-        xhrSetup: (xhr) => {
-          xhr.withCredentials = false;
-        },
+        manifestLoadingTimeOut: 15000,
+        manifestLoadingMaxRetry: 3,
+        levelLoadingTimeOut: 15000,
+        fragLoadingTimeOut: 30000,
       });
       hlsRef.current = hls;
       hls.loadSource(src);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => { setLoading(false); video.play().catch(() => {}); });
       hls.on(Hls.Events.ERROR, (_, d) => {
-        if (d.fatal) {
-          // Try ts extension as fallback if m3u8 fails
-          const tsSrc = src.replace(/\.m3u8$/, '.ts');
-          if (src.endsWith('.m3u8') && tsSrc !== src) {
-            hls.destroy();
-            const hls2 = new Hls({ lowLatencyMode: true });
-            hlsRef.current = hls2;
-            hls2.loadSource(tsSrc);
-            hls2.attachMedia(video);
-            hls2.on(Hls.Events.MANIFEST_PARSED, () => { setLoading(false); video.play().catch(() => {}); });
-            hls2.on(Hls.Events.ERROR, () => { setErr('Stream unavailable.'); setLoading(false); });
-          } else {
-            setErr('Stream unavailable.');
-            setLoading(false);
-          }
-        }
+        if (d.fatal) { setErr('Stream unavailable. The channel may be geo-restricted or temporarily offline.'); setLoading(false); }
       });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = src;

@@ -3,8 +3,12 @@ import React from "react";
 export default function AuthLayout({ icon: Icon, title, subtitle, footer, children }) {
   return (
     <div
-      className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden"
-      style={{ background: 'radial-gradient(ellipse at 60% 0%, #1a0a3d 0%, #0a0f2e 40%, #060a1a 100%)' }}
+      className="min-h-screen flex flex-col items-center justify-center px-4 py-8 relative overflow-y-auto"
+      style={{
+        background: 'radial-gradient(ellipse at 60% 0%, #1a0a3d 0%, #0a0f2e 40%, #060a1a 100%)',
+        paddingTop: 'max(2rem, env(safe-area-inset-top))',
+        paddingBottom: 'max(2rem, env(safe-area-inset-bottom))',
+      }}
     >
       {/* Ambient blobs */}
       <div className="pointer-events-none absolute inset-0">
@@ -18,7 +22,7 @@ export default function AuthLayout({ icon: Icon, title, subtitle, footer, childr
           style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
       </div>
 
-      <div className="relative w-full max-w-[420px]">
+      <div className="relative w-full max-w-[420px] flex-shrink-0">
         {/* Logo + title */}
         <div className="text-center mb-6">
           <div className="w-28 h-28 rounded-[2rem] overflow-hidden border-2 border-violet-500/50 mx-auto mb-4"

@@ -62,7 +62,7 @@ export default function Login() {
         <button
           onClick={handleGoogle}
           disabled={loadingGoogle || loadingApple}
-          className="w-full h-12 flex items-center justify-center gap-3 rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground font-medium text-sm transition-colors disabled:opacity-60"
+          className="w-full h-14 flex items-center justify-center gap-3 rounded-xl border border-border bg-secondary active:bg-secondary/60 hover:bg-secondary/80 text-foreground font-medium text-sm transition-colors disabled:opacity-60 touch-manipulation cursor-pointer"
         >
           <GoogleIcon />
           {loadingGoogle ? "Signing in…" : "Continue with Google"}
@@ -71,7 +71,7 @@ export default function Login() {
         <button
           onClick={handleApple}
           disabled={loadingGoogle || loadingApple}
-          className="w-full h-12 flex items-center justify-center gap-3 rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground font-medium text-sm transition-colors disabled:opacity-60"
+          className="w-full h-14 flex items-center justify-center gap-3 rounded-xl border border-border bg-secondary active:bg-secondary/60 hover:bg-secondary/80 text-foreground font-medium text-sm transition-colors disabled:opacity-60 touch-manipulation cursor-pointer"
         >
           <AppleIcon />
           {loadingApple ? "Signing in…" : "Continue with Apple"}

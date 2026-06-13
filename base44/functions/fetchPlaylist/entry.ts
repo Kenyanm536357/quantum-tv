@@ -11,10 +11,16 @@ Deno.serve(async (req) => {
 
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; IPTV/1.0)' },
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(30000),
     });
 
     if (!res.ok) return Response.json({ error: `Upstream error: ${res.status}` }, { status: 502 });
+
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json') || url.includes('player_api')) {
+      const json = await res.json();
+      return Response.json(json);
+    }
 
     const text = await res.text();
     return new Response(text, {

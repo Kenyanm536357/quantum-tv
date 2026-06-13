@@ -1,17 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
-import { parseM3U } from './m3u-parser';
 import { setState } from './iptv-store';
 import { cleanName } from './clean-name';
 import { base44 } from '@/api/base44Client';
 
-const QUANTUM_M3U_URL = 'http://pro.business-cdn-8k.com/get.php?username=17cefb5a42fa&password=ed70795405&type=m3u_plus&output=m3u8';
-const CACHE_KEY = 'qtv_browse_cache_v6'; // bumped to clear old oversized cache
+const XTREAM_BASE = 'http://pro.business-cdn-8k.com';
+const XTREAM_USER = '17cefb5a42fa';
+const XTREAM_PASS = 'ed70795405';
 
-// Clear any old cache keys that may be bloating localStorage
-['qtv_browse_cache_v1','qtv_browse_cache_v2','qtv_browse_cache_v3','qtv_browse_cache_v4','qtv_browse_cache_v5'].forEach(k => {
+const CACHE_KEY = 'qtv_browse_cache_v7';
+const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
+
+// Clear old cache keys
+['qtv_browse_cache_v1','qtv_browse_cache_v2','qtv_browse_cache_v3',
+ 'qtv_browse_cache_v4','qtv_browse_cache_v5','qtv_browse_cache_v6'].forEach(k => {
   try { localStorage.removeItem(k); } catch(_) {}
 });
-const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
 function getCachedPlaylist() {
   try {
@@ -23,19 +26,41 @@ function getCachedPlaylist() {
   return null;
 }
 
-async function fetchPlaylist() {
-  const response = await base44.functions.invoke('fetchPlaylist', { url: QUANTUM_M3U_URL });
-  const text = response.data;
-  if (!text || !text.includes('#EXTM3U')) throw new Error('Invalid playlist format received.');
-  return parseM3U(text);
-}
-
 function safeCacheSet(key, data) {
   try {
     localStorage.setItem(key, JSON.stringify({ data, ts: Date.now() }));
-  } catch (_) {
-    // Quota exceeded — skip caching, data stays in memory only
-  }
+  } catch (_) {}
+}
+
+async function xtreamFetch(action) {
+  const url = `${XTREAM_BASE}/player_api.php?username=${XTREAM_USER}&password=${XTREAM_PASS}&action=${action}`;
+  const response = await base44.functions.invoke('fetchPlaylist', { url });
+  const raw = response.data;
+  // fetchPlaylist returns text — parse JSON
+  return typeof raw === 'string' ? JSON.parse(raw) : raw;
+}
+
+async function fetchPlaylist() {
+  // Fetch live categories + streams in parallel
+  const [cats, streams] = await Promise.all([
+    xtreamFetch('get_live_categories'),
+    xtreamFetch('get_live_streams'),
+  ]);
+
+  const categories = (cats || []).map(c => ({
+    category_id: String(c.category_id),
+    category_name: c.category_name,
+  }));
+
+  const mappedStreams = (streams || []).map(s => ({
+    stream_id: String(s.stream_id),
+    name: s.name,
+    stream_icon: s.stream_icon || null,
+    category_id: String(s.category_id),
+    direct_url: `${XTREAM_BASE}/live/${XTREAM_USER}/${XTREAM_PASS}/${s.stream_id}.m3u8`,
+  }));
+
+  return { categories, streams: mappedStreams };
 }
 
 export function useM3UPlaylist() {

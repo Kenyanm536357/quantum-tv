@@ -27,6 +27,7 @@ export default function VideoPlayer({ src, title, type }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [bookmarked, setBookmarked] = useState(false);
+  const [corsBlocked, setCorsBlocked] = useState(false);
   const isLive = type === 'live' || !isFinite(duration) || duration > 86400;
 
   // Track bookmark state
@@ -74,6 +75,7 @@ export default function VideoPlayer({ src, title, type }) {
     setErr(null);
 
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+    setCorsBlocked(false);
 
     if (Hls.isSupported()) {
       const hls = new Hls({
@@ -81,6 +83,9 @@ export default function VideoPlayer({ src, title, type }) {
         backBufferLength: 30,
         maxBufferLength: 60,
         enableWorker: true,
+        xhrSetup: (xhr) => {
+          xhr.withCredentials = false;
+        },
       });
       hlsRef.current = hls;
       hls.loadSource(src);
@@ -89,7 +94,9 @@ export default function VideoPlayer({ src, title, type }) {
       hls.on(Hls.Events.ERROR, (_, d) => {
         console.warn('[HLS Error]', d?.type, d?.details, d?.response?.code, src);
         if (d?.fatal) {
-          setErr(`Stream error: ${d?.details ?? 'unknown'} (code: ${d?.response?.code ?? 'N/A'})`);
+          const isCors = d?.details === 'manifestLoadError' && (d?.response?.code === 0 || d?.response?.code === undefined);
+          setCorsBlocked(isCors);
+          setErr(isCors ? 'cors_blocked' : `Stream error: ${d?.details ?? 'unknown'} (code: ${d?.response?.code ?? 'N/A'})`);
           setLoading(false);
         }
       });
@@ -158,13 +165,34 @@ export default function VideoPlayer({ src, title, type }) {
 
         {/* Error */}
         {err && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/80">
-            <AlertTriangle className="w-12 h-12 text-destructive" />
-            <p className="text-sm text-white/70">{err}</p>
-            <button onClick={initHls}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary/10 border border-primary/30 text-primary text-sm font-medium hover:bg-primary/20 transition-all">
-              <RotateCcw className="w-4 h-4" /> Retry
-            </button>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/85 px-6 text-center">
+            <AlertTriangle className="w-10 h-10 text-destructive" />
+            {corsBlocked ? (
+              <>
+                <div>
+                  <p className="text-white font-bold mb-1">Browser Blocked This Stream</p>
+                  <p className="text-white/50 text-xs max-w-xs">Your browser is blocking the stream due to security restrictions (CORS). Open it directly in your device's native video player instead.</p>
+                </div>
+                <div className="flex flex-col gap-2 w-full max-w-xs">
+                  <a href={src} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-black font-bold text-sm hover:bg-primary/90 transition-all">
+                    ▶ Open in Native Player
+                  </a>
+                  <button onClick={initHls}
+                    className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-white/8 border border-white/12 text-white/60 text-sm hover:bg-white/12 transition-all">
+                    <RotateCcw className="w-4 h-4" /> Try Again
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-white/70">{err}</p>
+                <button onClick={initHls}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary/10 border border-primary/30 text-primary text-sm font-medium hover:bg-primary/20 transition-all">
+                  <RotateCcw className="w-4 h-4" /> Retry
+                </button>
+              </>
+            )}
           </div>
         )}
 

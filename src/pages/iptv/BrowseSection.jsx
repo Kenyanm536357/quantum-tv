@@ -380,11 +380,6 @@ export default function BrowseSection() {
     await playM3UStream(stream);
   }, []);
 
-  const handleSelectCat = useCallback((cat) => {
-    setSelectedCat(cat);
-    setActiveFilter('all');
-  }, []);
-
   const catStreamMap = useMemo(() => {
     if (!playlist) return {};
     const map = {};
@@ -439,16 +434,16 @@ export default function BrowseSection() {
     return playlist.streams.filter(s => cleanName(s.name).toLowerCase().includes(q)).slice(0, 80);
   }, [globalSearch, playlist]);
 
-  // Quick filter streams
+  // Quick filter — streams matching the active filter
   const filteredStreams = useMemo(() => {
-    if (activeFilter === 'all' || !playlist) return null;
-    const filter = GENRE_FILTERS.find(f => f.id === activeFilter);
-    if (!filter?.match) return null;
-    const matchingCatIds = new Set(
-      playlist.categories.filter(c => filter.match(c)).map(c => c.category_id)
+    if (!playlist || activeFilter === 'all') return null;
+    const filterDef = GENRE_FILTERS.find(f => f.id === activeFilter);
+    if (!filterDef?.match) return null;
+    const matchedCatIds = new Set(
+      playlist.categories.filter(c => filterDef.match(c)).map(c => c.category_id)
     );
-    return playlist.streams.filter(s => matchingCatIds.has(s.category_id)).slice(0, 200);
-  }, [activeFilter, playlist]);
+    return playlist.streams.filter(s => matchedCatIds.has(s.category_id));
+  }, [playlist, activeFilter]);
 
   if (loading) return <LoadingScreen />;
 
@@ -513,32 +508,30 @@ export default function BrowseSection() {
   return (
     <div className="flex flex-col min-h-full">
       {/* ── Search + header bar ── */}
-      <div className="flex items-center gap-3 px-4 sm:px-6 pt-4 pb-3 flex-shrink-0 sticky top-0 z-10" style={{ background: '#07090f' }}>
-        <h1 className="text-base font-black text-white tracking-tight hidden sm:block">
-          Quantum<span className="text-cyan-400">TV</span>
-        </h1>
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/25 pointer-events-none" />
-          <input
-            value={globalSearch}
-            onChange={e => setGlobalSearch(e.target.value)}
-            placeholder="Search all channels…"
-            className="w-full bg-white/5 border border-white/8 rounded-xl pl-9 pr-8 py-2 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-cyan-500/40 transition-all"
-          />
-          {globalSearch && (
-            <button onClick={() => setGlobalSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
+      <div className="flex flex-col gap-2 px-4 sm:px-6 pt-4 pb-3 flex-shrink-0 sticky top-0 z-10" style={{ background: '#07090f' }}>
+        <div className="flex items-center gap-3">
+          <h1 className="text-base font-black text-white tracking-tight hidden sm:block">
+            Quantum<span className="text-cyan-400">TV</span>
+          </h1>
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/25 pointer-events-none" />
+            <input
+              value={globalSearch}
+              onChange={e => { setGlobalSearch(e.target.value); if (e.target.value) setActiveFilter('all'); }}
+              placeholder="Search all channels…"
+              className="w-full bg-white/5 border border-white/8 rounded-xl pl-9 pr-8 py-2 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-cyan-500/40 transition-all"
+            />
+            {globalSearch && (
+              <button onClick={() => setGlobalSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <span className="text-xs text-white/20 flex-shrink-0 hidden md:block">{playlist.streams.length.toLocaleString()} channels</span>
         </div>
-        <span className="text-xs text-white/20 flex-shrink-0 hidden md:block">{playlist.streams.length.toLocaleString()} channels</span>
-      </div>
-
-      {/* ── Quick filter bar ── */}
-      <div className="px-4 sm:px-6 pb-2 flex-shrink-0">
         <QuickFilterBar
           activeFilter={activeFilter}
-          onFilter={f => { setActiveFilter(f); setGlobalSearch(''); }}
+          onFilter={(id) => { setActiveFilter(id); setGlobalSearch(''); }}
           playlist={playlist}
           catStreamMap={catStreamMap}
         />
@@ -569,7 +562,7 @@ export default function BrowseSection() {
               </button>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-              {filteredStreams.map(s => <StreamCard key={s.stream_id || s.url} stream={s} onPlay={playStream} />)}
+              {filteredStreams.slice(0, 120).map(s => <StreamCard key={s.stream_id || s.url} stream={s} onPlay={playStream} />)}
             </div>
             {filteredStreams.length === 0 && <p className="text-center text-white/25 py-16 text-sm">No channels found for this filter.</p>}
           </div>
@@ -600,7 +593,7 @@ export default function BrowseSection() {
             </div>
 
             {/* Category pills */}
-            <CategoryPills categories={allCats.slice(0, 20)} catStreamMap={catStreamMap} onSelect={handleSelectCat} />
+            <CategoryPills categories={allCats.slice(0, 20)} catStreamMap={catStreamMap} onSelect={setSelectedCat} />
 
             {/* Trending shelf */}
             {trending.length > 0 && (

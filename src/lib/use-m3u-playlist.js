@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { parseM3U } from './m3u-parser';
 import { setState } from './iptv-store';
 import { cleanName } from './clean-name';
+import { base44 } from '@/api/base44Client';
 
 const QUANTUM_M3U_URL = 'http://pro.business-cdn-8k.com/get.php?username=17cefb5a42fa&password=ed70795405&type=m3u_plus&output=ts';
 const CACHE_KEY = 'qtv_browse_cache_v5'; // bumped to clear old oversized cache
@@ -23,38 +24,10 @@ function getCachedPlaylist() {
 }
 
 async function fetchPlaylist() {
-  const proxies = [
-    (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-    (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-    (url) => `https://cors-anywhere.herokuapp.com/${url}`,
-  ];
-
-  let lastError;
-  // Try direct first
-  try {
-    const res = await fetch(QUANTUM_M3U_URL, { signal: AbortSignal.timeout(10000) });
-    if (res.ok) {
-      const text = await res.text();
-      if (text.includes('#EXTM3U')) return parseM3U(text);
-    }
-  } catch (e) {
-    lastError = e;
-  }
-
-  // Try each proxy
-  for (const proxy of proxies) {
-    try {
-      const res = await fetch(proxy(QUANTUM_M3U_URL), { signal: AbortSignal.timeout(15000) });
-      if (res.ok) {
-        const text = await res.text();
-        if (text.includes('#EXTM3U')) return parseM3U(text);
-      }
-    } catch (e) {
-      lastError = e;
-    }
-  }
-
-  throw new Error('Failed to load playlist. All sources unavailable.');
+  const response = await base44.functions.invoke('fetchPlaylist', { url: QUANTUM_M3U_URL });
+  const text = response.data;
+  if (!text || !text.includes('#EXTM3U')) throw new Error('Invalid playlist format received.');
+  return parseM3U(text);
 }
 
 function safeCacheSet(key, data) {

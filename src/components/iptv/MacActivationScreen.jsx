@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Monitor, Copy, CheckCircle, Loader2, Shield, Lock } from 'lucide-react';
+import { Monitor, Copy, CheckCircle, Loader2, Shield, Lock, Settings } from 'lucide-react';
 import { getDeviceMAC, activateDevice, lockDeviceLocally, unlockDeviceLocally } from '@/lib/mac-auth';
 import { base44 } from '@/api/base44Client';
 
@@ -85,10 +85,19 @@ export default function MacActivationScreen({ onActivated }) {
 
   return (
     <div
-      className="h-screen w-screen flex items-center justify-center p-5 relative overflow-hidden"
-      style={{ background: 'radial-gradient(ellipse at 60% 0%, #1a0a3d 0%, #0a0f2e 40%, #060a1a 100%)' }}
+      className="min-h-screen w-screen flex items-center justify-center p-5 relative overflow-y-auto"
+      style={{ background: 'radial-gradient(ellipse at 60% 0%, #1a0a3d 0%, #0a0f2e 40%, #060a1a 100%)', paddingTop: 'calc(env(safe-area-inset-top) + 1.25rem)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.25rem)' }}
     >
       {BG}
+
+      {/* Admin settings button — always visible, inside the dark background */}
+      <a
+        href="/admin/activation"
+        className="fixed top-4 right-4 z-50 w-11 h-11 rounded-full bg-white/8 border border-white/12 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/15 transition-all touch-manipulation"
+        style={{ marginTop: 'env(safe-area-inset-top)' }}
+      >
+        <Settings className="w-5 h-5" />
+      </a>
 
       <AnimatePresence mode="wait">
         {isActivatedState ? (

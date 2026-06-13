@@ -1,6 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
 
-const XTREAM_BASE = 'http://pro.business-cdn-8k.com';
+const XTREAM_BASE = 'https://pro.business-cdn-8k.com';
 const XTREAM_USER = '17cefb5a42fa';
 const XTREAM_PASS = 'ed70795405';
 

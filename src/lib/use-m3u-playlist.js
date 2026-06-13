@@ -3,17 +3,18 @@ import { setState } from './iptv-store';
 import { cleanName } from './clean-name';
 import { base44 } from '@/api/base44Client';
 
-const XTREAM_BASE = 'http://pro.business-cdn-8k.com';
+const XTREAM_BASE = 'https://pro.business-cdn-8k.com';
 const XTREAM_USER = '17cefb5a42fa';
 const XTREAM_PASS = 'ed70795405';
 
-const CACHE_KEY = 'qtv_browse_cache_v10';
+const CACHE_KEY = 'qtv_browse_cache_v11';
 const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
 // Clear old cache keys
 ['qtv_browse_cache_v1','qtv_browse_cache_v2','qtv_browse_cache_v3',
  'qtv_browse_cache_v4','qtv_browse_cache_v5','qtv_browse_cache_v6',
- 'qtv_browse_cache_v7','qtv_browse_cache_v8','qtv_browse_cache_v9'].forEach(k => {
+ 'qtv_browse_cache_v7','qtv_browse_cache_v8','qtv_browse_cache_v9',
+ 'qtv_browse_cache_v10'].forEach(k => {
   try { localStorage.removeItem(k); } catch(_) {}
 });
 

@@ -157,7 +157,7 @@ function AppShell() {
       <ReminderChecker credentials={credentials} />
 
       {/* Video player overlay — suppressed on EPG (inline preview there) */}
-      {player && sectionKey !== 'epg' && sectionKey !== 'browse' && (
+      {player && sectionKey !== 'epg' && (
         <VideoPlayer src={player.src} title={player.title} type={player.type} />
       )}
     </div>

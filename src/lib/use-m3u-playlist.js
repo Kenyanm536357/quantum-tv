@@ -91,7 +91,8 @@ export function useM3UPlaylist() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // Always fetch fresh on launch — never serve stale cache
+  useEffect(() => { load(true); }, [load]);
 
   return { playlist, loading, error, refresh: () => load(true) };
 }

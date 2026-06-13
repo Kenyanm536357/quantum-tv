@@ -7,12 +7,13 @@ const XTREAM_BASE = 'http://pro.business-cdn-8k.com';
 const XTREAM_USER = '17cefb5a42fa';
 const XTREAM_PASS = 'ed70795405';
 
-const CACHE_KEY = 'qtv_browse_cache_v7';
+const CACHE_KEY = 'qtv_browse_cache_v8';
 const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
 // Clear old cache keys
 ['qtv_browse_cache_v1','qtv_browse_cache_v2','qtv_browse_cache_v3',
- 'qtv_browse_cache_v4','qtv_browse_cache_v5','qtv_browse_cache_v6'].forEach(k => {
+ 'qtv_browse_cache_v4','qtv_browse_cache_v5','qtv_browse_cache_v6',
+ 'qtv_browse_cache_v7'].forEach(k => {
   try { localStorage.removeItem(k); } catch(_) {}
 });
 
@@ -35,9 +36,13 @@ function safeCacheSet(key, data) {
 async function xtreamFetch(action) {
   const url = `${XTREAM_BASE}/player_api.php?username=${XTREAM_USER}&password=${XTREAM_PASS}&action=${action}`;
   const response = await base44.functions.invoke('fetchPlaylist', { url });
+  // base44.functions.invoke returns an Axios response; .data is the parsed body
   const raw = response.data;
-  // fetchPlaylist returns text — parse JSON
-  return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  if (typeof raw === 'string') return JSON.parse(raw);
+  // The backend may wrap in { data: [...] } or return the array directly
+  if (Array.isArray(raw)) return raw;
+  if (raw && Array.isArray(raw.data)) return raw.data;
+  return raw;
 }
 
 async function fetchPlaylist() {

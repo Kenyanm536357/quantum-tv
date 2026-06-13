@@ -10,6 +10,20 @@ import {
 } from 'lucide-react';
 import DebugPanel from '@/components/iptv/DebugPanel';
 
+// ── Proxy list — tried in order on failure, working proxy is locked in ────────
+const PROXY_LIST = [
+  null, // direct (no proxy) — always try first
+  (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  (url) => `https://thingproxy.freeboard.io/fetch/${url}`,
+  (url) => `https://cors.sh/${url}`,
+];
+
+function applyProxy(rawSrc, proxyIndex) {
+  if (proxyIndex === 0 || !PROXY_LIST[proxyIndex]) return rawSrc;
+  return PROXY_LIST[proxyIndex](rawSrc);
+}
+
 export default function VideoPlayer({ src, title, type }) {
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
@@ -17,6 +31,10 @@ export default function VideoPlayer({ src, title, type }) {
   const hideTimer = useRef(null);
   const progressTimer = useRef(null);
   const { credentials, player } = useStore();
+
+  // Proxy state — locked once a working proxy is found
+  const proxyIndexRef = useRef(0);
+  const lockedProxyRef = useRef(null); // null = not locked yet
 
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -31,6 +49,7 @@ export default function VideoPlayer({ src, title, type }) {
   const [corsBlocked, setCorsBlocked] = useState(false);
   const [debugLogs, setDebugLogs] = useState([]);
   const [showDebug, setShowDebug] = useState(false);
+  const [proxyStatus, setProxyStatus] = useState('');
   const tapCountRef = useRef(0);
   const tapTimerRef = useRef(null);
   const isLive = type === 'live' || !isFinite(duration) || duration > 86400;
@@ -88,17 +107,16 @@ export default function VideoPlayer({ src, title, type }) {
     }
   }, [player?.resumeAt]);
 
-  const initHls = useCallback(() => {
+  const tryLoadWithProxy = useCallback((proxyIndex) => {
     const video = videoRef.current;
     if (!video || !src) return;
-    setLoading(true);
-    setErr(null);
 
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
-    setCorsBlocked(false);
-    setDebugLogs([]);
 
-    addLog('info', 'INIT', { src, hlsSupported: Hls.isSupported() });
+    const activeSrc = applyProxy(src, proxyIndex);
+    const proxyLabel = proxyIndex === 0 ? 'direct' : `proxy ${proxyIndex}`;
+    addLog('info', 'TRY_PROXY', { proxyIndex, activeSrc: activeSrc.slice(-80) });
+    setProxyStatus(proxyIndex === 0 ? '' : `Trying proxy ${proxyIndex}/${PROXY_LIST.length - 1}…`);
 
     if (Hls.isSupported()) {
       const hls = new Hls({
@@ -106,53 +124,106 @@ export default function VideoPlayer({ src, title, type }) {
         backBufferLength: 30,
         maxBufferLength: 60,
         enableWorker: true,
-        xhrSetup: (xhr) => {
-          xhr.withCredentials = false;
-        },
+        xhrSetup: (xhr) => { xhr.withCredentials = false; },
       });
       hlsRef.current = hls;
-      hls.loadSource(src);
+      hls.loadSource(activeSrc);
       hls.attachMedia(video);
+
       hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
-        addLog('success', 'MANIFEST_PARSED', { levels: data?.levels?.length ?? 0 });
+        // ✅ This proxy works — lock it in
+        lockedProxyRef.current = proxyIndex;
+        proxyIndexRef.current = proxyIndex;
+        addLog('success', 'MANIFEST_PARSED', { levels: data?.levels?.length ?? 0, proxyLabel });
+        setProxyStatus(proxyIndex === 0 ? '' : `Using proxy ${proxyIndex}`);
         setLoading(false);
+        setCorsBlocked(false);
+        setErr(null);
         video.play().catch(() => {});
       });
+
       hls.on(Hls.Events.LEVEL_LOADED, (_, data) => {
         addLog('info', 'LEVEL_LOADED', { level: data?.level, duration: data?.details?.totalduration });
       });
+
       hls.on(Hls.Events.ERROR, (_, d) => {
         const code = d?.response?.code ?? d?.networkDetails?.status ?? 'N/A';
-        const url = d?.url ?? d?.context?.url ?? '';
         addLog(d?.fatal ? 'error' : 'warn', d?.fatal ? 'FATAL_ERROR' : 'HLS_ERROR', {
-          type: d?.type,
-          details: d?.details,
-          fatal: d?.fatal,
-          responseCode: code,
-          url: url.slice(-80), // last 80 chars to avoid truncation
+          type: d?.type, details: d?.details, fatal: d?.fatal, responseCode: code, proxyLabel,
         });
-        console.warn('[HLS Error]', d?.type, d?.details, code, src);
+
         if (d?.fatal) {
-          const isCors = d?.details === 'manifestLoadError' && (code === 0 || code === 'N/A');
-          setCorsBlocked(isCors);
-          setShowDebug(true); // auto-open debug panel on fatal error
-          setErr(isCors ? 'cors_blocked' : `Stream error: ${d?.details ?? 'unknown'} (code: ${code})`);
-          setLoading(false);
+          hls.destroy();
+          hlsRef.current = null;
+
+          const nextProxy = proxyIndex + 1;
+          if (nextProxy < PROXY_LIST.length && lockedProxyRef.current === null) {
+            // Auto-try next proxy
+            addLog('info', 'PROXY_FALLBACK', { nextProxy });
+            setTimeout(() => tryLoadWithProxy(nextProxy), 300);
+          } else {
+            // All proxies exhausted (or locked proxy failed — retry locked proxy once)
+            if (lockedProxyRef.current !== null && lockedProxyRef.current === proxyIndex) {
+              addLog('warn', 'LOCKED_PROXY_FAILED', { retrying: true });
+              lockedProxyRef.current = null;
+              proxyIndexRef.current = 0;
+              setTimeout(() => tryLoadWithProxy(0), 1000);
+              return;
+            }
+            const isCors = d?.details === 'manifestLoadError' && (code === 0 || code === 'N/A');
+            setCorsBlocked(isCors);
+            setErr(isCors ? 'cors_blocked' : `Stream unavailable (code: ${code})`);
+            setLoading(false);
+          }
         }
       });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      addLog('info', 'NATIVE_HLS', { src });
-      video.src = src;
-      video.onloadedmetadata = () => { addLog('success', 'METADATA_LOADED', {}); setLoading(false); video.play().catch(() => {}); };
-      video.onerror = (e) => { addLog('error', 'NATIVE_ERROR', { code: video.error?.code, message: video.error?.message }); setErr('Stream unavailable.'); setLoading(false); };
+      addLog('info', 'NATIVE_HLS', { src: activeSrc });
+      video.src = activeSrc;
+      video.onloadedmetadata = () => {
+        lockedProxyRef.current = proxyIndex;
+        addLog('success', 'METADATA_LOADED', {});
+        setLoading(false);
+        setProxyStatus(proxyIndex === 0 ? '' : `Using proxy ${proxyIndex}`);
+        video.play().catch(() => {});
+      };
+      video.onerror = () => {
+        const nextProxy = proxyIndex + 1;
+        if (nextProxy < PROXY_LIST.length && lockedProxyRef.current === null) {
+          setTimeout(() => tryLoadWithProxy(nextProxy), 300);
+        } else {
+          setErr('Stream unavailable.');
+          setLoading(false);
+        }
+      };
     } else {
-      addLog('error', 'NO_HLS_SUPPORT', {});
       setErr('HLS not supported in this browser.');
       setLoading(false);
     }
   }, [src, addLog]);
 
-  useEffect(() => { initHls(); return () => { hlsRef.current?.destroy(); }; }, [initHls]);
+  const initHls = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !src) return;
+    setLoading(true);
+    setErr(null);
+    setCorsBlocked(false);
+    setDebugLogs([]);
+    setProxyStatus('');
+
+    // If we have a locked working proxy, use it directly; otherwise start from 0
+    const startProxy = lockedProxyRef.current !== null ? lockedProxyRef.current : 0;
+    addLog('info', 'INIT', { src, startProxy, hlsSupported: Hls.isSupported() });
+    tryLoadWithProxy(startProxy);
+  }, [src, addLog, tryLoadWithProxy]);
+
+  useEffect(() => {
+    // New stream — reset proxy lock so we start fresh
+    lockedProxyRef.current = null;
+    proxyIndexRef.current = 0;
+    initHls();
+    return () => { hlsRef.current?.destroy(); };
+  }, [src]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const v = videoRef.current;
@@ -201,7 +272,7 @@ export default function VideoPlayer({ src, title, type }) {
               <div className="absolute inset-0 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
               <Radio className="absolute inset-0 m-auto w-5 h-5 text-primary" />
             </div>
-            <p className="text-sm text-white/60">Loading stream…</p>
+            <p className="text-sm text-white/60">{proxyStatus || 'Loading stream…'}</p>
           </div>
         )}
 

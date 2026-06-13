@@ -4,7 +4,8 @@
  * - Splits CamelCase words (e.g. "AnimationKids" → "Animation Kids")
  * - Collapses multiple spaces
  */
-export function cleanName(name = '') {
+export function cleanName(name) {
+  if (!name || typeof name !== 'string') return '';
   return name
     .replace(/[;|]/g, ' ')
     // Insert space before uppercase letters that follow a lowercase letter or digit

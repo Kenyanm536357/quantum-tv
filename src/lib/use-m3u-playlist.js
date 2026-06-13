@@ -52,16 +52,16 @@ async function fetchPlaylist() {
     xtreamFetch('get_live_streams'),
   ]);
 
-  const categories = (cats || []).filter(c => c && c.category_id).map(c => ({
+  const categories = (cats || []).filter(c => c && c.category_id != null).map(c => ({
     category_id: String(c.category_id),
-    category_name: c.category_name || 'General',
+    category_name: typeof c.category_name === 'string' ? c.category_name : 'General',
   }));
 
-  const mappedStreams = (streams || []).filter(s => s && s.stream_id).map(s => ({
+  const mappedStreams = (streams || []).filter(s => s && s.stream_id != null).map(s => ({
     stream_id: String(s.stream_id),
-    name: s.name || 'Unknown',
+    name: typeof s.name === 'string' ? s.name : 'Unknown',
     stream_icon: s.stream_icon || null,
-    category_id: String(s.category_id || ''),
+    category_id: s.category_id != null ? String(s.category_id) : '',
     direct_url: `${XTREAM_BASE}/live/${XTREAM_USER}/${XTREAM_PASS}/${s.stream_id}`,
   }));
 

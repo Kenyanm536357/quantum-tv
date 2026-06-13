@@ -94,9 +94,9 @@ export default function VideoPlayer({ src, title, type }) {
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => { setLoading(false); video.play().catch(() => {}); });
       hls.on(Hls.Events.ERROR, (_, d) => {
-        console.warn('[HLS Error]', d.type, d.details, d.response?.code, src);
-        if (d.fatal) {
-          setErr(`Stream error: ${d.details} (code: ${d.response?.code ?? 'N/A'})`);
+        console.warn('[HLS Error]', d?.type, d?.details, d?.response?.code, src);
+        if (d?.fatal) {
+          setErr(`Stream error: ${d?.details ?? 'unknown'} (code: ${d?.response?.code ?? 'N/A'})`);
           setLoading(false);
         }
       });

@@ -4,11 +4,11 @@ import { setState } from './iptv-store';
 import { cleanName } from './clean-name';
 import { base44 } from '@/api/base44Client';
 
-const QUANTUM_M3U_URL = 'http://pro.business-cdn-8k.com/get.php?username=17cefb5a42fa&password=ed70795405&type=m3u_plus&output=ts';
-const CACHE_KEY = 'qtv_browse_cache_v5'; // bumped to clear old oversized cache
+const QUANTUM_M3U_URL = 'http://pro.business-cdn-8k.com/get.php?username=17cefb5a42fa&password=ed70795405&type=m3u_plus&output=m3u8';
+const CACHE_KEY = 'qtv_browse_cache_v6'; // bumped to clear old oversized cache
 
 // Clear any old cache keys that may be bloating localStorage
-['qtv_browse_cache_v1','qtv_browse_cache_v2','qtv_browse_cache_v3','qtv_browse_cache_v4'].forEach(k => {
+['qtv_browse_cache_v1','qtv_browse_cache_v2','qtv_browse_cache_v3','qtv_browse_cache_v4','qtv_browse_cache_v5'].forEach(k => {
   try { localStorage.removeItem(k); } catch(_) {}
 });
 const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours

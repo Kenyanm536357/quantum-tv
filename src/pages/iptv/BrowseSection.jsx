@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
-import { setState } from '@/lib/iptv-store';
-import { useM3UPlaylist } from '@/lib/use-m3u-playlist.js';
+import { useM3UPlaylist, playM3UStream } from '@/lib/use-m3u-playlist.js';
 import { cleanName } from '@/lib/clean-name';
 import {
   Search, X, Play, Loader2, Tv2, Film,
@@ -324,9 +323,8 @@ export default function BrowseSection() {
   const [showAllCats, setShowAllCats] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
 
-  const playStream = useCallback((stream) => {
-    const src = stream.direct_url || stream.url;
-    setState({ player: { src, title: cleanName(stream.name), type: 'live' } });
+  const playStream = useCallback(async (stream) => {
+    await playM3UStream(stream);
   }, []);
 
   const catStreamMap = useMemo(() => {

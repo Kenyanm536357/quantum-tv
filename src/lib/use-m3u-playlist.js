@@ -3,10 +3,6 @@ import { setState } from './iptv-store';
 import { cleanName } from './clean-name';
 import { base44 } from '@/api/base44Client';
 
-const XTREAM_BASE = 'https://pro.business-cdn-8k.com';
-const XTREAM_USER = '17cefb5a42fa';
-const XTREAM_PASS = 'ed70795405';
-
 const CACHE_KEY = 'qtv_browse_cache_v11';
 const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
@@ -35,19 +31,16 @@ function safeCacheSet(key, data) {
 }
 
 async function xtreamFetch(action) {
-  const url = `${XTREAM_BASE}/player_api.php?username=${XTREAM_USER}&password=${XTREAM_PASS}&action=${action}`;
-  const response = await base44.functions.invoke('fetchPlaylist', { url });
-  // base44.functions.invoke returns an Axios response; .data is the parsed body
+  // Credentials stay on the backend — we only pass the action name
+  const response = await base44.functions.invoke('fetchPlaylist', { action });
   const raw = response.data;
   if (typeof raw === 'string') return JSON.parse(raw);
-  // The backend may wrap in { data: [...] } or return the array directly
   if (Array.isArray(raw)) return raw;
   if (raw && Array.isArray(raw.data)) return raw.data;
   return raw;
 }
 
 async function fetchPlaylist() {
-  // Fetch live categories + streams in parallel
   const [cats, streams] = await Promise.all([
     xtreamFetch('get_live_categories'),
     xtreamFetch('get_live_streams'),
@@ -63,10 +56,16 @@ async function fetchPlaylist() {
     name: typeof s.name === 'string' ? s.name : 'Unknown',
     stream_icon: s.stream_icon || null,
     category_id: s.category_id != null ? String(s.category_id) : '',
-    direct_url: `${XTREAM_BASE}/live/${XTREAM_USER}/${XTREAM_PASS}/${s.stream_id}.m3u8`,
+    // stream URL is fetched on-demand via backend, not stored in frontend
+    stream_id_ref: String(s.stream_id),
   }));
 
   return { categories, streams: mappedStreams };
+}
+
+export async function resolveStreamUrl(stream_id) {
+  const response = await base44.functions.invoke('fetchPlaylist', { getStreamUrl: true, stream_id });
+  return response.data?.stream_url || null;
 }
 
 export function useM3UPlaylist() {
@@ -98,7 +97,7 @@ export function useM3UPlaylist() {
   return { playlist, loading, error, refresh: () => load(true) };
 }
 
-export function playM3UStream(stream) {
-  const src = stream.direct_url || stream.url;
+export async function playM3UStream(stream) {
+  const src = await resolveStreamUrl(stream.stream_id || stream.stream_id_ref);
   setState({ player: { src, title: cleanName(stream.name), type: 'live' } });
 }

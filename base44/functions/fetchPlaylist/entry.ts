@@ -1,15 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
 
-const XTREAM_BASE = 'https://pro.business-cdn-8k.com';
-const XTREAM_USER = '17cefb5a42fa';
-const XTREAM_PASS = 'ed70795405';
-
-const FETCH_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (SmartTV; Linux armv7l) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
-  'Referer': XTREAM_BASE + '/',
-  'Origin': XTREAM_BASE,
-};
-
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -23,13 +13,35 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const XTREAM_BASE = Deno.env.get('XTREAM_BASE_URL') || '';
+    const XTREAM_USER = Deno.env.get('XTREAM_USERNAME') || '';
+    const XTREAM_PASS = Deno.env.get('XTREAM_PASSWORD') || '';
+
+    const FETCH_HEADERS = {
+      'User-Agent': 'Mozilla/5.0 (SmartTV; Linux armv7l) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
+      'Referer': XTREAM_BASE + '/',
+      'Origin': XTREAM_BASE,
+    };
+
     const base44 = createClientFromRequest(req);
     const user = await base44.auth.me();
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await req.json();
-    const { url, proxy } = body;
-    if (!url) return Response.json({ error: 'Missing url' }, { status: 400 });
+    const { action, proxy, url: rawUrl } = body;
+
+    // If action is provided, build the Xtream API URL server-side (credentials never leave backend)
+    const url = action
+      ? `${XTREAM_BASE}/player_api.php?username=${XTREAM_USER}&password=${XTREAM_PASS}&action=${action}`
+      : rawUrl;
+
+    if (!url) return Response.json({ error: 'Missing url or action' }, { status: 400 });
+
+    // Return a signed stream URL without exposing credentials to the client
+    if (body.getStreamUrl) {
+      const streamUrl = `${XTREAM_BASE}/live/${XTREAM_USER}/${XTREAM_PASS}/${body.stream_id}.m3u8`;
+      return Response.json({ stream_url: streamUrl });
+    }
 
     // Proxy mode: pass through raw content (m3u8 manifests + ts segments)
     if (proxy) {

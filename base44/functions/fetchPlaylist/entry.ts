@@ -1,5 +1,3 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
-
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -23,9 +21,7 @@ Deno.serve(async (req) => {
       'Origin': XTREAM_BASE,
     };
 
-    const base44 = createClientFromRequest(req);
-    const user = await base44.auth.me();
-    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    // No user auth required — app uses MAC-based device activation instead of login
 
     const body = await req.json();
     const { action, proxy, url: rawUrl } = body;

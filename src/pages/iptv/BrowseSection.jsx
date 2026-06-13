@@ -342,8 +342,8 @@ export default function BrowseSection() {
     );
     return playlist.streams.filter(s =>
       usCategories.has(s.category_id) ||
-      /\b(us|usa|united states?)\b/i.test(s.name)
-    ).slice(0, 50);
+      /\b(us|usa|united\s*states?)\b/i.test(s.name)
+    ).slice(0, 150);
   }, [playlist]);
 
   // Categorise shelves by type
@@ -417,7 +417,8 @@ export default function BrowseSection() {
     );
   }
 
-  const hero = playlist.streams.find(s => s.stream_icon) || playlist.streams[0];
+  // Prefer a US stream for the hero
+  const hero = usStreams.find(s => s.stream_icon) || playlist.streams.find(s => s.stream_icon) || playlist.streams[0];
   const allCats = playlist.categories.filter(c => (catStreamMap[c.category_id]?.length ?? 0) > 0);
 
   // Build dynamic shelves from whatever categories exist
@@ -473,16 +474,29 @@ export default function BrowseSection() {
           </div>
         ) : (
           <>
+            {/* 🇺🇸 United States — FRONT AND CENTER */}
+            {usStreams.length > 0 && (
+              <div className="pt-2 mb-2">
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-3xl">🇺🇸</span>
+                  <div>
+                    <h2 className="text-xl font-black text-white tracking-tight">United States</h2>
+                    <p className="text-xs text-white/35">{usStreams.length} channels available</p>
+                  </div>
+                </div>
+                <Shelf title="" icon={null} color="text-red-400"
+                  streams={usStreams} onPlay={playStream}
+                  onViewAll={() => {
+                    const usCat = playlist.categories.find(c => /\b(us|usa|united\s*states?|america)\b/i.test(c.category_name));
+                    if (usCat) setSelectedCat(usCat);
+                  }} />
+              </div>
+            )}
+
             {/* Hero */}
             <div className="pt-2">
               <HeroBanner stream={hero} onPlay={playStream} />
             </div>
-
-            {/* 🇺🇸 United States — featured shelf */}
-            {usStreams.length > 0 && (
-              <Shelf title="🇺🇸 United States" icon={null} color="text-red-400"
-                streams={usStreams} onPlay={playStream} />
-            )}
 
             {/* Category pills */}
             <CategoryPills categories={allCats.slice(0, 20)} catStreamMap={catStreamMap} onSelect={setSelectedCat} />

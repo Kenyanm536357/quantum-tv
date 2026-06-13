@@ -7,13 +7,13 @@ const XTREAM_BASE = 'http://pro.business-cdn-8k.com';
 const XTREAM_USER = '17cefb5a42fa';
 const XTREAM_PASS = 'ed70795405';
 
-const CACHE_KEY = 'qtv_browse_cache_v8';
+const CACHE_KEY = 'qtv_browse_cache_v9';
 const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
 // Clear old cache keys
 ['qtv_browse_cache_v1','qtv_browse_cache_v2','qtv_browse_cache_v3',
  'qtv_browse_cache_v4','qtv_browse_cache_v5','qtv_browse_cache_v6',
- 'qtv_browse_cache_v7'].forEach(k => {
+ 'qtv_browse_cache_v7','qtv_browse_cache_v8'].forEach(k => {
   try { localStorage.removeItem(k); } catch(_) {}
 });
 
@@ -62,7 +62,7 @@ async function fetchPlaylist() {
     name: s.name || 'Unknown',
     stream_icon: s.stream_icon || null,
     category_id: String(s.category_id || ''),
-    direct_url: `${XTREAM_BASE}/live/${XTREAM_USER}/${XTREAM_PASS}/${s.stream_id}.m3u8`,
+    direct_url: `${XTREAM_BASE}/live/${XTREAM_USER}/${XTREAM_PASS}/${s.stream_id}`,
   }));
 
   return { categories, streams: mappedStreams };

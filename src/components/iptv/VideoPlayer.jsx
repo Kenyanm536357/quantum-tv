@@ -76,15 +76,41 @@ export default function VideoPlayer({ src, title, type }) {
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
 
     if (Hls.isSupported()) {
-      const hls = new Hls({ lowLatencyMode: true, backBufferLength: 60 });
+      const hls = new Hls({
+        lowLatencyMode: true,
+        backBufferLength: 30,
+        maxBufferLength: 30,
+        enableWorker: true,
+        xhrSetup: (xhr) => {
+          xhr.withCredentials = false;
+        },
+      });
       hlsRef.current = hls;
       hls.loadSource(src);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => { setLoading(false); video.play().catch(() => {}); });
-      hls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) { setErr('Stream unavailable.'); setLoading(false); } });
+      hls.on(Hls.Events.ERROR, (_, d) => {
+        if (d.fatal) {
+          // Try ts extension as fallback if m3u8 fails
+          const tsSrc = src.replace(/\.m3u8$/, '.ts');
+          if (src.endsWith('.m3u8') && tsSrc !== src) {
+            hls.destroy();
+            const hls2 = new Hls({ lowLatencyMode: true });
+            hlsRef.current = hls2;
+            hls2.loadSource(tsSrc);
+            hls2.attachMedia(video);
+            hls2.on(Hls.Events.MANIFEST_PARSED, () => { setLoading(false); video.play().catch(() => {}); });
+            hls2.on(Hls.Events.ERROR, () => { setErr('Stream unavailable.'); setLoading(false); });
+          } else {
+            setErr('Stream unavailable.');
+            setLoading(false);
+          }
+        }
+      });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = src;
       video.onloadedmetadata = () => { setLoading(false); video.play().catch(() => {}); };
+      video.onerror = () => { setErr('Stream unavailable.'); setLoading(false); };
     } else {
       setErr('HLS not supported in this browser.');
       setLoading(false);

@@ -8,6 +8,7 @@ import {
   Maximize, Minimize, RotateCcw, Radio, AlertTriangle,
   Bookmark, BookmarkCheck
 } from 'lucide-react';
+import DebugPanel from '@/components/iptv/DebugPanel';
 
 export default function VideoPlayer({ src, title, type }) {
   const videoRef = useRef(null);
@@ -28,7 +29,26 @@ export default function VideoPlayer({ src, title, type }) {
   const [err, setErr] = useState(null);
   const [bookmarked, setBookmarked] = useState(false);
   const [corsBlocked, setCorsBlocked] = useState(false);
+  const [debugLogs, setDebugLogs] = useState([]);
+  const [showDebug, setShowDebug] = useState(false);
+  const tapCountRef = useRef(0);
+  const tapTimerRef = useRef(null);
   const isLive = type === 'live' || !isFinite(duration) || duration > 86400;
+
+  const addLog = useCallback((level, event, detail = {}) => {
+    setDebugLogs(prev => [...prev, { level, event, detail, ts: Date.now() }]);
+  }, []);
+
+  // Triple-tap top-left corner to show debug panel
+  const handleDebugTap = useCallback(() => {
+    tapCountRef.current += 1;
+    clearTimeout(tapTimerRef.current);
+    tapTimerRef.current = setTimeout(() => { tapCountRef.current = 0; }, 600);
+    if (tapCountRef.current >= 3) {
+      tapCountRef.current = 0;
+      setShowDebug(true);
+    }
+  }, []);
 
   // Track bookmark state
   useEffect(() => {
@@ -76,6 +96,9 @@ export default function VideoPlayer({ src, title, type }) {
 
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
     setCorsBlocked(false);
+    setDebugLogs([]);
+
+    addLog('info', 'INIT', { src, hlsSupported: Hls.isSupported() });
 
     if (Hls.isSupported()) {
       const hls = new Hls({
@@ -90,25 +113,44 @@ export default function VideoPlayer({ src, title, type }) {
       hlsRef.current = hls;
       hls.loadSource(src);
       hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => { setLoading(false); video.play().catch(() => {}); });
+      hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+        addLog('success', 'MANIFEST_PARSED', { levels: data?.levels?.length ?? 0 });
+        setLoading(false);
+        video.play().catch(() => {});
+      });
+      hls.on(Hls.Events.LEVEL_LOADED, (_, data) => {
+        addLog('info', 'LEVEL_LOADED', { level: data?.level, duration: data?.details?.totalduration });
+      });
       hls.on(Hls.Events.ERROR, (_, d) => {
-        console.warn('[HLS Error]', d?.type, d?.details, d?.response?.code, src);
+        const code = d?.response?.code ?? d?.networkDetails?.status ?? 'N/A';
+        const url = d?.url ?? d?.context?.url ?? '';
+        addLog(d?.fatal ? 'error' : 'warn', d?.fatal ? 'FATAL_ERROR' : 'HLS_ERROR', {
+          type: d?.type,
+          details: d?.details,
+          fatal: d?.fatal,
+          responseCode: code,
+          url: url.slice(-80), // last 80 chars to avoid truncation
+        });
+        console.warn('[HLS Error]', d?.type, d?.details, code, src);
         if (d?.fatal) {
-          const isCors = d?.details === 'manifestLoadError' && (d?.response?.code === 0 || d?.response?.code === undefined);
+          const isCors = d?.details === 'manifestLoadError' && (code === 0 || code === 'N/A');
           setCorsBlocked(isCors);
-          setErr(isCors ? 'cors_blocked' : `Stream error: ${d?.details ?? 'unknown'} (code: ${d?.response?.code ?? 'N/A'})`);
+          setShowDebug(true); // auto-open debug panel on fatal error
+          setErr(isCors ? 'cors_blocked' : `Stream error: ${d?.details ?? 'unknown'} (code: ${code})`);
           setLoading(false);
         }
       });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      addLog('info', 'NATIVE_HLS', { src });
       video.src = src;
-      video.onloadedmetadata = () => { setLoading(false); video.play().catch(() => {}); };
-      video.onerror = () => { setErr('Stream unavailable.'); setLoading(false); };
+      video.onloadedmetadata = () => { addLog('success', 'METADATA_LOADED', {}); setLoading(false); video.play().catch(() => {}); };
+      video.onerror = (e) => { addLog('error', 'NATIVE_ERROR', { code: video.error?.code, message: video.error?.message }); setErr('Stream unavailable.'); setLoading(false); };
     } else {
+      addLog('error', 'NO_HLS_SUPPORT', {});
       setErr('HLS not supported in this browser.');
       setLoading(false);
     }
-  }, [src]);
+  }, [src, addLog]);
 
   useEffect(() => { initHls(); return () => { hlsRef.current?.destroy(); }; }, [initHls]);
 
@@ -194,6 +236,18 @@ export default function VideoPlayer({ src, title, type }) {
               </>
             )}
           </div>
+        )}
+
+        {/* Hidden debug trigger — triple-tap top-left */}
+        <button
+          onClick={handleDebugTap}
+          className="absolute top-0 left-0 w-16 h-16 z-40 opacity-0"
+          aria-hidden="true"
+        />
+
+        {/* Debug panel */}
+        {showDebug && (
+          <DebugPanel logs={debugLogs} onClose={() => setShowDebug(false)} />
         )}
 
         {/* Controls overlay */}

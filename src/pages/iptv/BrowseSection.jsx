@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
 import { setState } from '@/lib/iptv-store';
 import { useM3UPlaylist } from '@/lib/use-m3u-playlist.js';
 import { cleanName } from '@/lib/clean-name';
@@ -7,6 +7,7 @@ import {
   Music, Globe, Zap, ChevronLeft, ChevronRight, Radio,
   Flame, Star, Clock, Grid3X3, List, TrendingUp, Clapperboard
 } from 'lucide-react';
+import StreamDiagnostic from '@/components/iptv/StreamDiagnostic';
 
 // ── Category icons ─────────────────────────────────────────────────────────────
 const CAT_ICONS = {
@@ -57,6 +58,7 @@ function Thumb({ src, name, aspect = 'video', size = 'md' }) {
 // ── Stream card (horizontal shelf) ───────────────────────────────────────────
 function StreamCard({ stream, onPlay, aspect = 'video' }) {
   const name = cleanName(stream.name);
+  const [showDiag, setShowDiag] = useState(false);
   return (
     <div onClick={() => onPlay(stream)}
       className="group flex-shrink-0 cursor-pointer rounded-xl overflow-hidden border border-white/6 hover:border-white/25 transition-all duration-200 hover:scale-[1.04] hover:shadow-2xl"
@@ -73,6 +75,11 @@ function StreamCard({ stream, onPlay, aspect = 'video' }) {
         <div className="absolute top-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/70 backdrop-blur-sm">
           <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
           <span className="text-[8px] font-bold text-white tracking-wider">LIVE</span>
+        </div>
+        {/* Diagnostic — shown on hover */}
+        <div className={`absolute bottom-0 left-0 right-0 transition-opacity duration-200 ${showDiag ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+          onClick={e => { e.stopPropagation(); setShowDiag(true); }}>
+          <StreamDiagnostic url={stream.direct_url || stream.url} onClose={() => setShowDiag(false)} />
         </div>
       </div>
       <div className="px-2.5 py-2">

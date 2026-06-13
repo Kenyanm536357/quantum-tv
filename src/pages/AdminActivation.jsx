@@ -129,9 +129,9 @@ function DeviceCard({ dev, onRenew, onDelete, onLock, onEdit, isLoading }) {
   return (
     <div className="rounded-2xl border border-white/8 overflow-hidden" style={{ background: '#111827' }}>
       {/* Main row */}
-      <div className="flex items-center gap-4 px-5 py-4">
+      <div className="flex items-center gap-3 px-3 sm:px-5 py-3 sm:py-4">
         {/* Avatar */}
-        <div className="w-12 h-12 rounded-full flex-shrink-0 flex items-center justify-center text-sm font-bold text-white"
+        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex-shrink-0 flex items-center justify-center text-sm font-bold text-white"
           style={{ background: 'linear-gradient(135deg, #7c3aed, #6d28d9)' }}>
           {getInitials(dev.username)}
         </div>
@@ -415,7 +415,7 @@ export default function AdminActivation() {
     <div className="min-h-screen flex flex-col" style={{ background: '#07090f' }}>
       {/* Top header bar */}
       <div className="sticky top-0 z-10 border-b border-white/6 bg-[#07090f]/90 backdrop-blur-xl flex-shrink-0">
-        <div className="px-6 py-4 flex items-center gap-3">
+        <div className="px-4 sm:px-6 py-3 sm:py-4 flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-violet-500/15 border border-violet-500/30 flex items-center justify-center">
             <img src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/7cb772c8e_QUANTUMTVLOGOver2.png" alt="Quantum TV" className="w-full h-full object-cover rounded-lg" />
           </div>
@@ -432,14 +432,14 @@ export default function AdminActivation() {
         </div>
       </div>
 
-      {/* Two-column layout: main content left, sidebar right */}
-      <div className="flex flex-1 min-h-0">
+      {/* Two-column layout: stacked on mobile, side-by-side on lg+ */}
+      <div className="flex flex-col lg:flex-row flex-1 min-h-0">
 
-        {/* ── Main content: Device list (full width) ── */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {/* ── Main content: Device list ── */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
 
           {/* Stats banner */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <StatCard icon={Monitor}       label="Total Devices" value={devices.length} color="bg-white/5" />
             <StatCard icon={Signal}        label="Active"        value={activeCount}    color="bg-emerald-500/15" />
             <StatCard icon={AlertTriangle} label="Expired"       value={expiredCount}   color="bg-orange-500/15" />
@@ -551,8 +551,8 @@ export default function AdminActivation() {
 
         </div>
 
-        {/* ── Right sidebar: Activate New Device ── */}
-        <div className="w-72 flex-shrink-0 border-l border-white/6 overflow-y-auto p-5 space-y-5"
+        {/* ── Sidebar: Activate New Device ── */}
+        <div className="w-full lg:w-80 flex-shrink-0 border-t lg:border-t-0 lg:border-l border-white/6 overflow-y-auto p-4 sm:p-5 space-y-5"
           style={{ background: 'linear-gradient(180deg, rgba(139,92,246,0.06) 0%, transparent 50%)' }}>
 
           <div className="flex items-center gap-2">

@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Hls from 'hls.js';
 import { setState } from '@/lib/iptv-store';
 import { useStore } from '@/lib/use-store';
-import { base44 } from '@/api/base44Client';
 import { addToHistory, updateProgress, toggleBookmark, isBookmarked } from '@/lib/user-data';
 import {
   X, Play, Pause, Volume2, VolumeX,
@@ -77,46 +76,11 @@ export default function VideoPlayer({ src, title, type }) {
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
 
     if (Hls.isSupported()) {
-      // Route all HLS requests through backend proxy to bypass CORS
-      class ProxyLoader {
-        constructor(config) { this.config = config; }
-        load(context, config, callbacks) {
-          const url = context.url;
-          const isFrag = context.type === 'frag';
-          this._aborted = false;
-
-          base44.functions.invoke('fetchPlaylist', { url, proxy: true })
-            .then(async res => {
-              if (this._aborted) return;
-              if (isFrag) {
-                // Segments: need arraybuffer — fetch the proxy endpoint URL directly
-                // The invoke returns JSON which can't be used as binary, so for segments
-                // we fall back to direct fetch (segments rarely have CORS issues)
-                const direct = await fetch(url).catch(() => null);
-                if (direct && direct.ok) {
-                  const buf = await direct.arrayBuffer();
-                  callbacks.onSuccess({ url, data: buf }, { trequest: performance.now(), tfirst: performance.now(), tload: performance.now(), total: buf.byteLength }, context);
-                } else {
-                  callbacks.onError({ code: 0, text: 'segment fetch failed' }, context, null);
-                }
-              } else {
-                // Manifest: text response
-                const data = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
-                callbacks.onSuccess({ url, data }, { trequest: performance.now(), tfirst: performance.now(), tload: performance.now(), total: data.length }, context);
-              }
-            })
-            .catch(e => { if (!this._aborted) callbacks.onError({ code: 0, text: e.message }, context, null); });
-        }
-        abort() { this._aborted = true; }
-        destroy() { this._aborted = true; }
-      }
-
       const hls = new Hls({
         lowLatencyMode: true,
         backBufferLength: 30,
         maxBufferLength: 60,
-        enableWorker: false,
-        loader: ProxyLoader,
+        enableWorker: true,
       });
       hlsRef.current = hls;
       hls.loadSource(src);

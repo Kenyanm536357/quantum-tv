@@ -23,11 +23,38 @@ function getCachedPlaylist() {
 }
 
 async function fetchPlaylist() {
-  const res = await fetch(QUANTUM_M3U_URL);
-  if (!res.ok) throw new Error('Failed to load playlist.');
-  const text = await res.text();
-  if (!text.includes('#EXTM3U')) throw new Error('Invalid playlist format.');
-  return parseM3U(text);
+  const proxies = [
+    (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    (url) => `https://cors-anywhere.herokuapp.com/${url}`,
+  ];
+
+  let lastError;
+  // Try direct first
+  try {
+    const res = await fetch(QUANTUM_M3U_URL, { signal: AbortSignal.timeout(10000) });
+    if (res.ok) {
+      const text = await res.text();
+      if (text.includes('#EXTM3U')) return parseM3U(text);
+    }
+  } catch (e) {
+    lastError = e;
+  }
+
+  // Try each proxy
+  for (const proxy of proxies) {
+    try {
+      const res = await fetch(proxy(QUANTUM_M3U_URL), { signal: AbortSignal.timeout(15000) });
+      if (res.ok) {
+        const text = await res.text();
+        if (text.includes('#EXTM3U')) return parseM3U(text);
+      }
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  throw new Error('Failed to load playlist. All sources unavailable.');
 }
 
 function safeCacheSet(key, data) {

@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useStore } from '@/lib/use-store';
 import { loadCredentials, setState, saveCredentials } from '@/lib/iptv-store';
 import MacActivationScreen from '@/components/iptv/MacActivationScreen';
-import { isActivated, activateDevice, getDeviceMAC } from '@/lib/mac-auth';
+import { isActivated, getDeviceMAC, lockDeviceLocally, unlockDeviceLocally, deactivateDevice } from '@/lib/mac-auth';
 import { AppSidebar, BottomTabBar } from '@/components/iptv/AppTopbar';
 import VideoPlayer from '@/components/iptv/VideoPlayer';
 import LiveSection from '@/pages/iptv/LiveSection';
@@ -20,6 +20,7 @@ import RemindersSection from '@/pages/iptv/RemindersSection';
 import { getDueReminders, markReminderFired } from '@/lib/user-data';
 import { usePlaylist } from '@/lib/use-playlist';
 import { BellRing, X } from 'lucide-react';
+import { base44 } from '@/api/base44Client';
 
 const pageVariants = {
   initial: { opacity: 0, y: 6 },
@@ -84,7 +85,6 @@ function AppShell() {
   // Auto-load hardcoded playlist once MAC is activated
   useEffect(() => {
     if (activated && !credentials) {
-      // Load the hardcoded Quantum TV M3U source silently
       saveCredentials({
         type: 'm3u',
         baseUrl: 'https://iptv-org.github.io/iptv/index.m3u',
@@ -93,6 +93,30 @@ function AppShell() {
       });
     }
   }, [activated, credentials]);
+
+  // Background poll — detect lock/deactivation while app is running
+  useEffect(() => {
+    if (!activated) return;
+    const mac = getDeviceMAC();
+    const poll = async () => {
+      try {
+        const res = await base44.functions.invoke('checkActivation', { mac });
+        if (res.data?.locked) {
+          lockDeviceLocally();
+          setActivated(false); // kick back to activation screen (locked view)
+        } else if (!res.data?.activated) {
+          deactivateDevice();
+          setActivated(false); // kick back to activation screen
+        } else {
+          unlockDeviceLocally(); // ensure local state is clean
+        }
+      } catch {
+        // Network error — don't kick the user out, just retry next poll
+      }
+    };
+    const t = setInterval(poll, 30000); // check every 30 seconds
+    return () => clearInterval(t);
+  }, [activated]);
 
   if (!activated) {
     return <MacActivationScreen onActivated={() => setActivated(true)} />;

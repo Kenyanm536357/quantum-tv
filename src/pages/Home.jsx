@@ -202,12 +202,31 @@ export default function Home() {
 
   if (booting) {
     return (
-      <>
-        <div className="min-h-screen bg-[#07090f] flex items-center justify-center">
-          <div className="w-9 h-9 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+      <div className="min-h-screen bg-[#07090f] flex flex-col items-center justify-center gap-6">
+        {/* Glow blobs */}
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 rounded-full bg-violet-600/20 blur-3xl pointer-events-none" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 rounded-full bg-cyan-500/15 blur-3xl pointer-events-none" />
+
+        {/* Logo */}
+        <div className="relative w-24 h-24 rounded-[28px] overflow-hidden shadow-2xl shadow-violet-500/30 border border-white/10">
+          <img src="/logo.png" alt="Quantum TV" className="w-full h-full object-cover"
+            onError={e => { e.target.style.display='none'; }} />
+          <div className="absolute inset-0 flex items-center justify-center text-4xl font-black text-white bg-gradient-to-br from-violet-600 to-cyan-500">Q</div>
         </div>
-        {adminLink}
-      </>
+
+        {/* Brand name */}
+        <div className="text-center">
+          <h1 className="text-3xl font-black text-white tracking-tight">
+            Quantum<span className="text-cyan-400">TV</span>
+          </h1>
+          <p className="text-white/35 text-sm mt-1">Loading your experience…</p>
+        </div>
+
+        {/* Spinner bar */}
+        <div className="w-40 h-1 bg-white/6 rounded-full overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-cyan-500 to-violet-500 rounded-full animate-pulse" style={{ width: '65%' }} />
+        </div>
+      </div>
     );
   }
 

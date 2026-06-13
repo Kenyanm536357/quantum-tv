@@ -92,7 +92,7 @@ function Shelf({ title, icon: Icon, color = 'text-cyan-400', streams, onPlay, on
     <section className="mb-10">
       <div className="flex items-center justify-between mb-3 px-1">
         <div className="flex items-center gap-2">
-          {Icon && <Icon className={`w-4 h-4 ${color}`} />}
+          {Icon && typeof Icon === 'function' && <Icon className={`w-4 h-4 ${color}`} />}
           <h2 className="text-sm font-black text-white tracking-tight">{title}</h2>
           <span className="text-[10px] text-white/20 ml-1 font-normal">{streams.length}</span>
         </div>
@@ -332,6 +332,20 @@ export default function BrowseSection() {
     return map;
   }, [playlist]);
 
+  // United States streams — categories or stream names matching US/USA
+  const usStreams = useMemo(() => {
+    if (!playlist) return [];
+    const usCategories = new Set(
+      playlist.categories
+        .filter(c => /\b(us|usa|united states?)\b/i.test(c.category_name))
+        .map(c => c.category_id)
+    );
+    return playlist.streams.filter(s =>
+      usCategories.has(s.category_id) ||
+      /\b(us|usa|united states?)\b/i.test(s.name)
+    ).slice(0, 50);
+  }, [playlist]);
+
   // Categorise shelves by type
   const { liveCategories, movieCategories, seriesCategories, musicCategories, kidsCategories, sportsCategories, newsCategories, otherCategories } = useMemo(() => {
     if (!playlist) return {};
@@ -463,6 +477,12 @@ export default function BrowseSection() {
             <div className="pt-2">
               <HeroBanner stream={hero} onPlay={playStream} />
             </div>
+
+            {/* 🇺🇸 United States — featured shelf */}
+            {usStreams.length > 0 && (
+              <Shelf title="🇺🇸 United States" icon={null} color="text-red-400"
+                streams={usStreams} onPlay={playStream} />
+            )}
 
             {/* Category pills */}
             <CategoryPills categories={allCats.slice(0, 20)} catStreamMap={catStreamMap} onSelect={setSelectedCat} />

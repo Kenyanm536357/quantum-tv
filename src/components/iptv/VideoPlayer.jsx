@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Hls from 'hls.js';
 import { setState } from '@/lib/iptv-store';
 import { useStore } from '@/lib/use-store';
-import { base44 } from '@/api/base44Client';
 import { addToHistory, updateProgress, toggleBookmark, isBookmarked } from '@/lib/user-data';
 import {
   X, Play, Pause, Volume2, VolumeX,
@@ -77,50 +76,29 @@ export default function VideoPlayer({ src, title, type }) {
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
 
     if (Hls.isSupported()) {
-      // Custom loader: all HLS requests go through our backend proxy
-      const DefaultLoader = Hls.DefaultConfig.loader;
-      class ProxyLoader extends DefaultLoader {
-        load(context, config, callbacks) {
-          const targetUrl = context.url;
-          base44.functions.invoke('fetchPlaylist', { url: targetUrl, proxy: true })
-            .then(res => {
-              const data = res.data;
-              // m3u8 text
-              if (typeof data === 'string') {
-                callbacks.onSuccess(
-                  { url: targetUrl, data },
-                  { trequest: performance.now(), tfirst: performance.now(), tload: performance.now(), total: data.length },
-                  context
-                );
-              } else {
-                // binary/arraybuffer for segments — convert if needed
-                const text = JSON.stringify(data);
-                callbacks.onSuccess(
-                  { url: targetUrl, data: text },
-                  { trequest: performance.now(), tfirst: performance.now(), tload: performance.now(), total: text.length },
-                  context
-                );
-              }
-            })
-            .catch(e => {
-              callbacks.onError({ code: 0, text: e.message }, context, null);
-            });
-        }
-      }
-
       const hls = new Hls({
         lowLatencyMode: true,
         backBufferLength: 30,
         maxBufferLength: 60,
-        enableWorker: false,
-        loader: ProxyLoader,
+        enableWorker: true,
+        manifestLoadingTimeOut: 15000,
+        manifestLoadingMaxRetry: 2,
+        levelLoadingTimeOut: 15000,
+        fragLoadingTimeOut: 30000,
+        xhrSetup: (xhr) => {
+          xhr.withCredentials = false;
+        },
       });
       hlsRef.current = hls;
       hls.loadSource(src);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => { setLoading(false); video.play().catch(() => {}); });
       hls.on(Hls.Events.ERROR, (_, d) => {
-        if (d.fatal) { setErr('Stream unavailable.'); setLoading(false); }
+        console.warn('[HLS Error]', d.type, d.details, d.response?.code, src);
+        if (d.fatal) {
+          setErr(`Stream error: ${d.details} (code: ${d.response?.code ?? 'N/A'})`);
+          setLoading(false);
+        }
       });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = src;

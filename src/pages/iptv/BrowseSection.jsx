@@ -316,15 +316,73 @@ function LoadingScreen() {
   );
 }
 
+// ── Quick filter config ───────────────────────────────────────────────────────
+const GENRE_FILTERS = [
+  { id: 'all',        label: 'All',       icon: '⚡', match: null },
+  { id: 'us',         label: '🇺🇸 USA',    icon: null, match: (c) => /\b(us|usa|united\s*states?)\b/i.test(c.category_name) },
+  { id: 'sports',     label: 'Sports',    icon: '🏆', match: (c) => /sport/i.test(c.category_name) },
+  { id: 'news',       label: 'News',      icon: '📰', match: (c) => /news/i.test(c.category_name) },
+  { id: 'movies',     label: 'Movies',    icon: '🎬', match: (c) => /movie|film|cinema|vod/i.test(c.category_name) },
+  { id: 'series',     label: 'Series',    icon: '📺', match: (c) => /series|show|episode/i.test(c.category_name) },
+  { id: 'music',      label: 'Music',     icon: '🎵', match: (c) => /music|radio/i.test(c.category_name) },
+  { id: 'kids',       label: 'Kids',      icon: '🧸', match: (c) => /kids|cartoon|animation/i.test(c.category_name) },
+  { id: 'uk',         label: '🇬🇧 UK',     icon: null, match: (c) => /\b(uk|united\s*kingdom)\b/i.test(c.category_name) },
+  { id: 'ca',         label: '🇨🇦 Canada', icon: null, match: (c) => /\b(ca|canada|canadian)\b/i.test(c.category_name) },
+  { id: 'mx',         label: '🇲🇽 Mexico', icon: null, match: (c) => /\b(mx|mexico|mexican)\b/i.test(c.category_name) },
+  { id: 'latin',      label: '🌎 Latino',  icon: null, match: (c) => /latin|hispanic|espanol|español/i.test(c.category_name) },
+  { id: 'arabic',     label: '🌍 Arabic',  icon: null, match: (c) => /arab|arabic|middle\s*east/i.test(c.category_name) },
+  { id: 'fr',         label: '🇫🇷 French',  icon: null, match: (c) => /\b(fr|france|french)\b/i.test(c.category_name) },
+  { id: 'de',         label: '🇩🇪 German',  icon: null, match: (c) => /\b(de|german|germany|deutsch)\b/i.test(c.category_name) },
+];
+
+// ── Quick filter bar ──────────────────────────────────────────────────────────
+function QuickFilterBar({ activeFilter, onFilter, playlist, catStreamMap }) {
+  const ref = useRef(null);
+
+  // Only show filters that have matching categories with streams
+  const availableFilters = useMemo(() => {
+    if (!playlist) return [GENRE_FILTERS[0]];
+    return GENRE_FILTERS.filter(f => {
+      if (!f.match) return true; // 'all'
+      return playlist.categories.some(c => f.match(c) && (catStreamMap[c.category_id]?.length ?? 0) > 0);
+    });
+  }, [playlist, catStreamMap]);
+
+  return (
+    <div ref={ref} className="flex gap-2 overflow-x-auto pb-2 flex-shrink-0" style={{ scrollbarWidth: 'none' }}>
+      {availableFilters.map(f => (
+        <button
+          key={f.id}
+          onClick={() => onFilter(f.id === activeFilter ? 'all' : f.id)}
+          className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+            activeFilter === f.id
+              ? 'bg-cyan-500 text-black shadow-lg shadow-cyan-500/30'
+              : 'bg-white/6 border border-white/10 text-white/60 hover:text-white hover:border-white/25 hover:bg-white/10'
+          }`}
+        >
+          {f.icon && <span className="text-sm leading-none">{f.icon}</span>}
+          {f.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── Main BrowseSection ────────────────────────────────────────────────────────
 export default function BrowseSection() {
   const { playlist, loading, error, refresh } = useM3UPlaylist();
   const [selectedCat, setSelectedCat] = useState(null);
   const [showAllCats, setShowAllCats] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
+  const [activeFilter, setActiveFilter] = useState('all');
 
   const playStream = useCallback(async (stream) => {
     await playM3UStream(stream);
+  }, []);
+
+  const handleSelectCat = useCallback((cat) => {
+    setSelectedCat(cat);
+    setActiveFilter('all');
   }, []);
 
   const catStreamMap = useMemo(() => {
@@ -380,6 +438,17 @@ export default function BrowseSection() {
     const q = globalSearch.toLowerCase();
     return playlist.streams.filter(s => cleanName(s.name).toLowerCase().includes(q)).slice(0, 80);
   }, [globalSearch, playlist]);
+
+  // Quick filter streams
+  const filteredStreams = useMemo(() => {
+    if (activeFilter === 'all' || !playlist) return null;
+    const filter = GENRE_FILTERS.find(f => f.id === activeFilter);
+    if (!filter?.match) return null;
+    const matchingCatIds = new Set(
+      playlist.categories.filter(c => filter.match(c)).map(c => c.category_id)
+    );
+    return playlist.streams.filter(s => matchingCatIds.has(s.category_id)).slice(0, 200);
+  }, [activeFilter, playlist]);
 
   if (loading) return <LoadingScreen />;
 
@@ -465,6 +534,16 @@ export default function BrowseSection() {
         <span className="text-xs text-white/20 flex-shrink-0 hidden md:block">{playlist.streams.length.toLocaleString()} channels</span>
       </div>
 
+      {/* ── Quick filter bar ── */}
+      <div className="px-4 sm:px-6 pb-2 flex-shrink-0">
+        <QuickFilterBar
+          activeFilter={activeFilter}
+          onFilter={f => { setActiveFilter(f); setGlobalSearch(''); }}
+          playlist={playlist}
+          catStreamMap={catStreamMap}
+        />
+      </div>
+
       {/* ── Content ── */}
       <div className="px-4 sm:px-6 pb-6">
 
@@ -476,6 +555,23 @@ export default function BrowseSection() {
               {searchResults.map(s => <StreamCard key={s.stream_id || s.url} stream={s} onPlay={playStream} />)}
             </div>
             {searchResults.length === 0 && <p className="text-center text-white/25 py-16 text-sm">No channels found.</p>}
+          </div>
+        ) : filteredStreams ? (
+          /* Quick filter results */
+          <div className="pt-2">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-xs text-white/35">
+                <span className="text-white/70 font-bold">{filteredStreams.length}</span> channels in{' '}
+                <span className="text-cyan-400">{GENRE_FILTERS.find(f => f.id === activeFilter)?.label}</span>
+              </p>
+              <button onClick={() => setActiveFilter('all')} className="text-xs text-white/30 hover:text-white flex items-center gap-1 transition-colors">
+                <X className="w-3 h-3" /> Clear filter
+              </button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+              {filteredStreams.map(s => <StreamCard key={s.stream_id || s.url} stream={s} onPlay={playStream} />)}
+            </div>
+            {filteredStreams.length === 0 && <p className="text-center text-white/25 py-16 text-sm">No channels found for this filter.</p>}
           </div>
         ) : (
           <>
@@ -504,7 +600,7 @@ export default function BrowseSection() {
             </div>
 
             {/* Category pills */}
-            <CategoryPills categories={allCats.slice(0, 20)} catStreamMap={catStreamMap} onSelect={setSelectedCat} />
+            <CategoryPills categories={allCats.slice(0, 20)} catStreamMap={catStreamMap} onSelect={handleSelectCat} />
 
             {/* Trending shelf */}
             {trending.length > 0 && (

@@ -284,9 +284,14 @@ export default function VideoPlayer({ src, title, type }) {
               <>
                 <div>
                   <p className="text-white font-bold mb-1">Browser Blocked This Stream</p>
-                  <p className="text-white/50 text-xs max-w-xs">Your browser is blocking the stream due to security restrictions (CORS). Open it directly in your device's native video player instead.</p>
+                  <p className="text-white/50 text-xs max-w-xs">Your browser is blocking the stream due to security restrictions (CORS). Open it in VLC or your device's native player instead.</p>
                 </div>
                 <div className="flex flex-col gap-2 w-full max-w-xs">
+                  {/* VLC deep link — opens stream directly in VLC if installed */}
+                  <a href={`vlc://${src.replace(/^https?:\/\//, '')}`}
+                    className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-orange-500 text-white font-bold text-sm hover:bg-orange-400 transition-all">
+                    🎬 Open in VLC
+                  </a>
                   <a href={src} target="_blank" rel="noopener noreferrer"
                     className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-black font-bold text-sm hover:bg-primary/90 transition-all">
                     ▶ Open in Native Player
@@ -296,6 +301,7 @@ export default function VideoPlayer({ src, title, type }) {
                     <RotateCcw className="w-4 h-4" /> Try Again
                   </button>
                 </div>
+                <p className="text-[11px] text-white/25 max-w-xs">Don't have VLC? It's free at <span className="text-white/40">videolan.org</span></p>
               </>
             ) : (
               <>

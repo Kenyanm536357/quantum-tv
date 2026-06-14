@@ -9,6 +9,7 @@ import {
   Bookmark, BookmarkCheck
 } from 'lucide-react';
 import DebugPanel from '@/components/iptv/DebugPanel';
+import CorsBlockedScreen from '@/components/iptv/CorsBlockedScreen';
 
 // ── Proxy list — tried in order on failure, working proxy is locked in ────────
 const PROXY_LIST = [
@@ -278,41 +279,16 @@ export default function VideoPlayer({ src, title, type }) {
 
         {/* Error */}
         {err && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/85 px-6 text-center">
-            <AlertTriangle className="w-10 h-10 text-destructive" />
-            {corsBlocked ? (
-              <>
-                <div>
-                  <p className="text-white font-bold mb-1">Browser Blocked This Stream</p>
-                  <p className="text-white/50 text-xs max-w-xs">Your browser is blocking the stream due to security restrictions (CORS). Open it in VLC or your device's native player instead.</p>
-                </div>
-                <div className="flex flex-col gap-2 w-full max-w-xs">
-                  {/* VLC deep link — opens stream directly in VLC if installed */}
-                  <a href={`vlc://${src.replace(/^https?:\/\//, '')}`}
-                    className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-orange-500 text-white font-bold text-sm hover:bg-orange-400 transition-all">
-                    🎬 Open in VLC
-                  </a>
-                  <a href={src} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-black font-bold text-sm hover:bg-primary/90 transition-all">
-                    ▶ Open in Native Player
-                  </a>
-                  <button onClick={initHls}
-                    className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-white/8 border border-white/12 text-white/60 text-sm hover:bg-white/12 transition-all">
-                    <RotateCcw className="w-4 h-4" /> Try Again
-                  </button>
-                </div>
-                <p className="text-[11px] text-white/25 max-w-xs">Don't have VLC? It's free at <span className="text-white/40">videolan.org</span></p>
-              </>
-            ) : (
-              <>
+          corsBlocked
+            ? <CorsBlockedScreen src={src} onRetry={initHls} />
+            : <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/85 px-6 text-center">
+                <AlertTriangle className="w-10 h-10 text-destructive" />
                 <p className="text-sm text-white/70">{err}</p>
                 <button onClick={initHls}
                   className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary/10 border border-primary/30 text-primary text-sm font-medium hover:bg-primary/20 transition-all">
                   <RotateCcw className="w-4 h-4" /> Retry
                 </button>
-              </>
-            )}
-          </div>
+              </div>
         )}
 
         {/* Hidden debug trigger — triple-tap top-left */}

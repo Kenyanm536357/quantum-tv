@@ -245,7 +245,7 @@ export default function VideoPlayer({ src, title, type }) {
         {showDebug && <DebugPanel logs={debugLogs} onClose={() => setShowDebug(false)} />}
 
         <div className={`absolute inset-0 flex flex-col transition-opacity duration-300 pointer-events-none ${showCtrl ? 'opacity-100' : 'opacity-0'}`}>
-          <div className="flex items-center justify-between gap-4 px-5 py-4 bg-gradient-to-b from-black/80 to-transparent pointer-events-auto">
+          <div className="flex items-center justify-between gap-4 px-5 py-4 bg-gradient-to-b from-black/80 to-transparent pointer-events-auto" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 1rem)' }}>
             <div className="flex items-center gap-3 min-w-0">
               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-widest ${isLive ? 'bg-destructive/90 text-white' : 'bg-primary/20 text-primary border border-primary/30'}`}>
                 {isLive && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
@@ -268,7 +268,7 @@ export default function VideoPlayer({ src, title, type }) {
 
           <div className="flex-1 pointer-events-auto cursor-pointer" onClick={togglePlay} />
 
-          <div className="px-5 pb-5 pt-10 bg-gradient-to-t from-black/90 to-transparent pointer-events-auto">
+          <div className="px-5 pt-10 bg-gradient-to-t from-black/90 to-transparent pointer-events-auto" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.25rem)' }}>
             {!isLive && duration > 0 && (
               <div className="mb-3">
                 <input type="range" min={0} max={duration} value={currentTime} onChange={handleSeek}

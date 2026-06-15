@@ -1,74 +1,32 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import Hls from 'hls.js';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import ReactPlayer from 'react-player';
 import { setState } from '@/lib/iptv-store';
 import { useStore } from '@/lib/use-store';
-import { addToHistory, updateProgress, toggleBookmark, isBookmarked } from '@/lib/user-data';
+import { addToHistory, toggleBookmark, isBookmarked } from '@/lib/user-data';
 import {
   X, Play, Pause, Volume2, VolumeX,
   Maximize, Minimize, RotateCcw, Radio, AlertTriangle,
   Bookmark, BookmarkCheck
 } from 'lucide-react';
-import DebugPanel from '@/components/iptv/DebugPanel';
-import CorsBlockedScreen from '@/components/iptv/CorsBlockedScreen';
-import { base44 } from '@/api/base44Client';
-
-function toHttps(url) {
-  // Do NOT force HTTPS — Xtream servers typically only serve on HTTP
-  return url;
-}
-
-async function getProxiedUrl(rawUrl) {
-  try {
-    const res = await base44.functions.invoke('fetchPlaylist', { proxy: true, url: rawUrl });
-    const text = res.data;
-    if (!text || typeof text !== 'string') return null;
-    const blob = new Blob([text], { type: 'application/vnd.apple.mpegurl' });
-    return URL.createObjectURL(blob);
-  } catch (_) {
-    return null;
-  }
-}
 
 export default function VideoPlayer({ src, title, type }) {
-  const videoRef = useRef(null);
-  const hlsRef = useRef(null);
   const containerRef = useRef(null);
+  const playerRef = useRef(null);
   const hideTimer = useRef(null);
-  const progressTimer = useRef(null);
-  const blobUrlRef = useRef(null);
   const { credentials, player } = useStore();
 
-  const [playing, setPlaying] = useState(false);
+  const [playing, setPlaying] = useState(true);
   const [muted, setMuted] = useState(false);
   const [vol, setVol] = useState(1);
-  const [currentTime, setCurrentTime] = useState(0);
+  const [played, setPlayed] = useState(0);
   const [duration, setDuration] = useState(0);
   const [fs, setFs] = useState(false);
   const [showCtrl, setShowCtrl] = useState(true);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
-  const [corsBlocked, setCorsBlocked] = useState(false);
-  const retryCountRef = useRef(0);
-  const MAX_AUTO_RETRIES = 3;
   const [bookmarked, setBookmarked] = useState(false);
-  const [debugLogs, setDebugLogs] = useState([]);
-  const [showDebug, setShowDebug] = useState(false);
-  const [statusMsg, setStatusMsg] = useState('');
 
-  const tapCountRef = useRef(0);
-  const tapTimerRef = useRef(null);
-  const isLive = type === 'live' || !isFinite(duration) || duration > 86400;
-
-  const addLog = useCallback((level, event, detail = {}) => {
-    setDebugLogs(prev => [...prev.slice(-99), { level, event, detail, ts: Date.now() }]);
-  }, []);
-
-  const handleDebugTap = useCallback(() => {
-    tapCountRef.current += 1;
-    clearTimeout(tapTimerRef.current);
-    tapTimerRef.current = setTimeout(() => { tapCountRef.current = 0; }, 600);
-    if (tapCountRef.current >= 3) { tapCountRef.current = 0; setShowDebug(true); }
-  }, []);
+  const isLive = type === 'live';
 
   useEffect(() => {
     if (credentials && player) setBookmarked(isBookmarked(credentials, player));
@@ -76,138 +34,7 @@ export default function VideoPlayer({ src, title, type }) {
 
   useEffect(() => {
     if (credentials && player && !loading && !err) addToHistory(credentials, player, type);
-  }, [loading, err, credentials]);
-
-  useEffect(() => {
-    if (!isLive && credentials && player) {
-      progressTimer.current = setInterval(() => {
-        const v = videoRef.current;
-        if (v && v.duration > 0) updateProgress(credentials, player, v.currentTime / v.duration);
-      }, 15000);
-    }
-    return () => clearInterval(progressTimer.current);
-  }, [isLive, credentials, player]);
-
-  useEffect(() => {
-    if (player?.resumeAt > 0) {
-      const v = videoRef.current;
-      if (v) {
-        const onCanPlay = () => { v.currentTime = player.resumeAt; v.removeEventListener('canplay', onCanPlay); };
-        v.addEventListener('canplay', onCanPlay);
-      }
-    }
-  }, [player?.resumeAt]);
-
-  const cleanup = useCallback(() => {
-    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
-    if (blobUrlRef.current) { URL.revokeObjectURL(blobUrlRef.current); blobUrlRef.current = null; }
-  }, []);
-
-  const initHls = useCallback(async () => {
-    const video = videoRef.current;
-    if (!video || !src) return;
-    cleanup();
-    setLoading(true);
-    setErr(null);
-    setCorsBlocked(false);
-    setDebugLogs([]);
-    setStatusMsg('');
-
-    retryCountRef.current = 0;
-    const activeSrc = src;
-    addLog('info', 'INIT', { src: activeSrc, hlsSupported: Hls.isSupported() });
-
-    const loadSource = (finalSrc) => {
-      if (Hls.isSupported()) {
-        const hls = new Hls({
-          lowLatencyMode: true,
-          backBufferLength: 30,
-          maxBufferLength: 60,
-          enableWorker: true,
-          xhrSetup: (xhr) => { xhr.withCredentials = false; },
-        });
-        hlsRef.current = hls;
-        hls.loadSource(finalSrc);
-        hls.attachMedia(video);
-
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          addLog('success', 'MANIFEST_PARSED', {});
-          setLoading(false);
-          video.play().catch(() => {});
-        });
-
-        hls.on(Hls.Events.ERROR, async (_, d) => {
-          const code = d?.response?.code ?? d?.networkDetails?.status ?? 0;
-          addLog(d?.fatal ? 'error' : 'warn', d?.fatal ? 'FATAL_ERROR' : 'HLS_ERROR', {
-            type: d?.type, details: d?.details, fatal: d?.fatal, responseCode: code,
-          });
-
-          if (d?.fatal) {
-          hls.destroy();
-          hlsRef.current = null;
-
-          const isCorsLike = code === 0 || d?.details === 'manifestLoadError' || d?.details === 'manifestLoadTimeOut';
-
-          // Step 1: Auto-retry direct up to MAX_AUTO_RETRIES
-          if (retryCountRef.current < MAX_AUTO_RETRIES && !isCorsLike) {
-            retryCountRef.current += 1;
-            const delay = retryCountRef.current * 2000;
-            setStatusMsg(`Connection lost — retrying (${retryCountRef.current}/${MAX_AUTO_RETRIES})…`);
-            addLog('warn', 'AUTO_RETRY', { attempt: retryCountRef.current, delay });
-            setTimeout(() => loadSource(finalSrc), delay);
-            return;
-          }
-
-          // Step 2: Always try backend proxy before giving up
-          if (finalSrc === activeSrc) {
-            setStatusMsg('Trying alternate route…');
-            addLog('info', 'PROXY_ATTEMPT', {});
-            const proxiedUrl = await getProxiedUrl(activeSrc);
-            if (proxiedUrl) {
-              blobUrlRef.current = proxiedUrl;
-              retryCountRef.current = 0;
-              loadSource(proxiedUrl);
-              return;
-            }
-          }
-
-          // Step 3: Only show error screen after all fallbacks exhausted
-          setErr(`Stream unavailable. Please try another channel.`);
-          setCorsBlocked(false);
-          setLoading(false);
-          }
-        });
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = finalSrc;
-        video.onloadedmetadata = () => { setLoading(false); video.play().catch(() => {}); };
-        video.onerror = () => { setErr('Stream unavailable.'); setLoading(false); };
-      } else {
-        setErr('HLS not supported in this browser.');
-        setLoading(false);
-      }
-    };
-
-    loadSource(activeSrc);
-  }, [src, addLog, cleanup]);
-
-  useEffect(() => {
-    initHls();
-    return cleanup;
-  }, [src]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    const handlers = {
-      play: () => setPlaying(true),
-      pause: () => setPlaying(false),
-      timeupdate: () => setCurrentTime(v.currentTime),
-      durationchange: () => setDuration(v.duration),
-      volumechange: () => { setVol(v.volume); setMuted(v.muted); },
-    };
-    Object.entries(handlers).forEach(([ev, fn]) => v.addEventListener(ev, fn));
-    return () => Object.entries(handlers).forEach(([ev, fn]) => v.removeEventListener(ev, fn));
-  }, []);
+  }, [loading, err]);
 
   const bumpControls = useCallback(() => {
     setShowCtrl(true);
@@ -215,53 +42,85 @@ export default function VideoPlayer({ src, title, type }) {
     hideTimer.current = setTimeout(() => setShowCtrl(false), 3500);
   }, []);
 
-  useEffect(() => { bumpControls(); return () => clearTimeout(hideTimer.current); }, [bumpControls]);
+  useEffect(() => {
+    bumpControls();
+    return () => clearTimeout(hideTimer.current);
+  }, [bumpControls]);
 
-  const togglePlay = () => { const v = videoRef.current; if (v) playing ? v.pause() : v.play(); };
-  const toggleMute = () => { const v = videoRef.current; if (v) v.muted = !v.muted; };
-  const handleVol = e => { const v = videoRef.current; if (v) { v.volume = +e.target.value; v.muted = +e.target.value === 0; } };
-  const handleSeek = e => { const v = videoRef.current; if (v) v.currentTime = +e.target.value; };
   const toggleFs = () => {
     const el = containerRef.current;
     if (!document.fullscreenElement) { el?.requestFullscreen(); setFs(true); }
     else { document.exitFullscreen(); setFs(false); }
   };
-  const fmt = s => { if (!isFinite(s)) return '∞'; const m = Math.floor(s / 60); return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`; };
+
+  const fmt = s => {
+    if (!isFinite(s) || s <= 0) return '∞';
+    const m = Math.floor(s / 60);
+    return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black flex items-center justify-center" style={{ paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
+    <div className="fixed inset-0 z-50 bg-black flex items-center justify-center"
+      style={{ paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
       <div ref={containerRef} className="relative w-full h-full"
         onMouseMove={bumpControls} onTouchStart={bumpControls}>
 
-        <video ref={videoRef} className="w-full h-full object-contain" playsInline />
+        <ReactPlayer
+          ref={playerRef}
+          url={src}
+          playing={playing}
+          muted={muted}
+          volume={vol}
+          width="100%"
+          height="100%"
+          style={{ position: 'absolute', top: 0, left: 0 }}
+          playsinline
+          config={{
+            file: {
+              forceHLS: true,
+              hlsOptions: {
+                lowLatencyMode: true,
+                enableWorker: true,
+                xhrSetup: xhr => { xhr.withCredentials = false; },
+              },
+            },
+          }}
+          onReady={() => setLoading(false)}
+          onStart={() => setLoading(false)}
+          onBuffer={() => setLoading(true)}
+          onBufferEnd={() => setLoading(false)}
+          onDuration={setDuration}
+          onProgress={({ played }) => setPlayed(played)}
+          onError={() => setErr('Stream unavailable. Please try another channel.')}
+        />
 
+        {/* Loading overlay */}
         {loading && !err && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 pointer-events-none">
             <div className="relative w-12 h-12">
               <div className="absolute inset-0 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
               <Radio className="absolute inset-0 m-auto w-5 h-5 text-primary" />
             </div>
-            <p className="text-sm text-white/60">{statusMsg || 'Loading stream…'}</p>
+            <p className="text-sm text-white/60">Loading stream…</p>
           </div>
         )}
 
+        {/* Error overlay */}
         {err && (
-          corsBlocked
-            ? <CorsBlockedScreen src={src} onRetry={initHls} />
-            : <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/85 px-6 text-center">
-                <AlertTriangle className="w-10 h-10 text-destructive" />
-                <p className="text-sm text-white/70">{err}</p>
-                <button onClick={initHls}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary/10 border border-primary/30 text-primary text-sm font-medium hover:bg-primary/20 transition-all">
-                  <RotateCcw className="w-4 h-4" /> Retry
-                </button>
-              </div>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/85 px-6 text-center">
+            <AlertTriangle className="w-10 h-10 text-destructive" />
+            <p className="text-sm text-white/70">{err}</p>
+            <button
+              onClick={() => { setErr(null); setLoading(true); setPlaying(true); }}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary/10 border border-primary/30 text-primary text-sm font-medium hover:bg-primary/20 transition-all">
+              <RotateCcw className="w-4 h-4" /> Retry
+            </button>
+          </div>
         )}
 
-        <button onClick={handleDebugTap} className="absolute top-0 left-0 w-16 h-16 z-40 opacity-0" aria-hidden="true" />
-        {showDebug && <DebugPanel logs={debugLogs} onClose={() => setShowDebug(false)} />}
-
+        {/* Controls */}
         <div className={`absolute inset-0 flex flex-col transition-opacity duration-300 pointer-events-none ${showCtrl ? 'opacity-100' : 'opacity-0'}`}>
+          {/* Top bar */}
           <div className="flex items-center justify-between gap-4 px-5 py-4 bg-gradient-to-b from-black/80 to-transparent pointer-events-auto">
             <div className="flex items-center gap-3 min-w-0">
               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-widest ${isLive ? 'bg-destructive/90 text-white' : 'bg-primary/20 text-primary border border-primary/30'}`}>
@@ -272,7 +131,9 @@ export default function VideoPlayer({ src, title, type }) {
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <button
-                onClick={() => { if (credentials && player) { toggleBookmark(credentials, player, type); setBookmarked(b => !b); } }}
+                onClick={() => {
+                  if (credentials && player) { toggleBookmark(credentials, player, type); setBookmarked(b => !b); }
+                }}
                 className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all">
                 {bookmarked ? <BookmarkCheck className="w-4 h-4 text-primary" /> : <Bookmark className="w-4 h-4 text-white" />}
               </button>
@@ -283,29 +144,40 @@ export default function VideoPlayer({ src, title, type }) {
             </div>
           </div>
 
-          <div className="flex-1 pointer-events-auto cursor-pointer" onClick={togglePlay} />
+          {/* Click to play/pause */}
+          <div className="flex-1 pointer-events-auto cursor-pointer" onClick={() => setPlaying(p => !p)} />
 
+          {/* Bottom bar */}
           <div className="px-5 pb-5 pt-10 bg-gradient-to-t from-black/90 to-transparent pointer-events-auto">
             {!isLive && duration > 0 && (
               <div className="mb-3">
-                <input type="range" min={0} max={duration} value={currentTime} onChange={handleSeek}
-                  className="w-full h-1 rounded-full cursor-pointer accent-primary" />
+                <input
+                  type="range" min={0} max={1} step={0.001} value={played}
+                  onChange={e => {
+                    const val = parseFloat(e.target.value);
+                    setPlayed(val);
+                    playerRef.current?.seekTo(val);
+                  }}
+                  className="w-full h-1 rounded-full cursor-pointer accent-primary"
+                />
                 <div className="flex justify-between text-[11px] text-white/40 mt-1">
-                  <span>{fmt(currentTime)}</span><span>{fmt(duration)}</span>
+                  <span>{fmt(played * duration)}</span>
+                  <span>{fmt(duration)}</span>
                 </div>
               </div>
             )}
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <button onClick={togglePlay}
+                <button onClick={() => setPlaying(p => !p)}
                   className="w-9 h-9 rounded-full bg-white/10 hover:bg-primary/40 flex items-center justify-center transition-all">
                   {playing ? <Pause className="w-4 h-4 text-white" /> : <Play className="w-4 h-4 text-white fill-white" />}
                 </button>
                 <div className="flex items-center gap-2">
-                  <button onClick={toggleMute} className="text-white/60 hover:text-white transition-colors">
+                  <button onClick={() => setMuted(m => !m)} className="text-white/60 hover:text-white transition-colors">
                     {muted || vol === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
                   </button>
-                  <input type="range" min={0} max={1} step={0.05} value={muted ? 0 : vol} onChange={handleVol}
+                  <input type="range" min={0} max={1} step={0.05} value={muted ? 0 : vol}
+                    onChange={e => { setVol(+e.target.value); setMuted(+e.target.value === 0); }}
                     className="w-20 h-1 rounded-full cursor-pointer accent-primary hidden sm:block" />
                 </div>
               </div>

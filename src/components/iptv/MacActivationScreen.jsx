@@ -1,10 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Monitor, Copy, CheckCircle, Loader2, Shield, Lock, Settings } from 'lucide-react';
-import { getDeviceMAC, activateDevice, lockDeviceLocally, unlockDeviceLocally } from '@/lib/mac-auth';
+import { CheckCircle, Loader2, Settings, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
-
-const POLL_INTERVAL = 10000; // check every 10 seconds
 
 const BG = (
   <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -17,71 +14,51 @@ const BG = (
   </div>
 );
 
+const XTREAM_BASE = 'https://epg.codes';
+
 export default function MacActivationScreen({ onActivated }) {
-  const [mac, setMac] = useState('');
-  const [copied, setCopied] = useState(false);
-  const [status, setStatus] = useState('waiting'); // 'waiting' | 'checking' | 'activated' | 'locked' | 'error'
-  const [dotCount, setDotCount] = useState(0);
-  const pollRef = useRef(null);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPass, setShowPass] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
 
-  useEffect(() => {
-    const m = getDeviceMAC();
-    setMac(m);
-    startPolling(m);
-
-    // Animated dots
-    const dotTimer = setInterval(() => setDotCount(d => (d + 1) % 4), 600);
-
-    return () => {
-      clearInterval(dotTimer);
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, []);
-
-  const checkActivation = async (macAddr) => {
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    if (!username.trim() || !password.trim()) {
+      setError('Please enter your username and password.');
+      return;
+    }
+    setLoading(true);
+    setError('');
     try {
-      setStatus(s => s === 'waiting' || s === 'locked' ? s : 'checking');
-      const res = await base44.functions.invoke('checkActivation', { mac: macAddr });
+      const res = await base44.functions.invoke('fetchPlaylist', {
+        action: 'get_live_categories',
+        baseUrl: XTREAM_BASE,
+        username: username.trim(),
+        password: password.trim(),
+        validateOnly: true,
+      });
 
-      if (res.data?.locked) {
-        // Device is locked by admin — show locked state, keep polling
-        lockDeviceLocally();
-        setStatus('locked');
-      } else if (res.data?.activated) {
-        // Activated and not locked — proceed
-        unlockDeviceLocally();
-        activateDevice(macAddr);
-        setStatus('activated');
-        if (pollRef.current) clearInterval(pollRef.current);
-        setTimeout(() => onActivated(), 1500);
+      if (res.data && !res.data.error) {
+        // Save credentials to localStorage
+        localStorage.setItem('qtv_xtream_creds', JSON.stringify({
+          baseUrl: XTREAM_BASE,
+          username: username.trim(),
+          password: password.trim(),
+        }));
+        setSuccess(true);
+        setTimeout(() => onActivated(), 1400);
       } else {
-        // Not yet activated
-        setStatus('waiting');
+        setError('Invalid username or password. Please try again.');
       }
     } catch {
-      // Silently retry — don't change status on network error
+      setError('Connection failed. Please check your credentials and try again.');
+    } finally {
+      setLoading(false);
     }
   };
-
-  const startPolling = (macAddr) => {
-    // Check immediately
-    checkActivation(macAddr);
-    // Then poll every 10s
-    pollRef.current = setInterval(() => checkActivation(macAddr), POLL_INTERVAL);
-  };
-
-  const copyMAC = async () => {
-    try {
-      await navigator.clipboard.writeText(mac);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    } catch {}
-  };
-
-  const dots = '.'.repeat(dotCount);
-
-  const isActivatedState = status === 'activated';
-  const isLockedState = status === 'locked';
 
   return (
     <div
@@ -90,7 +67,7 @@ export default function MacActivationScreen({ onActivated }) {
     >
       {BG}
 
-      {/* Admin settings button — below the status bar */}
+      {/* Admin settings button */}
       <a
         href="/admin/activation"
         className="fixed z-50 w-12 h-12 rounded-full bg-white/8 border border-white/12 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/15 transition-all touch-manipulation"
@@ -100,9 +77,9 @@ export default function MacActivationScreen({ onActivated }) {
       </a>
 
       <AnimatePresence mode="wait">
-        {isActivatedState ? (
+        {success ? (
           <motion.div
-            key="activated"
+            key="success"
             initial={{ opacity: 0, scale: 0.85 }}
             animate={{ opacity: 1, scale: 1 }}
             className="relative flex flex-col items-center text-center gap-5"
@@ -112,54 +89,14 @@ export default function MacActivationScreen({ onActivated }) {
               <CheckCircle className="w-10 h-10 text-emerald-400" />
             </div>
             <div>
-              <h2 className="text-2xl font-black text-white">Device Activated!</h2>
+              <h2 className="text-2xl font-black text-white">Welcome!</h2>
               <p className="text-sm text-emerald-400 mt-1">Loading Quantum TV…</p>
             </div>
             <Loader2 className="w-6 h-6 text-emerald-400 animate-spin" />
           </motion.div>
-        ) : isLockedState ? (
-          <motion.div
-            key="locked"
-            initial={{ opacity: 0, scale: 0.85 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="relative w-full max-w-sm flex flex-col items-center text-center gap-6"
-          >
-            {/* Logo */}
-            <div className="w-20 h-20 rounded-[1.5rem] overflow-hidden border-2 border-yellow-500/50"
-              style={{ boxShadow: '0 0 40px rgba(234,179,8,0.4)' }}>
-              <img src="https://media.base44.com/images/public/6a058bb7dcc660a537bc8137/7cb772c8e_QUANTUMTVLOGOver2.png" alt="Quantum TV" className="w-full h-full object-cover scale-110" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-black tracking-tight text-yellow-400">Account Locked</h1>
-              <p className="text-xs text-white/40 mt-1">Your access has been temporarily suspended</p>
-            </div>
-            <div className="w-full bg-yellow-500/8 border border-yellow-500/25 rounded-2xl p-5 flex flex-col gap-4">
-              <div className="flex items-center justify-center">
-                <div className="w-14 h-14 rounded-full bg-yellow-500/15 border border-yellow-500/40 flex items-center justify-center">
-                  <Lock className="w-7 h-7 text-yellow-400" />
-                </div>
-              </div>
-              <div>
-                <p className="text-xs text-white/40 uppercase tracking-widest font-bold mb-2">Your Device ID</p>
-                <div className="flex items-center gap-2 bg-black/30 border border-white/10 rounded-xl px-4 py-3">
-                  <span className="flex-1 font-mono text-base font-bold tracking-widest text-cyan-400 select-all">{mac}</span>
-                  <button onClick={copyMAC} className="flex-shrink-0 w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
-                    {copied ? <CheckCircle className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-white/40" />}
-                  </button>
-                </div>
-              </div>
-              <p className="text-xs text-white/50 leading-relaxed">
-                Your subscription has been temporarily locked. Please contact <span className="text-yellow-300 font-semibold">Quantum TV support</span> to restore access.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-white/4 border border-white/8 rounded-xl">
-              <Loader2 className="w-4 h-4 text-yellow-400 animate-spin flex-shrink-0" />
-              <span className="text-sm text-white/40">Checking for unlock{dots}</span>
-            </div>
-          </motion.div>
         ) : (
           <motion.div
-            key="waiting"
+            key="login"
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35, ease: 'easeOut' }}
@@ -180,63 +117,64 @@ export default function MacActivationScreen({ onActivated }) {
               <h1 className="text-2xl font-black tracking-tight bg-gradient-to-r from-violet-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
                 Quantum TV
               </h1>
-              <p className="text-xs text-white/40 mt-1">Device Activation Required</p>
+              <p className="text-xs text-white/40 mt-1">Sign in to your account</p>
             </div>
 
-            {/* MAC Address Card */}
-            <div className="w-full bg-white/4 border border-white/10 rounded-2xl p-5 flex flex-col gap-4">
+            {/* Login Form */}
+            <form onSubmit={handleLogin} className="w-full bg-white/4 border border-white/10 rounded-2xl p-5 flex flex-col gap-4">
 
-              {/* Pulsing status icon */}
-              <div className="flex items-center justify-center">
-                <div className="relative">
-                  <div className="w-14 h-14 rounded-full bg-violet-500/10 border border-violet-500/30 flex items-center justify-center">
-                    <Monitor className="w-6 h-6 text-violet-400" />
-                  </div>
-                  <div className="absolute inset-0 rounded-full border border-violet-500/40 animate-ping" />
-                  <div className="absolute inset-[-6px] rounded-full border border-violet-500/20 animate-ping" style={{ animationDelay: '0.4s' }} />
-                </div>
+              {/* Username */}
+              <div className="flex flex-col gap-1.5 text-left">
+                <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Username</label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={e => setUsername(e.target.value)}
+                  placeholder="Enter your username"
+                  autoComplete="username"
+                  className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/20 text-sm font-medium focus:outline-none focus:border-violet-500/60 focus:bg-black/40 transition-all"
+                />
               </div>
 
-              {/* MAC display */}
-              <div>
-                <p className="text-xs text-white/40 uppercase tracking-widest font-bold mb-2">Your Device ID</p>
-                <div className="flex items-center gap-2 bg-black/30 border border-white/10 rounded-xl px-4 py-3">
-                  <span className="flex-1 font-mono text-base font-bold tracking-widest text-cyan-400 select-all">
-                    {mac || '···:···:···:···'}
-                  </span>
+              {/* Password */}
+              <div className="flex flex-col gap-1.5 text-left">
+                <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Password</label>
+                <div className="relative">
+                  <input
+                    type={showPass ? 'text' : 'password'}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="Enter your password"
+                    autoComplete="current-password"
+                    className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 pr-11 text-white placeholder-white/20 text-sm font-medium focus:outline-none focus:border-violet-500/60 focus:bg-black/40 transition-all"
+                  />
                   <button
-                    onClick={copyMAC}
-                    className="flex-shrink-0 w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors"
+                    type="button"
+                    onClick={() => setShowPass(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 transition-colors"
                   >
-                    {copied
-                      ? <CheckCircle className="w-4 h-4 text-emerald-400" />
-                      : <Copy className="w-4 h-4 text-white/40" />
-                    }
+                    {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
 
-              {/* Info */}
-              <div className="flex items-start gap-2.5 bg-violet-500/8 border border-violet-500/20 rounded-xl px-3 py-2.5 text-left">
-                <Shield className="w-4 h-4 text-violet-400 flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-white/55 leading-relaxed">
-                  Share this Device ID with <span className="text-violet-300 font-semibold">Quantum TV</span> to activate your subscription. Once activated, the app will load automatically.
-                </p>
-              </div>
-            </div>
+              {/* Error */}
+              {error && (
+                <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/25 rounded-xl px-3 py-2.5">
+                  <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                  <p className="text-xs text-red-300">{error}</p>
+                </div>
+              )}
 
-            {/* Polling status */}
-            <div className="w-full flex flex-col items-center gap-2">
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-white/4 border border-white/8 rounded-xl">
-                <Loader2 className="w-4 h-4 text-violet-400 animate-spin flex-shrink-0" />
-                <span className="text-sm text-white/50">
-                  Waiting for activation{dots}
-                </span>
-              </div>
-              <p className="text-[11px] text-white/20">
-                Checking automatically every 10 seconds
-              </p>
-            </div>
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 text-white font-bold text-sm hover:opacity-90 active:opacity-80 transition-all disabled:opacity-50 flex items-center justify-center gap-2 touch-manipulation"
+              >
+                {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing in…</> : 'Sign In'}
+              </button>
+            </form>
 
           </motion.div>
         )}

@@ -10,16 +10,17 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const XTREAM_BASE = Deno.env.get('XTREAM_BASE_URL') || '';
-    const XTREAM_USER = Deno.env.get('XTREAM_USERNAME') || '';
-    const XTREAM_PASS = Deno.env.get('XTREAM_PASSWORD') || '';
-
     const FETCH_HEADERS = {
       'User-Agent': 'Mozilla/5.0 (SmartTV; Linux armv7l) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
     };
 
     const body = await req.json();
     const { action, proxy, url: rawUrl, fetchM3U } = body;
+
+    // Allow per-request credentials (for login validation), fallback to env secrets
+    const XTREAM_BASE = body.baseUrl || Deno.env.get('XTREAM_BASE_URL') || '';
+    const XTREAM_USER = body.username || Deno.env.get('XTREAM_USERNAME') || '';
+    const XTREAM_PASS = body.password || Deno.env.get('XTREAM_PASSWORD') || '';
 
     // ── Fetch a raw M3U URL and return its text ──────────────────────────────
     if (fetchM3U) {

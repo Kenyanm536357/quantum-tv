@@ -104,10 +104,7 @@ export default function SettingsSection() {
               </button>
             </div>
           </InputRow>
-          <InputRow label="Label (optional)" icon={User}>
-            <input type="text" value={form.label} onChange={e => set('label', e.target.value)}
-              placeholder="My IPTV" className="field-input" />
-          </InputRow>
+
         </div>
 
         {testResult && (

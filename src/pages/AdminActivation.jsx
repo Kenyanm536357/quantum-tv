@@ -6,7 +6,7 @@ const ALLOWED_EMAILS = ['kenyan@quantumtek.net', 'kenyanmcgarr@gmail.com'];
 import {
   Monitor, CheckCircle, XCircle, Plus, Trash2, Loader2,
   RefreshCw, Shield, Lock, LockOpen, Calendar,
-  Tv2, Signal, AlertTriangle, Github, ExternalLink
+  Tv2, Signal, AlertTriangle, Wifi, ShieldCheck, Database, AlertCircle
 } from 'lucide-react';
 
 const ADMIN_PASSCODE = 'quantum-admin-2024';
@@ -238,19 +238,18 @@ export default function AdminActivation() {
   const [newPhone,    setNewPhone]    = useState('');
   const [newNotes,    setNewNotes]    = useState('');
   const [newMonths,   setNewMonths]   = useState(1);
-  const [syncing,     setSyncing]     = useState(false);
-  const [syncResult,  setSyncResult]  = useState(null);
+  const [sysChecking, setSysChecking] = useState(null); // 'playlist'|'proxies'|'security'|null
+  const [sysResults,  setSysResults]  = useState({});   // { playlist, proxies, security }
 
-  const syncToGithub = async () => {
-    setSyncing(true);
-    setSyncResult(null);
+  const runCheck = async (type) => {
+    setSysChecking(type);
     try {
-      const res = await base44.functions.invoke('createGithubRepo', {});
-      setSyncResult({ ok: true, url: res.data?.m3u_url, repo: res.data?.url });
+      const res = await base44.functions.invoke('systemCheck', { check: type });
+      setSysResults(prev => ({ ...prev, [type]: res.data }));
     } catch (e) {
-      setSyncResult({ ok: false, msg: e.message });
+      setSysResults(prev => ({ ...prev, [type]: { ok: false, error: e.message } }));
     } finally {
-      setSyncing(false);
+      setSysChecking(null);
     }
   };
 
@@ -652,39 +651,96 @@ export default function AdminActivation() {
             </button>
           </div>
 
-          {/* GitHub Playlist Sync */}
-          <div className="border-t border-white/6 pt-5 space-y-3">
-            <div className="flex items-center gap-2">
-              <Github className="w-4 h-4 text-white/40" />
-              <p className="text-sm font-bold text-white">Playlist Sync</p>
-            </div>
-            <p className="text-[11px] text-white/30 leading-relaxed">
-              Fetch Movies, Series, Animation, Documentary, Kids, News, Sports, Music & more from iptv-org and push to your GitHub repo.
+          {/* System Dashboard */}
+          <div className="border-t border-white/6 pt-5 space-y-4">
+            <p className="text-sm font-bold text-white flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-violet-400" /> System Dashboard
             </p>
-            <button
-              onClick={syncToGithub}
-              disabled={syncing}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 border border-white/10 text-white/70 font-bold text-sm rounded-xl disabled:opacity-40 transition-all hover:bg-white/10 hover:text-white"
-            >
-              {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Github className="w-4 h-4" />}
-              {syncing ? 'Syncing categories…' : 'Sync to GitHub'}
-            </button>
-            {syncResult && (
-              <div className={`rounded-xl p-3 text-xs ${syncResult.ok ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border border-red-500/20 text-red-400'}`}>
-                {syncResult.ok ? (
-                  <div className="space-y-1.5">
-                    <p className="font-bold">✓ Synced successfully!</p>
-                    <a href={syncResult.repo} target="_blank" rel="noreferrer"
-                      className="flex items-center gap-1 text-white/50 hover:text-white underline underline-offset-2">
-                      View repo <ExternalLink className="w-3 h-3" />
-                    </a>
-                    <p className="text-white/30 break-all font-mono text-[10px]">{syncResult.url}</p>
-                  </div>
-                ) : (
-                  <p>Error: {syncResult.msg}</p>
-                )}
+
+            {/* Playlist Refresh */}
+            <div className="rounded-xl bg-white/3 border border-white/8 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Database className="w-3.5 h-3.5 text-cyan-400" />
+                  <p className="text-xs font-bold text-white">Playlist Refresh</p>
+                </div>
+                <button onClick={() => runCheck('playlist')} disabled={sysChecking === 'playlist'}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[11px] font-bold hover:bg-cyan-500/20 transition-colors disabled:opacity-40">
+                  {sysChecking === 'playlist' ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                  Run
+                </button>
               </div>
-            )}
+              {sysResults.playlist && (
+                <div className={`text-[11px] rounded-lg px-2.5 py-2 ${sysResults.playlist.ok ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                  {sysResults.playlist.ok
+                    ? `✓ ${sysResults.playlist.categories} categories loaded · ${sysResults.playlist.latency}ms`
+                    : `✗ ${sysResults.playlist.error}`}
+                </div>
+              )}
+            </div>
+
+            {/* Proxy Health */}
+            <div className="rounded-xl bg-white/3 border border-white/8 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Wifi className="w-3.5 h-3.5 text-blue-400" />
+                  <p className="text-xs font-bold text-white">Backup Proxies</p>
+                </div>
+                <button onClick={() => runCheck('proxies')} disabled={sysChecking === 'proxies'}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[11px] font-bold hover:bg-blue-500/20 transition-colors disabled:opacity-40">
+                  {sysChecking === 'proxies' ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                  Check
+                </button>
+              </div>
+              {sysResults.proxies && (
+                <div className="space-y-1">
+                  <p className={`text-[11px] font-bold ${sysResults.proxies.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {sysResults.proxies.alive}/{sysResults.proxies.total} proxies online
+                  </p>
+                  {sysResults.proxies.results?.map(r => (
+                    <div key={r.id} className="flex items-center justify-between text-[10px]">
+                      <span className="text-white/40">{r.id}</span>
+                      <span className={r.ok ? 'text-emerald-400' : 'text-red-400/70'}>
+                        {r.ok ? `✓ ${r.latency}ms` : '✗ offline'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Security Self-Check */}
+            <div className="rounded-xl bg-white/3 border border-white/8 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Shield className="w-3.5 h-3.5 text-violet-400" />
+                  <p className="text-xs font-bold text-white">Security Check</p>
+                </div>
+                <button onClick={() => runCheck('security')} disabled={sysChecking === 'security'}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] font-bold hover:bg-violet-500/20 transition-colors disabled:opacity-40">
+                  {sysChecking === 'security' ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
+                  Scan
+                </button>
+              </div>
+              {sysResults.security && (
+                <div className="space-y-1">
+                  {sysResults.security.checks?.map(c => (
+                    <div key={c.id} className="flex items-start justify-between gap-2 text-[11px]">
+                      <div className="flex items-center gap-1.5">
+                        {c.ok
+                          ? <CheckCircle className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+                          : <AlertCircle className="w-3 h-3 text-red-400 flex-shrink-0" />}
+                        <span className="text-white/50">{c.label}</span>
+                      </div>
+                      <span className={`text-right flex-shrink-0 ${c.ok ? 'text-white/30' : 'text-red-400 font-bold'}`}>{c.detail}</span>
+                    </div>
+                  ))}
+                  {!sysResults.security.checks && (
+                    <p className="text-[11px] text-red-400">✗ {sysResults.security.error}</p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -43,26 +43,39 @@ export default function MacActivationScreen({ onActivated }) {
     setLoading(true);
     setError('');
     try {
-      // Use backend-configured base URL if available
-      const baseUrl = 'http://pro.flickhaven.online';
-      const res = await base44.functions.invoke('fetchPlaylist', {
-        action: 'get_live_categories',
-        baseUrl,
+      // Step 1: Validate against device registry
+      const validation = await base44.functions.invoke('validateDevice', {
         username: username.trim(),
         password: password.trim(),
-        validateOnly: true,
       });
 
-      if (res.data && !res.data.error) {
-        const creds = { baseUrl, username: username.trim(), password: password.trim() };
-        // Save to both keys so the store and playlist hook both find them
-        localStorage.setItem('qtv_xtream_creds', JSON.stringify(creds));
-        localStorage.setItem('iptv_creds', JSON.stringify({ type: 'xtream', label: 'Quantum TV', ...creds }));
-        setSuccess(true);
-        setTimeout(() => onActivated(), 1400);
-      } else {
-        setError('Invalid username or password. Please try again.');
+      const { valid, reason } = validation.data || {};
+
+      if (!valid) {
+        if (reason === 'not_registered') {
+          setError('This account is not registered. Please contact support.');
+        } else if (reason === 'invalid_credentials') {
+          setError('Invalid username or password. Please try again.');
+        } else if (reason === 'expired') {
+          setError('Your subscription has expired. Please renew to continue.');
+        } else if (reason === 'locked') {
+          setError('This account has been suspended. Please contact support.');
+        } else if (reason === 'not_activated') {
+          setError('This account is not activated. Please contact support.');
+        } else {
+          setError('Access denied. Please contact support.');
+        }
+        return;
       }
+
+      // Step 2: Device is registered & active — save credentials and proceed
+      const baseUrl = 'http://pro.flickhaven.online';
+      const creds = { baseUrl, username: username.trim(), password: password.trim() };
+      localStorage.setItem('qtv_xtream_creds', JSON.stringify(creds));
+      localStorage.setItem('iptv_creds', JSON.stringify({ type: 'xtream', label: 'Quantum TV', ...creds }));
+      setSuccess(true);
+      setTimeout(() => onActivated(), 1400);
+
     } catch {
       setError('Connection failed. Please check your credentials and try again.');
     } finally {

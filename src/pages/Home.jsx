@@ -18,7 +18,7 @@ import HistorySection from '@/pages/iptv/HistorySection';
 import RemindersSection from '@/pages/iptv/RemindersSection';
 import { getDueReminders, markReminderFired } from '@/lib/user-data';
 import { usePlaylist } from '@/lib/use-playlist';
-import { BellRing, X } from 'lucide-react';
+import { BellRing, X, ShieldOff, Clock } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
 const pageVariants = {
@@ -71,11 +71,40 @@ function ReminderChecker({ credentials }) {
   );
 }
 
+function ExpiredScreen() {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+      style={{ background: 'radial-gradient(ellipse at 60% 0%, #1a0a3d 0%, #0a0f2e 40%, #060a1a 100%)' }}>
+      <div className="flex flex-col items-center gap-5 text-center max-w-xs">
+        <div className="w-20 h-20 rounded-full bg-orange-500/10 border-2 border-orange-500/40 flex items-center justify-center"
+          style={{ boxShadow: '0 0 40px rgba(249,115,22,0.3)' }}>
+          <Clock className="w-10 h-10 text-orange-400" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-black text-white">Subscription Expired</h2>
+          <p className="text-sm text-white/40 mt-2">Your subscription has ended. Please renew to continue watching.</p>
+        </div>
+        <button
+          onClick={() => {
+            localStorage.removeItem('qtv_xtream_creds');
+            localStorage.removeItem('iptv_creds');
+            window.location.href = '/';
+          }}
+          className="px-6 py-3 bg-gradient-to-r from-violet-600 to-cyan-500 text-white font-bold rounded-xl text-sm hover:opacity-90 transition-all"
+        >
+          Back to Login
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AppShell() {
   const { credentials, player } = useStore();
   const location = useLocation();
   const sectionKey = location.pathname.replace('/', '') || 'epg';
   const [activated, setActivated] = useState(() => !!localStorage.getItem('qtv_xtream_creds'));
+  const [subExpired, setSubExpired] = useState(false);
 
   useEffect(() => {
     setState({ section: sectionKey });
@@ -91,8 +120,42 @@ function AppShell() {
     }
   }, [activated, credentials]);
 
+  // Subscription expiration poller — checks every 5 minutes
+  useEffect(() => {
+    if (!activated) return;
+
+    const checkSub = async () => {
+      try {
+        const stored = JSON.parse(localStorage.getItem('qtv_xtream_creds') || '{}');
+        if (!stored.username) return;
+        const res = await base44.functions.invoke('validateDevice', {
+          username: stored.username,
+          checkOnly: true,
+        });
+        const { valid, reason } = res.data || {};
+        if (!valid) {
+          // Clear credentials and show expired screen
+          localStorage.removeItem('qtv_xtream_creds');
+          localStorage.removeItem('iptv_creds');
+          setSubExpired(true);
+        }
+      } catch {
+        // Network error — don't force logout, just skip
+      }
+    };
+
+    // Check immediately on mount, then every 5 minutes
+    checkSub();
+    const interval = setInterval(checkSub, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [activated]);
+
   if (!activated) {
     return <MacActivationScreen onActivated={() => setActivated(true)} />;
+  }
+
+  if (subExpired) {
+    return <ExpiredScreen />;
   }
 
   return (

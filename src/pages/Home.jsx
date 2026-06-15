@@ -4,8 +4,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useStore } from '@/lib/use-store';
 import { loadCredentials, setState, saveCredentials } from '@/lib/iptv-store';
-import MacActivationScreen from '@/components/iptv/MacActivationScreen';
-import { isActivated, getDeviceMAC, lockDeviceLocally, unlockDeviceLocally, deactivateDevice } from '@/lib/mac-auth';
+import XtreamLoginScreen from '@/components/iptv/XtreamLoginScreen';
 import { AppSidebar, BottomTabBar } from '@/components/iptv/AppTopbar';
 import VideoPlayer from '@/components/iptv/VideoPlayer.jsx';
 import LiveSection from '@/pages/iptv/LiveSection';
@@ -76,50 +75,25 @@ function AppShell() {
   const { credentials, player } = useStore();
   const location = useLocation();
   const sectionKey = location.pathname.replace('/', '') || 'epg';
-  const [activated, setActivated] = useState(() => isActivated());
+  const [loggedIn, setLoggedIn] = useState(() => !!localStorage.getItem('qtv_xtream_user'));
 
   useEffect(() => {
     setState({ section: sectionKey });
   }, [sectionKey]);
 
-  // Auto-load hardcoded playlist once MAC is activated
+  // Auto-load credentials from localStorage once logged in
   useEffect(() => {
-    if (activated && !credentials) {
-      saveCredentials({
-        type: 'm3u',
-        baseUrl: 'https://iptv-org.github.io/iptv/index.m3u',
-        label: 'Quantum TV',
-        mac: getDeviceMAC(),
-      });
-    }
-  }, [activated, credentials]);
-
-  // Background poll — detect lock/deactivation while app is running
-  useEffect(() => {
-    if (!activated) return;
-    const mac = getDeviceMAC();
-    const poll = async () => {
-      try {
-        const res = await base44.functions.invoke('checkActivation', { mac });
-        if (res.data?.locked) {
-          lockDeviceLocally();
-          setActivated(false); // kick back to activation screen (locked view)
-        } else if (!res.data?.activated) {
-          deactivateDevice();
-          setActivated(false); // kick back to activation screen
-        } else {
-          unlockDeviceLocally(); // ensure local state is clean
-        }
-      } catch {
-        // Network error — don't kick the user out, just retry next poll
+    if (loggedIn && !credentials) {
+      const user = localStorage.getItem('qtv_xtream_user');
+      const pass = localStorage.getItem('qtv_xtream_pass');
+      if (user && pass) {
+        saveCredentials({ type: 'xtream', username: user, password: pass, label: 'Quantum TV' });
       }
-    };
-    const t = setInterval(poll, 30000); // check every 30 seconds
-    return () => clearInterval(t);
-  }, [activated]);
+    }
+  }, [loggedIn, credentials]);
 
-  if (!activated) {
-    return <MacActivationScreen onActivated={() => setActivated(true)} />;
+  if (!loggedIn) {
+    return <XtreamLoginScreen onLoggedIn={() => setLoggedIn(true)} />;
   }
 
   return (

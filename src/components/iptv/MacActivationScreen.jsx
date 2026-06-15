@@ -20,7 +20,7 @@ const getXtreamBase = async () => {
     const res = await base44.functions.invoke('fetchPlaylist', { action: 'get_live_categories', validateOnly: true });
     return res.data?.baseUrl || 'http://pro.flickhaven.online';
   } catch {
-    return 'http://pro.flickhaven.online';
+    return 'http://pro.business-cdn-8k.com';
   }
 };
 
@@ -69,7 +69,7 @@ export default function MacActivationScreen({ onActivated }) {
       }
 
       // Step 2: Device is registered & active — save credentials and proceed
-      const baseUrl = 'http://pro.flickhaven.online';
+      const baseUrl = 'http://pro.business-cdn-8k.com';
       const creds = { baseUrl, username: username.trim(), password: password.trim() };
       localStorage.setItem('qtv_xtream_creds', JSON.stringify(creds));
       localStorage.setItem('iptv_creds', JSON.stringify({ type: 'xtream', label: 'Quantum TV', ...creds }));

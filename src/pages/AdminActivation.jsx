@@ -420,13 +420,13 @@ export default function AdminActivation() {
       </div>
 
       {/* Two-column layout: stacked on mobile, side-by-side on lg+ */}
-      <div className="flex flex-col lg:flex-row flex-1 min-h-0 overflow-hidden">
+      <div className="flex flex-col lg:flex-row flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
 
         {/* ── Main content: Device list ── */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
+        <div className="flex-1 lg:overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
 
           {/* Stats banner */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <StatCard icon={Monitor}       label="Total Devices" value={devices.length} color="bg-white/5" />
             <StatCard icon={Signal}        label="Active"        value={activeCount}    color="bg-emerald-500/15" />
             <StatCard icon={AlertTriangle} label="Expired"       value={expiredCount}   color="bg-orange-500/15" />
@@ -539,7 +539,7 @@ export default function AdminActivation() {
         </div>
 
         {/* ── Sidebar: Activate New Device ── */}
-        <div className="w-full lg:w-80 flex-shrink-0 border-t lg:border-t-0 lg:border-l border-white/6 overflow-y-auto p-4 sm:p-5 space-y-5"
+        <div className="w-full lg:w-80 flex-shrink-0 border-t lg:border-t-0 lg:border-l border-white/6 lg:overflow-y-auto p-4 sm:p-5 space-y-5"
           style={{ background: 'linear-gradient(180deg, rgba(139,92,246,0.06) 0%, transparent 50%)' }}>
 
           <div className="flex items-center gap-2">

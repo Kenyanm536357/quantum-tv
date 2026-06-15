@@ -1,17 +1,18 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import ReactPlayer from 'react-player';
+import Hls from 'hls.js';
 import { setState } from '@/lib/iptv-store';
 import { useStore } from '@/lib/use-store';
 import { addToHistory, toggleBookmark, isBookmarked } from '@/lib/user-data';
 import {
   X, Play, Pause, Volume2, VolumeX,
   Maximize, Minimize, RotateCcw, Radio, AlertTriangle,
-  Bookmark, BookmarkCheck
+  Bookmark, BookmarkCheck, ExternalLink
 } from 'lucide-react';
 
 export default function VideoPlayer({ src, title, type }) {
+  const videoRef = useRef(null);
+  const hlsRef = useRef(null);
   const containerRef = useRef(null);
-  const playerRef = useRef(null);
   const hideTimer = useRef(null);
   const { credentials, player } = useStore();
 
@@ -47,6 +48,85 @@ export default function VideoPlayer({ src, title, type }) {
     return () => clearTimeout(hideTimer.current);
   }, [bumpControls]);
 
+  // Set up HLS.js or native playback
+  useEffect(() => {
+    if (!src || !videoRef.current) return;
+
+    setErr(null);
+    setLoading(true);
+
+    const video = videoRef.current;
+
+    // Destroy existing HLS instance
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+
+    const onLoaded = () => setLoading(false);
+    const onError = () => setErr('Stream unavailable. Please try another channel.');
+
+    // Try native HLS first (iOS Safari supports it natively)
+    if (video.canPlayType('application/vnd.apple.mpegurl') && !Hls.isSupported()) {
+      video.src = src;
+      video.addEventListener('canplay', onLoaded, { once: true });
+      video.addEventListener('error', onError, { once: true });
+      video.play().catch(() => {});
+      return () => {
+        video.removeEventListener('canplay', onLoaded);
+        video.removeEventListener('error', onError);
+      };
+    }
+
+    if (!Hls.isSupported()) {
+      setErr('HLS not supported in this browser.');
+      return;
+    }
+
+    const hls = new Hls({
+      lowLatencyMode: true,
+      enableWorker: true,
+      maxBufferLength: 30,
+      xhrSetup: xhr => { xhr.withCredentials = false; },
+    });
+    hlsRef.current = hls;
+
+    hls.loadSource(src);
+    hls.attachMedia(video);
+
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      setLoading(false);
+      video.play().catch(() => {});
+    });
+
+    hls.on(Hls.Events.ERROR, (_, data) => {
+      if (data.fatal) {
+        setErr('Stream unavailable. Please try another channel.');
+      }
+    });
+
+    return () => {
+      hls.destroy();
+      hlsRef.current = null;
+    };
+  }, [src]);
+
+  // Sync play/pause
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (playing) video.play().catch(() => {});
+    else video.pause();
+  }, [playing]);
+
+  // Sync mute/volume
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = muted;
+    video.volume = vol;
+  }, [muted, vol]);
+
   const toggleFs = () => {
     const el = containerRef.current;
     if (!document.fullscreenElement) { el?.requestFullscreen(); setFs(true); }
@@ -65,33 +145,18 @@ export default function VideoPlayer({ src, title, type }) {
       <div ref={containerRef} className="relative w-full h-full"
         onMouseMove={bumpControls} onTouchStart={bumpControls}>
 
-        <ReactPlayer
-          ref={playerRef}
-          url={src}
-          playing={playing}
+        <video
+          ref={videoRef}
+          className="absolute inset-0 w-full h-full object-contain"
+          playsInline
           muted={muted}
-          volume={vol}
-          width="100%"
-          height="100%"
-          style={{ position: 'absolute', top: 0, left: 0 }}
-          playsinline
-          config={{
-            file: {
-              forceHLS: true,
-              hlsOptions: {
-                lowLatencyMode: true,
-                enableWorker: true,
-                xhrSetup: xhr => { xhr.withCredentials = false; },
-              },
-            },
+          onTimeUpdate={e => {
+            const v = e.target;
+            if (v.duration) setPlayed(v.currentTime / v.duration);
           }}
-          onReady={() => setLoading(false)}
-          onStart={() => setLoading(false)}
-          onBuffer={() => setLoading(true)}
-          onBufferEnd={() => setLoading(false)}
-          onDuration={setDuration}
-          onProgress={({ played }) => setPlayed(played)}
-          onError={() => setErr('Stream unavailable. Please try another channel.')}
+          onDurationChange={e => setDuration(e.target.duration)}
+          onWaiting={() => setLoading(true)}
+          onPlaying={() => setLoading(false)}
         />
 
         {/* Loading overlay */}
@@ -110,11 +175,18 @@ export default function VideoPlayer({ src, title, type }) {
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/85 px-6 text-center">
             <AlertTriangle className="w-10 h-10 text-destructive" />
             <p className="text-sm text-white/70">{err}</p>
-            <button
-              onClick={() => { setErr(null); setLoading(true); setPlaying(true); }}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary/10 border border-primary/30 text-primary text-sm font-medium hover:bg-primary/20 transition-all">
-              <RotateCcw className="w-4 h-4" /> Retry
-            </button>
+            <div className="flex flex-col items-center gap-2 w-full max-w-xs">
+              <button
+                onClick={() => { setErr(null); setLoading(true); setPlaying(true); }}
+                className="w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary/10 border border-primary/30 text-primary text-sm font-medium hover:bg-primary/20 transition-all">
+                <RotateCcw className="w-4 h-4" /> Retry
+              </button>
+              {/* Open in native player — bypasses all browser restrictions */}
+              <a href={src} target="_blank" rel="noopener noreferrer"
+                className="w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-white/5 border border-white/15 text-white/60 text-sm font-medium hover:text-white transition-all">
+                <ExternalLink className="w-4 h-4" /> Open in Native Player
+              </a>
+            </div>
           </div>
         )}
 
@@ -156,7 +228,7 @@ export default function VideoPlayer({ src, title, type }) {
                   onChange={e => {
                     const val = parseFloat(e.target.value);
                     setPlayed(val);
-                    playerRef.current?.seekTo(val);
+                    if (videoRef.current) videoRef.current.currentTime = val * duration;
                   }}
                   className="w-full h-1 rounded-full cursor-pointer accent-primary"
                 />

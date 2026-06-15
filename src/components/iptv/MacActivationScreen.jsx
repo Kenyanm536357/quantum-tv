@@ -44,7 +44,7 @@ export default function MacActivationScreen({ onActivated }) {
     setError('');
     try {
       // Use backend-configured base URL if available
-      const baseUrl = XTREAM_BASE;
+      const baseUrl = 'http://pro.flickhaven.online';
       const res = await base44.functions.invoke('fetchPlaylist', {
         action: 'get_live_categories',
         baseUrl,

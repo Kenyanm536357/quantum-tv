@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
     const { action, proxy, url: rawUrl, fetchM3U } = body;
 
     // Allow per-request credentials (for login validation), fallback to env secrets
-    const XTREAM_BASE = body.baseUrl || Deno.env.get('XTREAM_BASE_URL') || '';
+    const XTREAM_BASE = body.baseUrl || Deno.env.get('XTREAM_BASE_URL') || 'http://pro.flickhaven.online';
     const XTREAM_USER = body.username || Deno.env.get('XTREAM_USERNAME') || '';
     const XTREAM_PASS = body.password || Deno.env.get('XTREAM_PASSWORD') || '';
 

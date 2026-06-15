@@ -13,8 +13,8 @@ import CorsBlockedScreen from '@/components/iptv/CorsBlockedScreen';
 import { base44 } from '@/api/base44Client';
 
 function toHttps(url) {
-  if (!url) return url;
-  return url.replace(/^http:\/\//i, 'https://');
+  // Do NOT force HTTPS — Xtream servers typically only serve on HTTP
+  return url;
 }
 
 async function getProxiedUrl(rawUrl) {
@@ -114,7 +114,7 @@ export default function VideoPlayer({ src, title, type }) {
     setStatusMsg('');
 
     retryCountRef.current = 0;
-    const activeSrc = toHttps(src);
+    const activeSrc = src;
     addLog('info', 'INIT', { src: activeSrc, hlsSupported: Hls.isSupported() });
 
     const loadSource = (finalSrc) => {

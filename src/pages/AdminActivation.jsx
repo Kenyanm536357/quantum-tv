@@ -243,7 +243,7 @@ export default function AdminActivation() {
   const runCheck = async (type) => {
     setSysChecking(type);
     try {
-      const res = await base44.functions.invoke('systemCheck', { check: type });
+      const res = await base44.functions.invoke('systemCheck', { check: type, adminKey: ADMIN_PASSCODE });
       setSysResults(prev => ({ ...prev, [type]: res.data }));
     } catch (e) {
       setSysResults(prev => ({ ...prev, [type]: { ok: false, error: e.message } }));

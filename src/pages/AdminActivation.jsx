@@ -325,6 +325,7 @@ export default function AdminActivation() {
     setAdding(true);
     const expires = addMonths(new Date(), newMonths);
     await base44.entities.DeviceActivation.create({
+      mac:          newUsername.trim(),
       username:     newUsername.trim(),
       password:     newPassword.trim() || undefined,
       phone:        newPhone.trim() || undefined,

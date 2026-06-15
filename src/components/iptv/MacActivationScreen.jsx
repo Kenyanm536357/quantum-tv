@@ -18,13 +18,13 @@ const BG = (
 const getXtreamBase = async () => {
   try {
     const res = await base44.functions.invoke('fetchPlaylist', { action: 'get_live_categories', validateOnly: true });
-    return res.data?.baseUrl || 'https://epg.codes';
+    return res.data?.baseUrl || 'http://pro.flickhaven.online';
   } catch {
-    return 'https://epg.codes';
+    return 'http://pro.flickhaven.online';
   }
 };
 
-let XTREAM_BASE = 'https://epg.codes';
+let XTREAM_BASE = 'http://pro.flickhaven.online';
 
 export default function MacActivationScreen({ onActivated }) {
   const [username, setUsername] = useState('');

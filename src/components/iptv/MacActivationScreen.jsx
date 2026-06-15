@@ -14,7 +14,17 @@ const BG = (
   </div>
 );
 
-const XTREAM_BASE = 'https://epg.codes';
+// Base URL will be fetched from backend or use default
+const getXtreamBase = async () => {
+  try {
+    const res = await base44.functions.invoke('fetchPlaylist', { action: 'get_live_categories', validateOnly: true });
+    return res.data?.baseUrl || 'https://epg.codes';
+  } catch {
+    return 'https://epg.codes';
+  }
+};
+
+let XTREAM_BASE = 'https://epg.codes';
 
 export default function MacActivationScreen({ onActivated }) {
   const [username, setUsername] = useState('');
@@ -33,18 +43,20 @@ export default function MacActivationScreen({ onActivated }) {
     setLoading(true);
     setError('');
     try {
+      // Use backend-configured base URL if available
+      const baseUrl = XTREAM_BASE;
       const res = await base44.functions.invoke('fetchPlaylist', {
         action: 'get_live_categories',
-        baseUrl: XTREAM_BASE,
+        baseUrl,
         username: username.trim(),
         password: password.trim(),
         validateOnly: true,
       });
 
       if (res.data && !res.data.error) {
-        // Save credentials to localStorage
+        // Save credentials to localStorage (Xtream Codes only)
         localStorage.setItem('qtv_xtream_creds', JSON.stringify({
-          baseUrl: XTREAM_BASE,
+          baseUrl,
           username: username.trim(),
           password: password.trim(),
         }));

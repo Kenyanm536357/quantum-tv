@@ -396,6 +396,10 @@ export default function AdminActivation() {
             style={{ boxShadow: '0 0 30px rgba(139,92,246,0.4)' }}>
             Enter Admin Panel
           </button>
+          <a href="/"
+            className="w-full py-3 text-center text-sm text-white/40 hover:text-white/70 transition-colors">
+            ← Back to Login
+          </a>
         </form>
       </div>
     );

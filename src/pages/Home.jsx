@@ -7,7 +7,7 @@ import { loadCredentials, setState, saveCredentials } from '@/lib/iptv-store';
 import MacActivationScreen from '@/components/iptv/MacActivationScreen';
 import { isActivated, getDeviceMAC, lockDeviceLocally, unlockDeviceLocally, deactivateDevice } from '@/lib/mac-auth';
 import { AppSidebar, BottomTabBar } from '@/components/iptv/AppTopbar';
-import VideoPlayer from '@/components/iptv/VideoPlayer';
+import VideoPlayer from '@/components/iptv/VideoPlayer.jsx';
 import LiveSection from '@/pages/iptv/LiveSection';
 import MoviesSection from '@/pages/iptv/MoviesSection';
 import SeriesSection from '@/pages/iptv/SeriesSection';

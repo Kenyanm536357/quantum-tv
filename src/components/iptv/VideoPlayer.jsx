@@ -10,19 +10,23 @@ import {
 } from 'lucide-react';
 import DebugPanel from '@/components/iptv/DebugPanel';
 import CorsBlockedScreen from '@/components/iptv/CorsBlockedScreen';
+import { base44 } from '@/api/base44Client';
 
-// ── Proxy list — tried in order on failure, working proxy is locked in ────────
-const PROXY_LIST = [
-  null, // direct (no proxy) — always try first
-  (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-  (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  (url) => `https://thingproxy.freeboard.io/fetch/${url}`,
-  (url) => `https://cors.sh/${url}`,
-];
+function toHttps(url) {
+  if (!url) return url;
+  return url.replace(/^http:\/\//i, 'https://');
+}
 
-function applyProxy(rawSrc, proxyIndex) {
-  if (proxyIndex === 0 || !PROXY_LIST[proxyIndex]) return rawSrc;
-  return PROXY_LIST[proxyIndex](rawSrc);
+async function getProxiedUrl(rawUrl) {
+  try {
+    const res = await base44.functions.invoke('fetchPlaylist', { proxy: true, url: rawUrl });
+    const text = res.data;
+    if (!text || typeof text !== 'string') return null;
+    const blob = new Blob([text], { type: 'application/vnd.apple.mpegurl' });
+    return URL.createObjectURL(blob);
+  } catch (_) {
+    return null;
+  }
 }
 
 export default function VideoPlayer({ src, title, type }) {
@@ -31,11 +35,8 @@ export default function VideoPlayer({ src, title, type }) {
   const containerRef = useRef(null);
   const hideTimer = useRef(null);
   const progressTimer = useRef(null);
+  const blobUrlRef = useRef(null);
   const { credentials, player } = useStore();
-
-  // Proxy state — locked once a working proxy is found
-  const proxyIndexRef = useRef(0);
-  const lockedProxyRef = useRef(null); // null = not locked yet
 
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -46,60 +47,47 @@ export default function VideoPlayer({ src, title, type }) {
   const [showCtrl, setShowCtrl] = useState(true);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
-  const [bookmarked, setBookmarked] = useState(false);
   const [corsBlocked, setCorsBlocked] = useState(false);
+  const [bookmarked, setBookmarked] = useState(false);
   const [debugLogs, setDebugLogs] = useState([]);
   const [showDebug, setShowDebug] = useState(false);
-  const [proxyStatus, setProxyStatus] = useState('');
+  const [statusMsg, setStatusMsg] = useState('');
+
   const tapCountRef = useRef(0);
   const tapTimerRef = useRef(null);
   const isLive = type === 'live' || !isFinite(duration) || duration > 86400;
 
   const addLog = useCallback((level, event, detail = {}) => {
-    setDebugLogs(prev => [...prev, { level, event, detail, ts: Date.now() }]);
+    setDebugLogs(prev => [...prev.slice(-99), { level, event, detail, ts: Date.now() }]);
   }, []);
 
-  // Triple-tap top-left corner to show debug panel
   const handleDebugTap = useCallback(() => {
     tapCountRef.current += 1;
     clearTimeout(tapTimerRef.current);
     tapTimerRef.current = setTimeout(() => { tapCountRef.current = 0; }, 600);
-    if (tapCountRef.current >= 3) {
-      tapCountRef.current = 0;
-      setShowDebug(true);
-    }
+    if (tapCountRef.current >= 3) { tapCountRef.current = 0; setShowDebug(true); }
   }, []);
 
-  // Track bookmark state
   useEffect(() => {
-    if (credentials && player) {
-      setBookmarked(isBookmarked(credentials, player));
-    }
+    if (credentials && player) setBookmarked(isBookmarked(credentials, player));
   }, [credentials, player]);
 
-  // Add to history on play start
   useEffect(() => {
-    if (credentials && player && !loading && !err) {
-      addToHistory(credentials, player, type);
-    }
+    if (credentials && player && !loading && !err) addToHistory(credentials, player, type);
   }, [loading, err, credentials]);
 
-  // Save progress every 15s for VOD
   useEffect(() => {
     if (!isLive && credentials && player) {
       progressTimer.current = setInterval(() => {
         const v = videoRef.current;
-        if (v && v.duration > 0) {
-          updateProgress(credentials, player, v.currentTime / v.duration);
-        }
+        if (v && v.duration > 0) updateProgress(credentials, player, v.currentTime / v.duration);
       }, 15000);
     }
     return () => clearInterval(progressTimer.current);
   }, [isLive, credentials, player]);
 
-  // Resume VOD from saved progress
   useEffect(() => {
-    if (player?.resumeAt && player.resumeAt > 0) {
+    if (player?.resumeAt > 0) {
       const v = videoRef.current;
       if (v) {
         const onCanPlay = () => { v.currentTime = player.resumeAt; v.removeEventListener('canplay', onCanPlay); };
@@ -108,122 +96,86 @@ export default function VideoPlayer({ src, title, type }) {
     }
   }, [player?.resumeAt]);
 
-  const tryLoadWithProxy = useCallback((proxyIndex) => {
-    const video = videoRef.current;
-    if (!video || !src) return;
-
+  const cleanup = useCallback(() => {
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+    if (blobUrlRef.current) { URL.revokeObjectURL(blobUrlRef.current); blobUrlRef.current = null; }
+  }, []);
 
-    const activeSrc = applyProxy(src, proxyIndex);
-    const proxyLabel = proxyIndex === 0 ? 'direct' : `proxy ${proxyIndex}`;
-    addLog('info', 'TRY_PROXY', { proxyIndex, activeSrc: activeSrc.slice(-80) });
-    setProxyStatus(proxyIndex === 0 ? '' : `Trying proxy ${proxyIndex}/${PROXY_LIST.length - 1}…`);
-
-    if (Hls.isSupported()) {
-      const hls = new Hls({
-        lowLatencyMode: true,
-        backBufferLength: 30,
-        maxBufferLength: 60,
-        enableWorker: true,
-        xhrSetup: (xhr) => { xhr.withCredentials = false; },
-      });
-      hlsRef.current = hls;
-      hls.loadSource(activeSrc);
-      hls.attachMedia(video);
-
-      hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
-        // ✅ This proxy works — lock it in
-        lockedProxyRef.current = proxyIndex;
-        proxyIndexRef.current = proxyIndex;
-        addLog('success', 'MANIFEST_PARSED', { levels: data?.levels?.length ?? 0, proxyLabel });
-        setProxyStatus(proxyIndex === 0 ? '' : `Using proxy ${proxyIndex}`);
-        setLoading(false);
-        setCorsBlocked(false);
-        setErr(null);
-        video.play().catch(() => {});
-      });
-
-      hls.on(Hls.Events.LEVEL_LOADED, (_, data) => {
-        addLog('info', 'LEVEL_LOADED', { level: data?.level, duration: data?.details?.totalduration });
-      });
-
-      hls.on(Hls.Events.ERROR, (_, d) => {
-        const code = d?.response?.code ?? d?.networkDetails?.status ?? 'N/A';
-        addLog(d?.fatal ? 'error' : 'warn', d?.fatal ? 'FATAL_ERROR' : 'HLS_ERROR', {
-          type: d?.type, details: d?.details, fatal: d?.fatal, responseCode: code, proxyLabel,
-        });
-
-        if (d?.fatal) {
-          hls.destroy();
-          hlsRef.current = null;
-
-          const nextProxy = proxyIndex + 1;
-          if (nextProxy < PROXY_LIST.length && lockedProxyRef.current === null) {
-            // Auto-try next proxy
-            addLog('info', 'PROXY_FALLBACK', { nextProxy });
-            setTimeout(() => tryLoadWithProxy(nextProxy), 300);
-          } else {
-            // All proxies exhausted (or locked proxy failed — retry locked proxy once)
-            if (lockedProxyRef.current !== null && lockedProxyRef.current === proxyIndex) {
-              addLog('warn', 'LOCKED_PROXY_FAILED', { retrying: true });
-              lockedProxyRef.current = null;
-              proxyIndexRef.current = 0;
-              setTimeout(() => tryLoadWithProxy(0), 1000);
-              return;
-            }
-            const isCors = d?.details === 'manifestLoadError' && (code === 0 || code === 'N/A');
-            setCorsBlocked(isCors);
-            setErr(isCors ? 'cors_blocked' : `Stream unavailable (code: ${code})`);
-            setLoading(false);
-          }
-        }
-      });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      addLog('info', 'NATIVE_HLS', { src: activeSrc });
-      video.src = activeSrc;
-      video.onloadedmetadata = () => {
-        lockedProxyRef.current = proxyIndex;
-        addLog('success', 'METADATA_LOADED', {});
-        setLoading(false);
-        setProxyStatus(proxyIndex === 0 ? '' : `Using proxy ${proxyIndex}`);
-        video.play().catch(() => {});
-      };
-      video.onerror = () => {
-        const nextProxy = proxyIndex + 1;
-        if (nextProxy < PROXY_LIST.length && lockedProxyRef.current === null) {
-          setTimeout(() => tryLoadWithProxy(nextProxy), 300);
-        } else {
-          setErr('Stream unavailable.');
-          setLoading(false);
-        }
-      };
-    } else {
-      setErr('HLS not supported in this browser.');
-      setLoading(false);
-    }
-  }, [src, addLog]);
-
-  const initHls = useCallback(() => {
+  const initHls = useCallback(async () => {
     const video = videoRef.current;
     if (!video || !src) return;
+    cleanup();
     setLoading(true);
     setErr(null);
     setCorsBlocked(false);
     setDebugLogs([]);
-    setProxyStatus('');
+    setStatusMsg('');
 
-    // If we have a locked working proxy, use it directly; otherwise start from 0
-    const startProxy = lockedProxyRef.current !== null ? lockedProxyRef.current : 0;
-    addLog('info', 'INIT', { src, startProxy, hlsSupported: Hls.isSupported() });
-    tryLoadWithProxy(startProxy);
-  }, [src, addLog, tryLoadWithProxy]);
+    const activeSrc = toHttps(src);
+    addLog('info', 'INIT', { src: activeSrc, hlsSupported: Hls.isSupported() });
+
+    const loadSource = (finalSrc) => {
+      if (Hls.isSupported()) {
+        const hls = new Hls({
+          lowLatencyMode: true,
+          backBufferLength: 30,
+          maxBufferLength: 60,
+          enableWorker: true,
+          xhrSetup: (xhr) => { xhr.withCredentials = false; },
+        });
+        hlsRef.current = hls;
+        hls.loadSource(finalSrc);
+        hls.attachMedia(video);
+
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          addLog('success', 'MANIFEST_PARSED', {});
+          setLoading(false);
+          video.play().catch(() => {});
+        });
+
+        hls.on(Hls.Events.ERROR, async (_, d) => {
+          const code = d?.response?.code ?? d?.networkDetails?.status ?? 0;
+          addLog(d?.fatal ? 'error' : 'warn', d?.fatal ? 'FATAL_ERROR' : 'HLS_ERROR', {
+            type: d?.type, details: d?.details, fatal: d?.fatal, responseCode: code,
+          });
+
+          if (d?.fatal) {
+            hls.destroy();
+            hlsRef.current = null;
+
+            const isCorsLike = code === 0 || d?.details === 'manifestLoadError';
+            if (isCorsLike && finalSrc === activeSrc) {
+              setStatusMsg('Trying proxy…');
+              addLog('info', 'PROXY_ATTEMPT', {});
+              const proxiedUrl = await getProxiedUrl(activeSrc);
+              if (proxiedUrl) {
+                blobUrlRef.current = proxiedUrl;
+                loadSource(proxiedUrl);
+                return;
+              }
+            }
+
+            setCorsBlocked(isCorsLike);
+            setErr(isCorsLike ? 'cors_blocked' : `Stream error (code ${code})`);
+            setLoading(false);
+          }
+        });
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = finalSrc;
+        video.onloadedmetadata = () => { setLoading(false); video.play().catch(() => {}); };
+        video.onerror = () => { setErr('Stream unavailable.'); setLoading(false); };
+      } else {
+        setErr('HLS not supported in this browser.');
+        setLoading(false);
+      }
+    };
+
+    loadSource(activeSrc);
+  }, [src, addLog, cleanup]);
 
   useEffect(() => {
-    // New stream — reset proxy lock so we start fresh
-    lockedProxyRef.current = null;
-    proxyIndexRef.current = 0;
     initHls();
-    return () => { hlsRef.current?.destroy(); };
+    return cleanup;
   }, [src]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -266,18 +218,16 @@ export default function VideoPlayer({ src, title, type }) {
 
         <video ref={videoRef} className="w-full h-full object-contain" playsInline />
 
-        {/* Loading */}
         {loading && !err && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70">
             <div className="relative w-12 h-12">
               <div className="absolute inset-0 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
               <Radio className="absolute inset-0 m-auto w-5 h-5 text-primary" />
             </div>
-            <p className="text-sm text-white/60">{proxyStatus || 'Loading stream…'}</p>
+            <p className="text-sm text-white/60">{statusMsg || 'Loading stream…'}</p>
           </div>
         )}
 
-        {/* Error */}
         {err && (
           corsBlocked
             ? <CorsBlockedScreen src={src} onRetry={initHls} />
@@ -291,21 +241,10 @@ export default function VideoPlayer({ src, title, type }) {
               </div>
         )}
 
-        {/* Hidden debug trigger — triple-tap top-left */}
-        <button
-          onClick={handleDebugTap}
-          className="absolute top-0 left-0 w-16 h-16 z-40 opacity-0"
-          aria-hidden="true"
-        />
+        <button onClick={handleDebugTap} className="absolute top-0 left-0 w-16 h-16 z-40 opacity-0" aria-hidden="true" />
+        {showDebug && <DebugPanel logs={debugLogs} onClose={() => setShowDebug(false)} />}
 
-        {/* Debug panel */}
-        {showDebug && (
-          <DebugPanel logs={debugLogs} onClose={() => setShowDebug(false)} />
-        )}
-
-        {/* Controls overlay */}
         <div className={`absolute inset-0 flex flex-col transition-opacity duration-300 pointer-events-none ${showCtrl ? 'opacity-100' : 'opacity-0'}`}>
-          {/* Top */}
           <div className="flex items-center justify-between gap-4 px-5 py-4 bg-gradient-to-b from-black/80 to-transparent pointer-events-auto">
             <div className="flex items-center gap-3 min-w-0">
               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-widest ${isLive ? 'bg-destructive/90 text-white' : 'bg-primary/20 text-primary border border-primary/30'}`}>
@@ -316,17 +255,9 @@ export default function VideoPlayer({ src, title, type }) {
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <button
-                onClick={() => {
-                  if (credentials && player) {
-                    toggleBookmark(credentials, player, type);
-                    setBookmarked(b => !b);
-                  }
-                }}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all"
-                title={bookmarked ? 'Remove bookmark' : 'Bookmark'}>
-                {bookmarked
-                  ? <BookmarkCheck className="w-4 h-4 text-primary" />
-                  : <Bookmark className="w-4 h-4 text-white" />}
+                onClick={() => { if (credentials && player) { toggleBookmark(credentials, player, type); setBookmarked(b => !b); } }}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all">
+                {bookmarked ? <BookmarkCheck className="w-4 h-4 text-primary" /> : <Bookmark className="w-4 h-4 text-white" />}
               </button>
               <button onClick={() => setState({ player: null })}
                 className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all">
@@ -335,12 +266,9 @@ export default function VideoPlayer({ src, title, type }) {
             </div>
           </div>
 
-          {/* Click area */}
           <div className="flex-1 pointer-events-auto cursor-pointer" onClick={togglePlay} />
 
-          {/* Bottom */}
           <div className="px-5 pb-5 pt-10 bg-gradient-to-t from-black/90 to-transparent pointer-events-auto">
-            {/* Seek (VOD only) */}
             {!isLive && duration > 0 && (
               <div className="mb-3">
                 <input type="range" min={0} max={duration} value={currentTime} onChange={handleSeek}
@@ -350,18 +278,12 @@ export default function VideoPlayer({ src, title, type }) {
                 </div>
               </div>
             )}
-
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                {/* Play/pause */}
                 <button onClick={togglePlay}
                   className="w-9 h-9 rounded-full bg-white/10 hover:bg-primary/40 flex items-center justify-center transition-all">
-                  {playing
-                    ? <Pause className="w-4 h-4 text-white" />
-                    : <Play className="w-4 h-4 text-white fill-white" />}
+                  {playing ? <Pause className="w-4 h-4 text-white" /> : <Play className="w-4 h-4 text-white fill-white" />}
                 </button>
-
-                {/* Volume */}
                 <div className="flex items-center gap-2">
                   <button onClick={toggleMute} className="text-white/60 hover:text-white transition-colors">
                     {muted || vol === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
@@ -370,8 +292,6 @@ export default function VideoPlayer({ src, title, type }) {
                     className="w-20 h-1 rounded-full cursor-pointer accent-primary hidden sm:block" />
                 </div>
               </div>
-
-              {/* Fullscreen */}
               <button onClick={toggleFs} className="text-white/60 hover:text-white transition-colors">
                 {fs ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
               </button>

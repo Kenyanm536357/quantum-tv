@@ -118,7 +118,7 @@ function AppShell() {
             animate="animate"
             exit="exit"
             transition={pageTransition}
-            className="flex-1 overflow-y-auto overflow-x-hidden content-scroll"
+            className={`flex-1 overflow-x-hidden ${['browse','live','movies','series','epg','bookmarks','history','reminders'].includes(sectionKey) ? 'overflow-y-auto content-scroll' : 'overflow-y-hidden'}`}
             style={{
               paddingTop: 'env(safe-area-inset-top)',
               paddingLeft: 'env(safe-area-inset-left)',

@@ -140,6 +140,8 @@ function DeviceCard({ dev, onRenew, onDelete, onLock, onEdit, isLoading }) {
         <div className="flex-1 min-w-0">
           <p className="text-base font-bold text-white leading-tight">{dev.username || '—'}</p>
           <p className="font-mono text-xs text-white/40 mt-0.5">MAC: {dev.mac}</p>
+          {dev.phone && <p className="text-xs text-white/35 mt-0.5">📞 {dev.phone}</p>}
+          {dev.notes && <p className="text-xs text-white/30 mt-0.5 truncate italic">"{dev.notes}"</p>}
         </div>
 
         {/* Status badge */}
@@ -232,6 +234,9 @@ export default function AdminActivation() {
 
   const [newMac,      setNewMac]      = useState('');
   const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newPhone,    setNewPhone]    = useState('');
+  const [newNotes,    setNewNotes]    = useState('');
   const [newMonths,   setNewMonths]   = useState(1);
   const [syncing,     setSyncing]     = useState(false);
   const [syncResult,  setSyncResult]  = useState(null);
@@ -336,11 +341,14 @@ export default function AdminActivation() {
     if (records.length > 0) {
       await base44.entities.DeviceActivation.update(records[0].id, {
         username:     newUsername.trim() || undefined,
+        password:     newPassword.trim() || undefined,
+        phone:        newPhone.trim() || undefined,
+        notes:        newNotes.trim() || undefined,
         expires_at:   expires,
         activated_at: new Date().toISOString(),
       });
     }
-    setNewMac(''); setNewUsername(''); setNewMonths(1);
+    setNewMac(''); setNewUsername(''); setNewPassword(''); setNewPhone(''); setNewNotes(''); setNewMonths(1);
     await loadDevices();
     setAdding(false);
   };
@@ -583,6 +591,35 @@ export default function AdminActivation() {
                 onChange={e => setNewUsername(e.target.value)}
                 placeholder="customer_handle"
                 className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-violet-300 placeholder-white/15 outline-none focus:border-violet-500/40 transition-all"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Password</label>
+              <input
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                placeholder="customer_password"
+                className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-violet-300 placeholder-white/15 outline-none focus:border-violet-500/40 transition-all"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Phone Number</label>
+              <input
+                type="tel"
+                value={newPhone}
+                onChange={e => setNewPhone(e.target.value)}
+                placeholder="+1 (555) 000-0000"
+                className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder-white/15 outline-none focus:border-violet-500/40 transition-all"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Notes</label>
+              <textarea
+                value={newNotes}
+                onChange={e => setNewNotes(e.target.value)}
+                placeholder="Any notes about this customer…"
+                rows={3}
+                className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder-white/15 outline-none focus:border-violet-500/40 transition-all resize-none"
               />
             </div>
             <div className="space-y-1">

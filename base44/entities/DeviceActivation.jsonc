@@ -28,7 +28,15 @@
     },
     "username": {
       "type": "string",
-      "description": "Customer username (admin-only identifier)"
+      "description": "Customer username"
+    },
+    "password": {
+      "type": "string",
+      "description": "Customer password"
+    },
+    "phone": {
+      "type": "string",
+      "description": "Customer phone number"
     },
     "label": {
       "type": "string",

@@ -11,9 +11,19 @@ import { base44 } from '@/api/base44Client';
 const CACHE_KEY = 'qtv_xtream_cache_v2';
 const CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
 
+const CURRENT_BASE = 'http://pro.business-cdn-8k.com';
+const STALE_BASES = ['http://pro.flickhaven.online', 'https://pro.flickhaven.online'];
+
 function getStoredCreds() {
   try {
-    return JSON.parse(localStorage.getItem('qtv_xtream_creds') || '{}');
+    const raw = localStorage.getItem('qtv_xtream_creds');
+    if (!raw) return {};
+    let c = JSON.parse(raw);
+    if (c.baseUrl && STALE_BASES.some(s => c.baseUrl.startsWith(s))) {
+      c = { ...c, baseUrl: CURRENT_BASE };
+      localStorage.setItem('qtv_xtream_creds', JSON.stringify(c));
+    }
+    return c;
   } catch (_) { return {}; }
 }
 

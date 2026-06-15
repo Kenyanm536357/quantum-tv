@@ -33,11 +33,29 @@ export function saveCredentials(creds) {
   setState({ credentials: creds });
 }
 
+const CURRENT_BASE = 'http://pro.business-cdn-8k.com';
+const STALE_BASES = ['http://pro.flickhaven.online', 'https://pro.flickhaven.online'];
+
 export function loadCredentials() {
   try {
     const raw = localStorage.getItem('iptv_creds');
     if (raw) {
-      const creds = JSON.parse(raw);
+      let creds = JSON.parse(raw);
+      // Migrate stale server URLs to the current one
+      if (creds.baseUrl && STALE_BASES.some(s => creds.baseUrl.startsWith(s))) {
+        creds = { ...creds, baseUrl: CURRENT_BASE };
+        localStorage.setItem('iptv_creds', JSON.stringify(creds));
+      }
+      // Also fix the secondary qtv_xtream_creds key
+      const raw2 = localStorage.getItem('qtv_xtream_creds');
+      if (raw2) {
+        try {
+          const c2 = JSON.parse(raw2);
+          if (c2.baseUrl && STALE_BASES.some(s => c2.baseUrl.startsWith(s))) {
+            localStorage.setItem('qtv_xtream_creds', JSON.stringify({ ...c2, baseUrl: CURRENT_BASE }));
+          }
+        } catch (_) {}
+      }
       setState({ credentials: creds });
       return creds;
     }

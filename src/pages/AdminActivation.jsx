@@ -387,7 +387,8 @@ export default function AdminActivation() {
             onChange={e => setPasscode(e.target.value)}
             placeholder="Enter passcode"
             autoFocus required
-            className="w-full bg-white/4 border border-white/10 rounded-2xl px-5 py-3.5 text-sm text-white placeholder-white/20 outline-none focus:border-violet-500/50 tracking-widest text-center transition-all"
+            className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-3.5 text-base text-white placeholder-white/30 outline-none focus:border-violet-500/60 focus:bg-white/15 tracking-widest text-center transition-all"
+            style={{ caretColor: '#a78bfa', WebkitTextFillColor: 'white' }}
           />
           {passcodeError && <p className="text-xs text-red-400 -mt-2 text-center">{passcodeError}</p>}
           <button type="submit"

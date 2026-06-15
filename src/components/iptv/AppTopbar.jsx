@@ -54,14 +54,7 @@ export function AppSidebar() {
         })}
       </nav>
 
-      {/* Disconnect */}
-      <div className="p-2 border-t border-white/6 flex-shrink-0">
-        <button onClick={clearCredentials}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-all">
-          <LogOut className="w-4 h-4" />
-          Disconnect
-        </button>
-      </div>
+
     </aside>
   );
 }
@@ -98,11 +91,7 @@ export function BottomTabBar() {
                   </button>
                 );
               })}
-              <button onClick={clearCredentials}
-                className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl text-xs font-medium text-red-400/70 hover:bg-red-500/10 hover:text-red-400 transition-all">
-                <LogOut className="w-5 h-5" />
-                Disconnect
-              </button>
+
             </div>
           </div>
         </div>
@@ -165,10 +154,7 @@ export default function AppTopbar() {
           })}
         </nav>
         <div className="flex items-center gap-2 ml-auto">
-          <button onClick={clearCredentials}
-            className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-white/35 hover:text-white/60 hover:bg-white/5 transition-all">
-            <LogOut className="w-3.5 h-3.5" /> Disconnect
-          </button>
+
           <button onClick={() => setMobileOpen(v => !v)}
             className="lg:hidden w-8 h-8 flex items-center justify-center rounded-lg bg-white/5 text-white/60 hover:text-white transition-colors">
             {mobileOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}

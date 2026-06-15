@@ -1,17 +1,15 @@
 /**
- * Playlist hook — fetches live categories + streams from Xtream Codes API
- * via the backend fetchPlaylist function (no credentials exposed to client).
- * Falls back to cached data if the network is unavailable.
+ * Playlist hook — fetches live categories + streams directly from Xtream Codes API
+ * using credentials stored in localStorage. No backend proxy needed.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { setState } from './iptv-store';
 import { cleanName } from './clean-name';
-import { base44 } from '@/api/base44Client';
 
 const CACHE_KEY = 'qtv_xtream_cache_v1';
 const CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
 
-// Clean up ALL old cache keys from previous M3U-based versions
+// Clean up ALL old cache keys
 const OLD_KEYS = [
   'qtv_browse_cache_v1','qtv_browse_cache_v2','qtv_browse_cache_v3',
   'qtv_browse_cache_v4','qtv_browse_cache_v5','qtv_browse_cache_v6',
@@ -19,6 +17,12 @@ const OLD_KEYS = [
   'qtv_browse_cache_v10','qtv_browse_cache_v11','qtv_browse_cache_v12',
 ];
 OLD_KEYS.forEach(k => { try { localStorage.removeItem(k); } catch (_) {} });
+
+function getStoredCreds() {
+  try {
+    return JSON.parse(localStorage.getItem('qtv_xtream_creds') || '{}');
+  } catch (_) { return {}; }
+}
 
 function getCachedPlaylist() {
   try {
@@ -34,7 +38,6 @@ function safeCacheSet(data) {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
   } catch (_) {
-    // Storage full — clear old cache and retry
     try {
       localStorage.removeItem(CACHE_KEY);
       localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
@@ -42,39 +45,39 @@ function safeCacheSet(data) {
   }
 }
 
+async function xtreamFetch(action) {
+  const { baseUrl, username, password } = getStoredCreds();
+  if (!baseUrl || !username || !password) throw new Error('Not logged in.');
+  const base = baseUrl.replace(/\/+$/, '');
+  const url = `${base}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&action=${action}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  return res.json();
+}
+
 async function fetchXtreamPlaylist() {
-  // Step 1: fetch categories
-  const catRes = await base44.functions.invoke('fetchPlaylist', {
-    action: 'get_live_categories',
-  });
+  const [categories, rawStreams] = await Promise.all([
+    xtreamFetch('get_live_categories'),
+    xtreamFetch('get_live_streams'),
+  ]);
 
-  const categories = catRes.data;
   if (!Array.isArray(categories) || categories.length === 0) {
-    throw new Error('No categories returned from server. Check your credentials.');
+    throw new Error('No categories returned. Check your connection.');
   }
-
-  // Step 2: fetch all live streams
-  const streamRes = await base44.functions.invoke('fetchPlaylist', {
-    action: 'get_live_streams',
-  });
-
-  const rawStreams = streamRes.data;
   if (!Array.isArray(rawStreams)) {
     throw new Error('No streams returned from server.');
   }
 
-  // Normalize streams — guard every field
   const streams = rawStreams
     .filter(s => s && s.stream_id)
     .map(s => ({
-      stream_id:    String(s.stream_id),
-      name:         s.name || 'Unknown',
-      stream_icon:  s.stream_icon || null,
-      category_id:  String(s.category_id || ''),
-      num:          s.num || 0,
+      stream_id:   String(s.stream_id),
+      name:        s.name || 'Unknown',
+      stream_icon: s.stream_icon || null,
+      category_id: String(s.category_id || ''),
+      num:         s.num || 0,
     }));
 
-  // Normalize categories
   const normalizedCats = categories
     .filter(c => c && c.category_id)
     .map(c => ({
@@ -85,12 +88,11 @@ async function fetchXtreamPlaylist() {
   return { categories: normalizedCats, streams };
 }
 
-export async function resolveStreamUrl(stream_id) {
-  const res = await base44.functions.invoke('fetchPlaylist', {
-    getStreamUrl: true,
-    stream_id: String(stream_id),
-  });
-  return res.data?.stream_url || null;
+export function resolveStreamUrl(stream_id) {
+  const { baseUrl, username, password } = getStoredCreds();
+  if (!baseUrl || !username || !password) return null;
+  const base = baseUrl.replace(/\/+$/, '');
+  return `${base}/live/${encodeURIComponent(username)}/${encodeURIComponent(password)}/${stream_id}.m3u8`;
 }
 
 export function useM3UPlaylist() {
@@ -111,7 +113,6 @@ export function useM3UPlaylist() {
       setPlaylist(data);
     } catch (e) {
       setError(e.message || 'Failed to load channels. Please try again.');
-      // Serve stale cache if available so the UI is never blank
       const stale = (() => {
         try {
           const raw = localStorage.getItem(CACHE_KEY);
@@ -130,8 +131,7 @@ export function useM3UPlaylist() {
 }
 
 export async function playM3UStream(stream) {
-  // Resolve the HLS URL via backend (keeps credentials server-side)
-  const src = await resolveStreamUrl(stream.stream_id);
+  const src = resolveStreamUrl(stream.stream_id);
   if (src) {
     setState({ player: { src, title: cleanName(stream.name), type: 'live' } });
   }

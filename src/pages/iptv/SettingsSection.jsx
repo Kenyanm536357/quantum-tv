@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '@/lib/use-store';
-import { saveCredentials, clearCredentials, apiUrl } from '@/lib/iptv-store';
-import { Settings, Globe, User, Lock, Eye, EyeOff, CheckCircle, XCircle, Loader2, LogOut, RefreshCw, ShieldOff } from 'lucide-react';
+import { saveCredentials, clearCredentials } from '@/lib/iptv-store';
+import { Settings, User, Lock, Eye, EyeOff, CheckCircle, XCircle, Loader2, LogOut, RefreshCw, ShieldOff } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+
+const XTREAM_BASE = 'http://pro.flickhaven.online';
 
 export default function SettingsSection() {
   const { credentials } = useStore();
   const [isAdmin, setIsAdmin] = useState(false);
   const [checkingRole, setCheckingRole] = useState(true);
   const [form, setForm] = useState({
-    baseUrl: credentials?.baseUrl || '',
     username: credentials?.username || '',
     password: credentials?.password || '',
     label: credentials?.label || ''
@@ -49,17 +50,19 @@ export default function SettingsSection() {
     setTesting(true);
     setTestResult(null);
     try {
-      const url = apiUrl(form, 'get_live_categories');
-      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-      const data = await res.json();
-      if (Array.isArray(data) || data?.user_info) {
-        const exp = data?.user_info?.exp_date ? new Date(data.user_info.exp_date * 1000).toLocaleDateString() : null;
-        setTestResult({ ok: true, msg: `Connected successfully!${exp ? ` Expires: ${exp}` : ''}` });
+      const res = await base44.functions.invoke('fetchPlaylist', {
+        action: 'get_live_categories',
+        username: form.username.trim(),
+        password: form.password.trim(),
+      });
+      const data = res.data;
+      if (Array.isArray(data) && data.length > 0) {
+        setTestResult({ ok: true, msg: `Connected! Found ${data.length} categories.` });
       } else {
         setTestResult({ ok: false, msg: 'Invalid credentials or server response.' });
       }
     } catch {
-      setTestResult({ ok: false, msg: 'Connection failed. Check the URL.' });
+      setTestResult({ ok: false, msg: 'Connection failed. Check your credentials.' });
     } finally {
       setTesting(false);
     }
@@ -67,7 +70,7 @@ export default function SettingsSection() {
 
   const handleSave = () => {
     setSaving(true);
-    saveCredentials(form);
+    saveCredentials({ baseUrl: XTREAM_BASE, username: form.username.trim(), password: form.password.trim(), label: form.label, type: 'xtream' });
     setTimeout(() => { setSaving(false); setSaved(true); }, 400);
   };
 
@@ -78,40 +81,30 @@ export default function SettingsSection() {
           <Settings className="w-5 h-5 text-primary" /> Settings
         </h2>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Connected via: <span className="text-foreground font-medium capitalize">{credentials?.type ?? 'xtream'}</span>
-          {credentials?.label ? ` — ${credentials.label}` : ''}
+          Xtream Codes — <span className="text-white/40 font-mono text-[10px]">{XTREAM_BASE}</span>
         </p>
       </div>
 
-      {/* Server Configuration */}
+      {/* Credentials */}
       <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
-        <p className="text-sm font-semibold text-foreground">Server Configuration</p>
+        <p className="text-sm font-semibold text-foreground">Xtream Codes Credentials</p>
 
         <div className="space-y-3">
-          <InputRow label="Server URL" icon={Globe}>
-            <input type="url" value={form.baseUrl} onChange={e => set('baseUrl', e.target.value)}
-              placeholder="http://provider.com:8080"
-              className="field-input font-mono text-sm" />
+          <InputRow label="Username" icon={User}>
+            <input type="text" value={form.username} onChange={e => set('username', e.target.value)}
+              placeholder="xtream_username" autoComplete="username" className="field-input" />
           </InputRow>
-          {(credentials?.type === 'xtream' || !credentials?.type) && (
-            <>
-              <InputRow label="Username" icon={User}>
-                <input type="text" value={form.username} onChange={e => set('username', e.target.value)}
-                  placeholder="xtream_username" autoComplete="username" className="field-input" />
-              </InputRow>
-              <InputRow label="Password" icon={Lock}>
-                <div className="relative">
-                  <input type={showPwd ? 'text' : 'password'} value={form.password} onChange={e => set('password', e.target.value)}
-                    placeholder="••••••••" autoComplete="current-password" className="field-input pr-10" />
-                  <button type="button" onClick={() => setShowPwd(s => !s)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
-                    {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </InputRow>
-            </>
-          )}
-          <InputRow label="Label" icon={Globe}>
+          <InputRow label="Password" icon={Lock}>
+            <div className="relative">
+              <input type={showPwd ? 'text' : 'password'} value={form.password} onChange={e => set('password', e.target.value)}
+                placeholder="••••••••" autoComplete="current-password" className="field-input pr-10" />
+              <button type="button" onClick={() => setShowPwd(s => !s)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </InputRow>
+          <InputRow label="Label (optional)" icon={User}>
             <input type="text" value={form.label} onChange={e => set('label', e.target.value)}
               placeholder="My IPTV" className="field-input" />
           </InputRow>
@@ -125,12 +118,12 @@ export default function SettingsSection() {
         )}
 
         <div className="flex gap-2 pt-1">
-          <button onClick={testConnection} disabled={testing || !form.baseUrl}
+          <button onClick={testConnection} disabled={testing || !form.username || !form.password}
             className="flex items-center gap-2 px-4 py-2 bg-secondary border border-border rounded-xl text-sm font-medium text-foreground hover:bg-secondary/80 transition-all disabled:opacity-50">
             {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             Test
           </button>
-          <button onClick={handleSave} disabled={saving || !form.baseUrl}
+          <button onClick={handleSave} disabled={saving || !form.username || !form.password}
             className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all disabled:opacity-50 glow-cyan">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCircle className="w-4 h-4" /> : null}
             {saved ? 'Saved!' : 'Save Changes'}
@@ -141,7 +134,7 @@ export default function SettingsSection() {
       {/* Danger zone */}
       <div className="bg-card border border-destructive/20 rounded-2xl p-5">
         <p className="text-sm font-semibold text-foreground mb-1">Danger Zone</p>
-        <p className="text-xs text-muted-foreground mb-4">Remove all credentials and return to the setup screen.</p>
+        <p className="text-xs text-muted-foreground mb-4">Remove all credentials and return to the login screen.</p>
         <button onClick={clearCredentials}
           className="flex items-center gap-2 px-4 py-2 bg-destructive/10 border border-destructive/20 text-destructive rounded-xl text-sm font-medium hover:bg-destructive/20 transition-all">
           <LogOut className="w-4 h-4" /> Disconnect & Clear

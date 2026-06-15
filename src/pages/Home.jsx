@@ -73,7 +73,9 @@ function ReminderChecker({ credentials }) {
 
 function ExpiredScreen() {
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+    <motion.div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4 }}
       style={{ background: 'radial-gradient(ellipse at 60% 0%, #1a0a3d 0%, #0a0f2e 40%, #060a1a 100%)' }}>
       <div className="flex flex-col items-center gap-5 text-center max-w-xs">
         <div className="w-20 h-20 rounded-full bg-orange-500/10 border-2 border-orange-500/40 flex items-center justify-center"
@@ -95,7 +97,7 @@ function ExpiredScreen() {
           Back to Login
         </button>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -151,7 +153,13 @@ function AppShell() {
   }, [activated]);
 
   if (!activated) {
-    return <MacActivationScreen onActivated={() => setActivated(true)} />;
+    return (
+      <AnimatePresence mode="wait">
+        <motion.div key="login" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.35 }}>
+          <MacActivationScreen onActivated={() => setActivated(true)} />
+        </motion.div>
+      </AnimatePresence>
+    );
   }
 
   if (subExpired) {
@@ -159,7 +167,8 @@ function AppShell() {
   }
 
   return (
-    <div className="app-shell flex"
+    <motion.div key="shell" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }}
+    className="app-shell flex"
       style={{ background: '#07090f' }}>
 
       {/* ── Sidebar: shown on lg screens AND landscape phones ── */}
@@ -221,7 +230,7 @@ function AppShell() {
       {player && sectionKey !== 'epg' && (
         <VideoPlayer src={player.src} title={player.title} type={player.type} />
       )}
-    </div>
+    </motion.div>
   );
 }
 

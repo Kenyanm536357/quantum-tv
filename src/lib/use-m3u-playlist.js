@@ -11,8 +11,8 @@ import { base44 } from '@/api/base44Client';
 const CACHE_KEY = 'qtv_xtream_cache_v2';
 const CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
 
-const CURRENT_BASE = 'http://pro.business-cdn-8k.com';
-const STALE_BASES = ['http://pro.flickhaven.online', 'https://pro.flickhaven.online'];
+const CURRENT_BASE = 'https://pro.flickhaven.online';
+const STALE_BASES = ['http://pro.flickhaven.online', 'http://pro.business-cdn-8k.com', 'https://pro.business-cdn-8k.com'];
 
 function getStoredCreds() {
   try {
@@ -54,22 +54,19 @@ async function fetchXtreamPlaylist() {
   const creds = getStoredCreds();
   if (!creds.username || !creds.password) throw new Error('Not logged in.');
 
-  // Use backend proxy to avoid mixed-content browser blocking
+  const base = (creds.baseUrl || CURRENT_BASE).replace(/\/+$/, '');
+
+  // Fetch directly from the browser to avoid cloud IP blocking
   const [catRes, streamRes] = await Promise.all([
-    base44.functions.invoke('fetchPlaylist', {
-      action: 'get_live_categories',
-      username: creds.username,
-      password: creds.password,
-    }),
-    base44.functions.invoke('fetchPlaylist', {
-      action: 'get_live_streams',
-      username: creds.username,
-      password: creds.password,
-    }),
+    fetch(`${base}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}&action=get_live_categories`),
+    fetch(`${base}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}&action=get_live_streams`),
   ]);
 
-  const categories = catRes.data;
-  const rawStreams = streamRes.data;
+  if (!catRes.ok) throw new Error(`Server error: ${catRes.status}`);
+  if (!streamRes.ok) throw new Error(`Server error: ${streamRes.status}`);
+
+  const categories = await catRes.json();
+  const rawStreams = await streamRes.json();
 
   if (!Array.isArray(categories) || categories.length === 0) {
     throw new Error('No categories returned. Check your credentials.');
@@ -99,10 +96,10 @@ async function fetchXtreamPlaylist() {
 }
 
 export function resolveStreamUrl(stream_id) {
-  const { baseUrl, username, password } = getStoredCreds();
-  if (!baseUrl || !username || !password) return null;
-  const base = baseUrl.replace(/\/+$/, '');
-  return `${base}/live/${encodeURIComponent(username)}/${encodeURIComponent(password)}/${stream_id}.m3u8`;
+  const creds = getStoredCreds();
+  const base = (creds.baseUrl || CURRENT_BASE).replace(/\/+$/, '');
+  if (!creds.username || !creds.password) return null;
+  return `${base}/live/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${stream_id}.m3u8`;
 }
 
 export function useM3UPlaylist() {

@@ -4,9 +4,11 @@ import { cleanName } from '@/lib/clean-name';
 import {
   Search, X, Play, Loader2, Tv2, Film,
   Music, Globe, Zap, ChevronLeft, ChevronRight, Radio,
-  Flame, Star, Clock, Grid3X3, List, TrendingUp, Clapperboard
+  Flame, Star, Clock, Grid3X3, List, TrendingUp, Clapperboard, Heart
 } from 'lucide-react';
 import StreamDiagnostic from '@/components/iptv/StreamDiagnostic';
+import { useStore } from '@/lib/use-store';
+import { getFavorites, isFavorite, toggleFavorite } from '@/lib/user-data';
 
 // ── Category icons ─────────────────────────────────────────────────────────────
 const CAT_ICONS = {
@@ -55,9 +57,18 @@ function Thumb({ src, name, aspect = 'video', size = 'md' }) {
 }
 
 // ── Stream card (horizontal shelf) ───────────────────────────────────────────
-function StreamCard({ stream, onPlay, aspect = 'video' }) {
+function StreamCard({ stream, onPlay, aspect = 'video', credentials }) {
   const name = cleanName(stream.name);
   const [showDiag, setShowDiag] = useState(false);
+  const [fav, setFav] = useState(() => credentials ? isFavorite(credentials, stream) : false);
+
+  const handleFav = (e) => {
+    e.stopPropagation();
+    if (!credentials) return;
+    toggleFavorite(credentials, stream, 'live');
+    setFav(v => !v);
+  };
+
   return (
     <div onClick={() => onPlay(stream)}
       className="group flex-shrink-0 cursor-pointer rounded-xl overflow-hidden border border-white/6 hover:border-white/25 transition-all duration-200 hover:scale-[1.04] hover:shadow-2xl"
@@ -75,6 +86,11 @@ function StreamCard({ stream, onPlay, aspect = 'video' }) {
           <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
           <span className="text-[8px] font-bold text-white tracking-wider">LIVE</span>
         </div>
+        {/* Favorite button */}
+        <button onClick={handleFav}
+          className={`absolute top-1.5 right-1.5 w-6 h-6 rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 ${fav ? 'bg-pink-500/80 opacity-100' : 'bg-black/60'}`}>
+          <Heart className={`w-3 h-3 ${fav ? 'text-white fill-white' : 'text-white/70'}`} />
+        </button>
         {/* Diagnostic — shown on hover */}
         <div className={`absolute bottom-0 left-0 right-0 transition-opacity duration-200 ${showDiag ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
           onClick={e => { e.stopPropagation(); setShowDiag(true); }}>
@@ -89,7 +105,7 @@ function StreamCard({ stream, onPlay, aspect = 'video' }) {
 }
 
 // ── Horizontal shelf ──────────────────────────────────────────────────────────
-function Shelf({ title, icon: Icon, color = 'text-cyan-400', streams, onPlay, onViewAll, aspect = 'video' }) {
+function Shelf({ title, icon: Icon, color = 'text-cyan-400', streams, onPlay, onViewAll, aspect = 'video', credentials }) {
   const ref = useRef(null);
   const scroll = (dir) => ref.current?.scrollBy({ left: dir * 210, behavior: 'smooth' });
   if (!streams?.length) return null;
@@ -122,7 +138,7 @@ function Shelf({ title, icon: Icon, color = 'text-cyan-400', streams, onPlay, on
       <div ref={ref} className="flex gap-3 overflow-x-auto pb-2"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
         {streams.slice(0, 40).map(s => (
-          <StreamCard key={s.stream_id || s.url} stream={s} onPlay={onPlay} aspect={aspect} />
+          <StreamCard key={s.stream_id || s.url} stream={s} onPlay={onPlay} aspect={aspect} credentials={credentials} />
         ))}
       </div>
     </section>
@@ -371,10 +387,20 @@ function QuickFilterBar({ activeFilter, onFilter, playlist, catStreamMap }) {
 // ── Main BrowseSection ────────────────────────────────────────────────────────
 export default function BrowseSection() {
   const { playlist, loading, error, refresh } = useM3UPlaylist();
+  const { credentials } = useStore();
   const [selectedCat, setSelectedCat] = useState(null);
   const [showAllCats, setShowAllCats] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
+  const [favorites, setFavorites] = useState(() => credentials ? getFavorites(credentials) : []);
+
+  // Re-sync favorites when user pins/unpins a channel
+  useEffect(() => {
+    const sync = () => setFavorites(credentials ? getFavorites(credentials) : []);
+    window.addEventListener('focus', sync);
+    const t = setInterval(sync, 2000);
+    return () => { window.removeEventListener('focus', sync); clearInterval(t); };
+  }, [credentials]);
 
   const playStream = useCallback(async (stream) => {
     await playM3UStream(stream);
@@ -568,6 +594,14 @@ export default function BrowseSection() {
           </div>
         ) : (
           <>
+            {/* ❤️ My Favorites */}
+            {favorites.length > 0 && (
+              <div className="pt-2 mb-2">
+                <Shelf title="My Favorites" icon={Heart} color="text-pink-400"
+                  streams={favorites} onPlay={playStream} credentials={credentials} />
+              </div>
+            )}
+
             {/* 🇺🇸 United States — FRONT AND CENTER */}
             {usStreams.length > 0 && (
               <div className="pt-2 mb-2">
@@ -579,7 +613,7 @@ export default function BrowseSection() {
                   </div>
                 </div>
                 <Shelf title="" icon={null} color="text-red-400"
-                  streams={usStreams} onPlay={playStream}
+                  streams={usStreams} onPlay={playStream} credentials={credentials}
                   onViewAll={() => {
                     const usCat = playlist.categories.find(c => /\b(us|usa|united\s*states?|america)\b/i.test(c.category_name));
                     if (usCat) setSelectedCat(usCat);
@@ -598,56 +632,56 @@ export default function BrowseSection() {
             {/* Trending shelf */}
             {trending.length > 0 && (
               <Shelf title="Trending Now" icon={Flame} color="text-orange-400"
-                streams={trending} onPlay={playStream}
+                streams={trending} onPlay={playStream} credentials={credentials}
                 onViewAll={() => setShowAllCats(true)} />
             )}
 
             {/* Movies shelf */}
             {allMovieStreams.length > 0 && (
               <Shelf title="Movies" icon={Film} color="text-violet-400"
-                streams={allMovieStreams} onPlay={playStream} aspect="portrait"
+                streams={allMovieStreams} onPlay={playStream} aspect="portrait" credentials={credentials}
                 onViewAll={() => setSelectedCat(movieCategories[0])} />
             )}
 
             {/* Sports shelf */}
             {allSportsStreams.length > 0 && (
               <Shelf title="Sports" icon={Zap} color="text-yellow-400"
-                streams={allSportsStreams} onPlay={playStream}
+                streams={allSportsStreams} onPlay={playStream} credentials={credentials}
                 onViewAll={() => setSelectedCat(sportsCategories[0])} />
             )}
 
             {/* Series shelf */}
             {allSeriesStreams.length > 0 && (
               <Shelf title="TV Shows & Series" icon={Clapperboard} color="text-pink-400"
-                streams={allSeriesStreams} onPlay={playStream} aspect="portrait"
+                streams={allSeriesStreams} onPlay={playStream} aspect="portrait" credentials={credentials}
                 onViewAll={() => setSelectedCat(seriesCategories[0])} />
             )}
 
             {/* News shelf */}
             {allNewsStreams.length > 0 && (
               <Shelf title="News" icon={Globe} color="text-blue-400"
-                streams={allNewsStreams} onPlay={playStream}
+                streams={allNewsStreams} onPlay={playStream} credentials={credentials}
                 onViewAll={() => setSelectedCat(newsCategories[0])} />
             )}
 
             {/* Kids shelf */}
             {allKidsStreams.length > 0 && (
               <Shelf title="Kids & Animation" icon={Star} color="text-green-400"
-                streams={allKidsStreams} onPlay={playStream}
+                streams={allKidsStreams} onPlay={playStream} credentials={credentials}
                 onViewAll={() => setSelectedCat(kidsCategories[0])} />
             )}
 
             {/* Music shelf */}
             {allMusicStreams.length > 0 && (
               <Shelf title="Music & Radio" icon={Music} color="text-cyan-400"
-                streams={allMusicStreams} onPlay={playStream}
+                streams={allMusicStreams} onPlay={playStream} credentials={credentials}
                 onViewAll={() => setSelectedCat(musicCategories[0])} />
             )}
 
             {/* Live TV shelf */}
             {allLiveStreams.length > 0 && (
               <Shelf title="Live TV" icon={Radio} color="text-red-400"
-                streams={allLiveStreams} onPlay={playStream}
+                streams={allLiveStreams} onPlay={playStream} credentials={credentials}
                 onViewAll={() => setSelectedCat(liveCategories[0])} />
             )}
 
@@ -660,7 +694,7 @@ export default function BrowseSection() {
                 <Shelf key={cat.category_id}
                   title={cleanName(cat.category_name)}
                   icon={Icon} color="text-white/50"
-                  streams={streams} onPlay={playStream}
+                  streams={streams} onPlay={playStream} credentials={credentials}
                   onViewAll={() => setSelectedCat(cat)} />
               );
             })}
@@ -668,7 +702,7 @@ export default function BrowseSection() {
             {/* Recently Added */}
             {recent.length > 0 && (
               <Shelf title="Recently Added" icon={Clock} color="text-white/50"
-                streams={recent} onPlay={playStream}
+                streams={recent} onPlay={playStream} credentials={credentials}
                 onViewAll={() => setShowAllCats(true)} />
             )}
 

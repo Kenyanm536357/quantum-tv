@@ -86,6 +86,28 @@ export function removeFromHistory(credentials, item) {
   return updated;
 }
 
+// ─── Favorites ────────────────────────────────────────────────────────────────
+
+export function getFavorites(credentials) {
+  return load('favorites', credentials);
+}
+
+export function isFavorite(credentials, item) {
+  const id = String(item.stream_id ?? item.id ?? item.name);
+  return load('favorites', credentials).some(f => f.id === id);
+}
+
+export function toggleFavorite(credentials, item, streamType) {
+  const id = String(item.stream_id ?? item.id ?? item.name);
+  const favorites = load('favorites', credentials);
+  const exists = favorites.some(f => f.id === id);
+  const updated = exists
+    ? favorites.filter(f => f.id !== id)
+    : [{ id, streamType, ...item, favorited_at: Date.now() }, ...favorites];
+  save('favorites', credentials, updated);
+  return updated;
+}
+
 // ─── Reminders ────────────────────────────────────────────────────────────────
 
 export function getReminders(credentials) {

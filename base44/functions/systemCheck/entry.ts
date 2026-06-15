@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
 
   try {
     // Read secrets inside handler so boot never fails due to missing/bad env vars
-    const XTREAM_BASE = (Deno.env.get('XTREAM_BASE_URL') || 'http://pro.flickhaven.online').replace(/\/+$/, '');
+    const XTREAM_BASE = (Deno.env.get('XTREAM_BASE_URL') || 'http://pro.business-cdn-8k.com').replace(/\/+$/, '');
     const XTREAM_USER = Deno.env.get('XTREAM_USERNAME') || '';
     const XTREAM_PASS = Deno.env.get('XTREAM_PASSWORD') || '';
     const ADMIN_KEY   = Deno.env.get('QUANTUM_ADMIN_KEY') || 'quantum-admin-2024';

@@ -27,6 +27,10 @@ function getCachedPlaylist() {
   return null;
 }
 
+export function bustPlaylistCache() {
+  try { localStorage.removeItem(CACHE_KEY); } catch (_) {}
+}
+
 function safeCacheSet(data) {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));

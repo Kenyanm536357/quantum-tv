@@ -8,6 +8,7 @@ import {
   RefreshCw, Shield, Lock, LockOpen, Calendar,
   Tv2, Signal, AlertTriangle, Wifi, ShieldCheck, Database, AlertCircle
 } from 'lucide-react';
+import { bustPlaylistCache } from '@/lib/use-m3u-playlist.js';
 
 const ADMIN_PASSCODE = 'quantum-admin-2024';
 
@@ -242,6 +243,8 @@ export default function AdminActivation() {
 
   const runCheck = async (type) => {
     setSysChecking(type);
+    // Always bust the frontend playlist cache on refresh
+    if (type === 'playlist') bustPlaylistCache();
     try {
       const res = await base44.functions.invoke('systemCheck', { check: type, adminKey: ADMIN_PASSCODE });
       setSysResults(prev => ({ ...prev, [type]: res.data }));

@@ -3,6 +3,13 @@ import { Film, Clapperboard, Settings, LogOut, Radio, Tv2, Bookmark, History, Be
 import { clearCredentials } from '@/lib/iptv-store';
 import { useNavigate, useLocation } from 'react-router-dom';
 
+function disconnect() {
+  localStorage.removeItem('qtv_xtream_creds');
+  localStorage.removeItem('iptv_creds');
+  clearCredentials();
+  window.location.href = '/';
+}
+
 export const NAV = [
   { id: 'browse',    icon: LayoutGrid,   label: 'Browse'    },
   { id: 'epg',       icon: Tv2,          label: 'TV Guide'  },
@@ -92,6 +99,16 @@ export function BottomTabBar() {
                 );
               })}
 
+            </div>
+
+            {/* Disconnect */}
+            <div className="mt-3 pt-3 border-t border-white/8">
+              <button
+                onClick={disconnect}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-bold touch-manipulation"
+              >
+                <LogOut className="w-4 h-4" /> Disconnect
+              </button>
             </div>
           </div>
         </div>

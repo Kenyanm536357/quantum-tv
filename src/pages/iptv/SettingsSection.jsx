@@ -130,8 +130,13 @@ export default function SettingsSection() {
       <div className="bg-card border border-destructive/20 rounded-2xl p-5">
         <p className="text-sm font-semibold text-foreground mb-1">Danger Zone</p>
         <p className="text-xs text-muted-foreground mb-4">Remove all credentials and return to the login screen.</p>
-        <button onClick={clearCredentials}
-          className="flex items-center gap-2 px-4 py-2 bg-destructive/10 border border-destructive/20 text-destructive rounded-xl text-sm font-medium hover:bg-destructive/20 transition-all">
+        <button
+          onClick={() => {
+            localStorage.removeItem('qtv_xtream_creds');
+            clearCredentials();
+            window.location.href = '/';
+          }}
+          className="flex items-center gap-2 px-4 py-2 bg-destructive/10 border border-destructive/20 text-destructive rounded-xl text-sm font-medium hover:bg-destructive/20 transition-all cursor-pointer touch-manipulation">
           <LogOut className="w-4 h-4" /> Disconnect & Clear
         </button>
       </div>

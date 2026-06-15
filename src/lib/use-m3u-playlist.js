@@ -1,22 +1,15 @@
 /**
- * Playlist hook — fetches live categories + streams directly from Xtream Codes API
- * using credentials stored in localStorage. No backend proxy needed.
+ * Playlist hook — fetches live categories + streams via backend proxy
+ * (needed because browser blocks mixed HTTP/HTTPS content).
+ * Stream playback URLs are resolved client-side.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { setState } from './iptv-store';
 import { cleanName } from './clean-name';
+import { base44 } from '@/api/base44Client';
 
-const CACHE_KEY = 'qtv_xtream_cache_v1';
+const CACHE_KEY = 'qtv_xtream_cache_v2';
 const CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
-
-// Clean up ALL old cache keys
-const OLD_KEYS = [
-  'qtv_browse_cache_v1','qtv_browse_cache_v2','qtv_browse_cache_v3',
-  'qtv_browse_cache_v4','qtv_browse_cache_v5','qtv_browse_cache_v6',
-  'qtv_browse_cache_v7','qtv_browse_cache_v8','qtv_browse_cache_v9',
-  'qtv_browse_cache_v10','qtv_browse_cache_v11','qtv_browse_cache_v12',
-];
-OLD_KEYS.forEach(k => { try { localStorage.removeItem(k); } catch (_) {} });
 
 function getStoredCreds() {
   try {
@@ -38,31 +31,34 @@ function safeCacheSet(data) {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
   } catch (_) {
-    try {
-      localStorage.removeItem(CACHE_KEY);
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
-    } catch (_) {}
+    try { localStorage.removeItem(CACHE_KEY); } catch (_) {}
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() })); } catch (_) {}
   }
 }
 
-async function xtreamFetch(action) {
-  const { baseUrl, username, password } = getStoredCreds();
-  if (!baseUrl || !username || !password) throw new Error('Not logged in.');
-  const base = baseUrl.replace(/\/+$/, '');
-  const url = `${base}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&action=${action}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
-  if (!res.ok) throw new Error(`Server error: ${res.status}`);
-  return res.json();
-}
-
 async function fetchXtreamPlaylist() {
-  const [categories, rawStreams] = await Promise.all([
-    xtreamFetch('get_live_categories'),
-    xtreamFetch('get_live_streams'),
+  const creds = getStoredCreds();
+  if (!creds.username || !creds.password) throw new Error('Not logged in.');
+
+  // Use backend proxy to avoid mixed-content browser blocking
+  const [catRes, streamRes] = await Promise.all([
+    base44.functions.invoke('fetchPlaylist', {
+      action: 'get_live_categories',
+      username: creds.username,
+      password: creds.password,
+    }),
+    base44.functions.invoke('fetchPlaylist', {
+      action: 'get_live_streams',
+      username: creds.username,
+      password: creds.password,
+    }),
   ]);
 
+  const categories = catRes.data;
+  const rawStreams = streamRes.data;
+
   if (!Array.isArray(categories) || categories.length === 0) {
-    throw new Error('No categories returned. Check your connection.');
+    throw new Error('No categories returned. Check your credentials.');
   }
   if (!Array.isArray(rawStreams)) {
     throw new Error('No streams returned from server.');
@@ -113,11 +109,9 @@ export function useM3UPlaylist() {
       setPlaylist(data);
     } catch (e) {
       setError(e.message || 'Failed to load channels. Please try again.');
+      // Show stale cache if available
       const stale = (() => {
-        try {
-          const raw = localStorage.getItem(CACHE_KEY);
-          return raw ? JSON.parse(raw).data : null;
-        } catch (_) { return null; }
+        try { const raw = localStorage.getItem(CACHE_KEY); return raw ? JSON.parse(raw).data : null; } catch (_) { return null; }
       })();
       if (stale) setPlaylist(stale);
     } finally {

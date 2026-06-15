@@ -80,9 +80,7 @@ export default function SettingsSection() {
         <h2 className="text-xl font-bold flex items-center gap-2">
           <Settings className="w-5 h-5 text-primary" /> Settings
         </h2>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Xtream Codes — <span className="text-white/40 font-mono text-[10px]">{XTREAM_BASE}</span>
-        </p>
+
       </div>
 
       {/* Credentials */}

@@ -96,7 +96,7 @@ function AppShell() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden"
+    <div className="app-shell flex"
       style={{ background: '#07090f' }}>
 
       {/* ── Sidebar: shown on lg screens AND landscape phones ── */}
@@ -123,6 +123,7 @@ function AppShell() {
               paddingTop: 'env(safe-area-inset-top)',
               paddingLeft: 'env(safe-area-inset-left)',
               paddingRight: 'env(safe-area-inset-right)',
+              WebkitOverflowScrolling: 'touch',
             }}
           >
             <div className={`h-full ${sectionKey === 'epg' || sectionKey === 'browse' ? 'p-0' : 'p-4 sm:p-6'}`}>

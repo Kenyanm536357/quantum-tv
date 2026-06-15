@@ -23,7 +23,7 @@ export function AppSidebar() {
 
   return (
     <aside className="flex flex-col h-full bg-[#07090f] border-r border-white/6 select-none"
-      style={{ width: 200 }}>
+      style={{ width: 200, paddingTop: 'env(safe-area-inset-top)', paddingLeft: 'env(safe-area-inset-left)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
       {/* Brand */}
       <div className="flex items-center gap-2.5 px-4 py-4 border-b border-white/6 flex-shrink-0">
         <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0">
@@ -99,12 +99,12 @@ export function BottomTabBar() {
 
       {/* Bottom bar */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 flex bg-[#07090f]/95 backdrop-blur-xl border-t border-white/8"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
         {BOTTOM_NAV.map(item => {
           const active = pathname.startsWith('/' + item.id);
           return (
             <button key={item.id} onClick={() => go(item.id)}
-              className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium transition-all select-none ${
+              className={`flex-1 flex flex-col items-center gap-0.5 py-3 text-[10px] font-medium transition-all select-none touch-manipulation ${
                 active ? 'text-primary' : 'text-white/35 hover:text-white/70'
               }`}>
               <item.icon className={`w-5 h-5 ${active ? 'text-primary' : ''}`} />
@@ -113,7 +113,7 @@ export function BottomTabBar() {
           );
         })}
         <button onClick={() => setMoreOpen(v => !v)}
-          className="flex-1 flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium text-white/35 hover:text-white/70 transition-all select-none">
+          className="flex-1 flex flex-col items-center gap-0.5 py-3 text-[10px] font-medium text-white/35 hover:text-white/70 transition-all select-none touch-manipulation">
           <Menu className="w-5 h-5" />
           More
         </button>

@@ -73,7 +73,7 @@ export default function MacActivationScreen({ onActivated }) {
   return (
     <div
       className="min-h-screen w-screen flex items-center justify-center p-5 relative overflow-y-auto"
-      style={{ background: 'radial-gradient(ellipse at 60% 0%, #1a0a3d 0%, #0a0f2e 40%, #060a1a 100%)', paddingTop: 'calc(env(safe-area-inset-top) + 1.25rem)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.25rem)' }}
+      style={{ background: 'radial-gradient(ellipse at 60% 0%, #1a0a3d 0%, #0a0f2e 40%, #060a1a 100%)', paddingTop: 'calc(env(safe-area-inset-top) + 1.25rem)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.25rem)', paddingLeft: 'calc(env(safe-area-inset-left) + 1.25rem)', paddingRight: 'calc(env(safe-area-inset-right) + 1.25rem)' }}
     >
       {BG}
 

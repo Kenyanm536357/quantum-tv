@@ -228,7 +228,7 @@ export default function VideoPlayer({ src, title, type }) {
   const fmt = s => { if (!isFinite(s)) return '∞'; const m = Math.floor(s / 60); return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`; };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
+    <div className="fixed inset-0 z-50 bg-black flex items-center justify-center" style={{ paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
       <div ref={containerRef} className="relative w-full h-full"
         onMouseMove={bumpControls} onTouchStart={bumpControls}>
 

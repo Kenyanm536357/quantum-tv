@@ -4,7 +4,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
-
+const ALLOWED_EMAILS = ['kenyan@quantumtek.net', 'kenyanmcgarr@gmail.com'];
 import {
   Monitor, CheckCircle, XCircle, Plus, Trash2, Loader2,
   RefreshCw, Shield, Lock, LockOpen, Calendar,
@@ -224,7 +224,7 @@ function DeviceCard({ dev, onRenew, onDelete, onLock, onEdit, isLoading }) {
 }
 
 export default function AdminActivation() {
-  const { } = useAuth();
+  const { user, isLoadingAuth } = useAuth();
   const navigate = useNavigate();
   const [authed, setAuthed]           = useState(false);
   const [passcode, setPasscode]       = useState('');
@@ -342,6 +342,32 @@ export default function AdminActivation() {
   const activeCount   = devices.filter(d => d.activated && !isExpired(d.expires_at)).length;
   const expiredCount  = devices.filter(d => isExpired(d.expires_at)).length;
   const inactiveCount = devices.filter(d => !d.activated && !isExpired(d.expires_at)).length;
+
+  // ── Email guard — must be logged in as the allowed account ───
+  if (isLoadingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#07090f' }}>
+        <div className="w-8 h-8 border-2 border-violet-500/20 border-t-violet-500 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user || !ALLOWED_EMAILS.includes(user.email)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6" style={{ background: '#07090f' }}>
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center">
+            <Shield className="w-8 h-8 text-red-400" />
+          </div>
+          <h1 className="text-xl font-black text-white">Access Denied</h1>
+          <p className="text-sm text-white/40 max-w-xs">This panel is restricted to authorized administrators only.</p>
+          <a href="/" className="mt-2 px-5 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white/60 hover:text-white transition-colors">
+            ← Back to App
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   // ── Passcode Gate ─────────────────────────────────────────────
   if (!authed) {

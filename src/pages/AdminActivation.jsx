@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useAuth } from '@/lib/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const ALLOWED_EMAILS = ['kenyan@quantumtek.net', 'kenyanmcgarr@gmail.com'];
 import {
@@ -223,6 +225,7 @@ function DeviceCard({ dev, onRenew, onDelete, onLock, onEdit, isLoading }) {
 
 export default function AdminActivation() {
   const { user, isLoadingAuth } = useAuth();
+  const navigate = useNavigate();
   const [authed, setAuthed]           = useState(false);
   const [passcode, setPasscode]       = useState('');
   const [passcodeError, setPasscodeError] = useState('');
@@ -368,12 +371,25 @@ export default function AdminActivation() {
   // ── Passcode Gate ─────────────────────────────────────────────
   if (!authed) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden" style={{ background: '#07090f' }}>
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] rounded-full blur-[120px]"
-            style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.2) 0%, transparent 70%)' }} />
+      <div className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden"
+        style={{ background: 'radial-gradient(ellipse at 60% 0%, #1a0a3d 0%, #0a0f2e 40%, #060a1a 100%)' }}>
+        {/* Glow blobs — match login screen */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute top-[-10%] left-[30%] w-[600px] h-[400px] rounded-full blur-[130px]"
+            style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.35) 0%, rgba(99,51,220,0.15) 60%, transparent 100%)' }} />
+          <div className="absolute bottom-0 right-[-10%] w-[400px] h-[400px] rounded-full blur-[120px]"
+            style={{ background: 'radial-gradient(circle, rgba(56,189,248,0.2) 0%, rgba(14,116,196,0.1) 60%, transparent 100%)' }} />
+          <div className="absolute inset-0 opacity-[0.03]"
+            style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
         </div>
-        <form onSubmit={handlePasscode} className="relative w-full max-w-xs flex flex-col items-center gap-5">
+
+        <motion.form
+          onSubmit={handlePasscode}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, ease: 'easeOut' }}
+          className="relative w-full max-w-xs flex flex-col items-center gap-5"
+        >
           <div className="w-16 h-16 rounded-2xl bg-violet-500/10 border border-violet-500/30 flex items-center justify-center"
             style={{ boxShadow: '0 0 40px rgba(139,92,246,0.3)' }}>
             <Shield className="w-8 h-8 text-violet-400" />
@@ -396,11 +412,14 @@ export default function AdminActivation() {
             style={{ boxShadow: '0 0 30px rgba(139,92,246,0.4)' }}>
             Enter Admin Panel
           </button>
-          <a href="/"
-            className="w-full py-3 text-center text-sm text-white/40 hover:text-white/70 transition-colors">
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="w-full py-3 text-center text-sm text-white/40 hover:text-white/70 transition-colors"
+          >
             ← Back to Login
-          </a>
-        </form>
+          </button>
+        </motion.form>
       </div>
     );
   }

@@ -143,37 +143,38 @@ export default function VideoPlayer({ src, title, type }) {
           });
 
           if (d?.fatal) {
-            hls.destroy();
-            hlsRef.current = null;
+          hls.destroy();
+          hlsRef.current = null;
 
-            const isCorsLike = code === 0 || d?.details === 'manifestLoadError';
+          const isCorsLike = code === 0 || d?.details === 'manifestLoadError' || d?.details === 'manifestLoadTimeOut';
 
-            // Auto-retry up to MAX_AUTO_RETRIES times before trying proxy
-            if (retryCountRef.current < MAX_AUTO_RETRIES) {
-              retryCountRef.current += 1;
-              const delay = retryCountRef.current * 2000;
-              setStatusMsg(`Connection lost — retrying (${retryCountRef.current}/${MAX_AUTO_RETRIES})…`);
-              addLog('warn', 'AUTO_RETRY', { attempt: retryCountRef.current, delay });
-              setTimeout(() => loadSource(finalSrc), delay);
+          // Step 1: Auto-retry direct up to MAX_AUTO_RETRIES
+          if (retryCountRef.current < MAX_AUTO_RETRIES && !isCorsLike) {
+            retryCountRef.current += 1;
+            const delay = retryCountRef.current * 2000;
+            setStatusMsg(`Connection lost — retrying (${retryCountRef.current}/${MAX_AUTO_RETRIES})…`);
+            addLog('warn', 'AUTO_RETRY', { attempt: retryCountRef.current, delay });
+            setTimeout(() => loadSource(finalSrc), delay);
+            return;
+          }
+
+          // Step 2: Always try backend proxy before giving up
+          if (finalSrc === activeSrc) {
+            setStatusMsg('Trying alternate route…');
+            addLog('info', 'PROXY_ATTEMPT', {});
+            const proxiedUrl = await getProxiedUrl(activeSrc);
+            if (proxiedUrl) {
+              blobUrlRef.current = proxiedUrl;
+              retryCountRef.current = 0;
+              loadSource(proxiedUrl);
               return;
             }
+          }
 
-            // After retries, try backend proxy for manifest errors
-            if (isCorsLike && finalSrc === activeSrc) {
-              setStatusMsg('Trying backup route…');
-              addLog('info', 'PROXY_ATTEMPT', {});
-              const proxiedUrl = await getProxiedUrl(activeSrc);
-              if (proxiedUrl) {
-                blobUrlRef.current = proxiedUrl;
-                retryCountRef.current = 0;
-                loadSource(proxiedUrl);
-                return;
-              }
-            }
-
-            setCorsBlocked(isCorsLike);
-            setErr(isCorsLike ? 'cors_blocked' : `Stream unavailable. Please try another channel.`);
-            setLoading(false);
+          // Step 3: Only show error screen after all fallbacks exhausted
+          setErr(`Stream unavailable. Please try another channel.`);
+          setCorsBlocked(false);
+          setLoading(false);
           }
         });
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {

@@ -85,9 +85,11 @@ Deno.serve(async (req) => {
     }
 
     // ── Normal Xtream API fetch ───────────────────────────────────────────────
+    // get_live_streams can be a large payload — give it 60s
+    const isLargeAction = action === 'get_live_streams' || action === 'get_vod_streams' || action === 'get_series';
     const res = await fetch(url, {
       headers: FETCH_HEADERS,
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(isLargeAction ? 60000 : 30000),
     });
     if (!res.ok) return Response.json({ error: `Upstream error: ${res.status}` }, { status: 502 });
     const contentType = res.headers.get('content-type') || '';

@@ -48,6 +48,8 @@ export default function VideoPlayer({ src, title, type }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [corsBlocked, setCorsBlocked] = useState(false);
+  const retryCountRef = useRef(0);
+  const MAX_AUTO_RETRIES = 3;
   const [bookmarked, setBookmarked] = useState(false);
   const [debugLogs, setDebugLogs] = useState([]);
   const [showDebug, setShowDebug] = useState(false);
@@ -111,6 +113,7 @@ export default function VideoPlayer({ src, title, type }) {
     setDebugLogs([]);
     setStatusMsg('');
 
+    retryCountRef.current = 0;
     const activeSrc = toHttps(src);
     addLog('info', 'INIT', { src: activeSrc, hlsSupported: Hls.isSupported() });
 
@@ -144,19 +147,32 @@ export default function VideoPlayer({ src, title, type }) {
             hlsRef.current = null;
 
             const isCorsLike = code === 0 || d?.details === 'manifestLoadError';
+
+            // Auto-retry up to MAX_AUTO_RETRIES times before trying proxy
+            if (retryCountRef.current < MAX_AUTO_RETRIES) {
+              retryCountRef.current += 1;
+              const delay = retryCountRef.current * 2000;
+              setStatusMsg(`Connection lost — retrying (${retryCountRef.current}/${MAX_AUTO_RETRIES})…`);
+              addLog('warn', 'AUTO_RETRY', { attempt: retryCountRef.current, delay });
+              setTimeout(() => loadSource(finalSrc), delay);
+              return;
+            }
+
+            // After retries, try backend proxy for manifest errors
             if (isCorsLike && finalSrc === activeSrc) {
-              setStatusMsg('Trying proxy…');
+              setStatusMsg('Trying backup route…');
               addLog('info', 'PROXY_ATTEMPT', {});
               const proxiedUrl = await getProxiedUrl(activeSrc);
               if (proxiedUrl) {
                 blobUrlRef.current = proxiedUrl;
+                retryCountRef.current = 0;
                 loadSource(proxiedUrl);
                 return;
               }
             }
 
             setCorsBlocked(isCorsLike);
-            setErr(isCorsLike ? 'cors_blocked' : `Stream error (code ${code})`);
+            setErr(isCorsLike ? 'cors_blocked' : `Stream unavailable. Please try another channel.`);
             setLoading(false);
           }
         });
@@ -245,7 +261,7 @@ export default function VideoPlayer({ src, title, type }) {
         {showDebug && <DebugPanel logs={debugLogs} onClose={() => setShowDebug(false)} />}
 
         <div className={`absolute inset-0 flex flex-col transition-opacity duration-300 pointer-events-none ${showCtrl ? 'opacity-100' : 'opacity-0'}`}>
-          <div className="flex items-center justify-between gap-4 px-5 py-4 bg-gradient-to-b from-black/80 to-transparent pointer-events-auto" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 1rem)' }}>
+          <div className="flex items-center justify-between gap-4 px-5 py-4 bg-gradient-to-b from-black/80 to-transparent pointer-events-auto">
             <div className="flex items-center gap-3 min-w-0">
               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-widest ${isLive ? 'bg-destructive/90 text-white' : 'bg-primary/20 text-primary border border-primary/30'}`}>
                 {isLive && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
@@ -268,7 +284,7 @@ export default function VideoPlayer({ src, title, type }) {
 
           <div className="flex-1 pointer-events-auto cursor-pointer" onClick={togglePlay} />
 
-          <div className="px-5 pt-10 bg-gradient-to-t from-black/90 to-transparent pointer-events-auto" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.25rem)' }}>
+          <div className="px-5 pb-5 pt-10 bg-gradient-to-t from-black/90 to-transparent pointer-events-auto">
             {!isLive && duration > 0 && (
               <div className="mb-3">
                 <input type="range" min={0} max={duration} value={currentTime} onChange={handleSeek}

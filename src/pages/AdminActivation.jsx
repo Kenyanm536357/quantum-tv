@@ -114,7 +114,7 @@ function DeviceCard({ dev, onRenew, onDelete, onLock, onEdit, isLoading }) {
   const [editUser,  setEditUser]  = useState(dev.username || '');
   const [renewMonths, setRenewMonths] = useState(1);
 
-  const handleRenew = () => { onRenew(dev.id, dev.mac, renewMonths, dev.expires_at); setShowRenew(false); };
+  const handleRenew = () => { onRenew(dev.id, renewMonths, dev.expires_at); setShowRenew(false); };
   const handleEdit  = () => { onEdit(dev.id, { username: editUser.trim() }); setShowEdit(false); };
 
   const statusColor = locked
@@ -139,7 +139,6 @@ function DeviceCard({ dev, onRenew, onDelete, onLock, onEdit, isLoading }) {
         {/* Name + MAC */}
         <div className="flex-1 min-w-0">
           <p className="text-base font-bold text-white leading-tight">{dev.username || '—'}</p>
-          <p className="font-mono text-xs text-white/40 mt-0.5">MAC: {dev.mac}</p>
           {dev.phone && <p className="text-xs text-white/35 mt-0.5">📞 {dev.phone}</p>}
           {dev.notes && <p className="text-xs text-white/30 mt-0.5 truncate italic">"{dev.notes}"</p>}
         </div>
@@ -232,7 +231,6 @@ export default function AdminActivation() {
   const [adding, setAdding]           = useState(false);
   const [actionId, setActionId]       = useState(null);
 
-  const [newMac,      setNewMac]      = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newPhone,    setNewPhone]    = useState('');
@@ -253,17 +251,6 @@ export default function AdminActivation() {
     }
   };
 
-  const generateRandomMac = () => {
-    const hex = () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0').toUpperCase();
-    setNewMac(`${hex()}:${hex()}:${hex()}:${hex()}:${hex()}:${hex()}`);
-  };
-
-  const formatMacInput = (val) => {
-    // Strip non-hex chars, uppercase, insert colons every 2 chars
-    const clean = val.replace(/[^0-9a-fA-F]/g, '').toUpperCase().slice(0, 12);
-    const parts = clean.match(/.{1,2}/g) || [];
-    setNewMac(parts.join(':'));
-  };
   const handlePasscode = (e) => {
     e.preventDefault();
     if (passcode === ADMIN_PASSCODE) {
@@ -292,7 +279,7 @@ export default function AdminActivation() {
     setActionId(null);
   };
 
-  const renew = async (id, mac, months, currentExpiry) => {
+  const renew = async (id, months, currentExpiry) => {
     setActionId(id);
     // Extend from current expiry if still valid, otherwise extend from today
     const base = currentExpiry && new Date(currentExpiry) > new Date() ? currentExpiry : new Date().toISOString();
@@ -331,23 +318,19 @@ export default function AdminActivation() {
   };
 
   const addDevice = async () => {
-    if (!newMac.trim()) return;
+    if (!newUsername.trim()) return;
     setAdding(true);
-    const mac = newMac.trim().toUpperCase();
-    await base44.functions.invoke('checkActivation', { mac, action: 'activate', adminKey: ADMIN_PASSCODE });
     const expires = addMonths(new Date(), newMonths);
-    const records = await base44.entities.DeviceActivation.filter({ mac });
-    if (records.length > 0) {
-      await base44.entities.DeviceActivation.update(records[0].id, {
-        username:     newUsername.trim() || undefined,
-        password:     newPassword.trim() || undefined,
-        phone:        newPhone.trim() || undefined,
-        notes:        newNotes.trim() || undefined,
-        expires_at:   expires,
-        activated_at: new Date().toISOString(),
-      });
-    }
-    setNewMac(''); setNewUsername(''); setNewPassword(''); setNewPhone(''); setNewNotes(''); setNewMonths(1);
+    await base44.entities.DeviceActivation.create({
+      username:     newUsername.trim(),
+      password:     newPassword.trim() || undefined,
+      phone:        newPhone.trim() || undefined,
+      notes:        newNotes.trim() || undefined,
+      activated:    true,
+      activated_at: new Date().toISOString(),
+      expires_at:   expires,
+    });
+    setNewUsername(''); setNewPassword(''); setNewPhone(''); setNewNotes(''); setNewMonths(1);
     await loadDevices();
     setAdding(false);
   };
@@ -509,7 +492,7 @@ export default function AdminActivation() {
                     <div className="space-y-1">
                       {expiringSoon.map(d => (
                         <div key={d.id} className="flex items-center justify-between">
-                          <span className="text-xs text-white/60">{d.username || d.mac}</span>
+                          <span className="text-xs text-white/60">{d.username || '—'}</span>
                           <span className="text-xs font-bold text-red-400">{daysLeft(d.expires_at)}d left</span>
                         </div>
                       ))}
@@ -569,21 +552,6 @@ export default function AdminActivation() {
 
           <div className="space-y-3">
             <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Device ID / MAC</label>
-                <button onClick={generateRandomMac} className="text-[10px] text-cyan-400 hover:text-cyan-300 font-bold transition-colors">
-                  ↻ Random
-                </button>
-              </div>
-              <input
-                value={newMac}
-                onChange={e => formatMacInput(e.target.value)}
-                placeholder="A1:B2:C3:D4:E5:F6"
-                maxLength={17}
-                className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono text-cyan-400 placeholder-white/15 outline-none focus:border-cyan-500/40 transition-all"
-              />
-            </div>
-            <div className="space-y-1">
               <label className="text-[11px] font-bold text-white/30 uppercase tracking-wider">Username</label>
               <input
                 value={newUsername}
@@ -642,9 +610,9 @@ export default function AdminActivation() {
 
             <button
               onClick={addDevice}
-              disabled={adding || !newMac.trim()}
+              disabled={adding || !newUsername.trim()}
               className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-violet-600 to-cyan-600 text-white font-bold text-sm rounded-xl disabled:opacity-40 transition-all hover:opacity-90"
-              style={{ boxShadow: adding || !newMac.trim() ? 'none' : '0 0 24px rgba(139,92,246,0.35)' }}
+              style={{ boxShadow: adding || !newUsername.trim() ? 'none' : '0 0 24px rgba(139,92,246,0.35)' }}
             >
               {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
               {adding ? 'Activating…' : `Activate · ${DURATION_OPTIONS.find(o => o.months === newMonths)?.label}`}

@@ -54,12 +54,10 @@ export default function MacActivationScreen({ onActivated }) {
       });
 
       if (res.data && !res.data.error) {
-        // Save credentials to localStorage (Xtream Codes only)
-        localStorage.setItem('qtv_xtream_creds', JSON.stringify({
-          baseUrl,
-          username: username.trim(),
-          password: password.trim(),
-        }));
+        const creds = { baseUrl, username: username.trim(), password: password.trim() };
+        // Save to both keys so the store and playlist hook both find them
+        localStorage.setItem('qtv_xtream_creds', JSON.stringify(creds));
+        localStorage.setItem('iptv_creds', JSON.stringify({ type: 'xtream', label: 'Quantum TV', ...creds }));
         setSuccess(true);
         setTimeout(() => onActivated(), 1400);
       } else {

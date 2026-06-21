@@ -11,6 +11,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import AdminActivation from './pages/AdminActivation';
+import ExportToGitHub from './pages/ExportToGitHub';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError } = useAuth();
@@ -31,6 +32,7 @@ const AuthenticatedApp = () => {
     <Routes>
       {/* Admin panel — fully public route (password protected internally) */}
       <Route path="/admin/activation" element={<AdminActivation />} />
+      <Route path="/export" element={<ExportToGitHub />} />
 
       {/* All other routes go directly to Home (no login required) */}
       <Route path="/*" element={<Home />} />

@@ -6,7 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Monitor, CheckCircle, XCircle, Plus, Trash2, Loader2,
   RefreshCw, Shield, Lock, LockOpen, Calendar,
-  Tv2, Signal, AlertTriangle, Wifi, ShieldCheck, Database, AlertCircle
+  Tv2, Signal, AlertTriangle, Wifi, ShieldCheck, Database, AlertCircle,
+  Eye, EyeOff, KeyRound, Copy
 } from 'lucide-react';
 import { bustPlaylistCache } from '@/lib/use-m3u-playlist.js';
 
@@ -217,6 +218,58 @@ function DeviceCard({ dev, onRenew, onDelete, onLock, onEdit, isLoading }) {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+function AdminCredentials({ passcode }) {
+  const [showPass, setShowPass] = useState(false);
+  const [copied, setCopied] = useState(null);
+
+  const copy = (text, key) => {
+    navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 1500);
+  };
+
+  return (
+    <div className="rounded-xl bg-violet-500/8 border border-violet-500/20 p-3 space-y-2">
+      <p className="text-[11px] font-bold text-violet-400 uppercase tracking-wider flex items-center gap-1.5">
+        <KeyRound className="w-3 h-3" /> Admin Credentials
+      </p>
+      {/* Username */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[10px] text-white/30 uppercase tracking-wider">Username</p>
+          <p className="text-sm font-bold text-white">admin</p>
+        </div>
+        <button onClick={() => copy('admin', 'user')}
+          className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-white/30 hover:text-violet-400 transition-colors flex-shrink-0">
+          <Copy className="w-3 h-3" />
+        </button>
+      </div>
+      {/* Passcode */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] text-white/30 uppercase tracking-wider">Passcode</p>
+          <p className="text-sm font-bold text-white font-mono tracking-wider truncate">
+            {showPass ? passcode : '••••••••••••••••'}
+          </p>
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button onClick={() => setShowPass(s => !s)}
+            className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-white/30 hover:text-violet-400 transition-colors">
+            {showPass ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+          </button>
+          <button onClick={() => copy(passcode, 'pass')}
+            className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-white/30 hover:text-violet-400 transition-colors">
+            <Copy className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+      {copied && (
+        <p className="text-[10px] text-emerald-400 text-right">Copied!</p>
       )}
     </div>
   );
@@ -544,6 +597,9 @@ export default function AdminActivation() {
         {/* ── Sidebar: Activate New Device ── */}
         <div className="w-full lg:w-80 flex-shrink-0 border-t lg:border-t-0 lg:border-l border-white/6 lg:overflow-y-auto p-4 sm:p-5 space-y-5"
           style={{ background: 'linear-gradient(180deg, rgba(139,92,246,0.06) 0%, transparent 50%)' }}>
+
+          {/* Admin Credentials Card */}
+          <AdminCredentials passcode={ADMIN_PASSCODE} />
 
           <div className="flex items-center gap-2">
             <Plus className="w-4 h-4 text-violet-400" />

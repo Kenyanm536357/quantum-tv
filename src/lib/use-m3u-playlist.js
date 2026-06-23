@@ -1,31 +1,16 @@
 /**
- * Playlist hook — fetches live categories + streams via backend proxy
- * (needed because browser blocks mixed HTTP/HTTPS content).
- * Stream playback URLs are resolved client-side.
+ * Playlist hook — fetches from public iptv-org M3U (Americas region).
+ * No credentials needed. Stream URLs are direct from the M3U.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { setState } from './iptv-store';
 import { cleanName } from './clean-name';
+import { parseM3U } from './m3u-parser';
 import { base44 } from '@/api/base44Client';
 
-const CACHE_KEY = 'qtv_xtream_cache_v2';
+const CACHE_KEY = 'qtv_m3u_cache_v3';
 const CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
-
-const CURRENT_BASE = 'https://pro.flickhaven.online';
-const STALE_BASES = ['http://pro.flickhaven.online', 'http://pro.business-cdn-8k.com', 'https://pro.business-cdn-8k.com'];
-
-function getStoredCreds() {
-  try {
-    const raw = localStorage.getItem('qtv_xtream_creds');
-    if (!raw) return {};
-    let c = JSON.parse(raw);
-    if (c.baseUrl && STALE_BASES.some(s => c.baseUrl.startsWith(s))) {
-      c = { ...c, baseUrl: CURRENT_BASE };
-      localStorage.setItem('qtv_xtream_creds', JSON.stringify(c));
-    }
-    return c;
-  } catch (_) { return {}; }
-}
+const M3U_URL = 'https://iptv-org.github.io/iptv/regions/amer.m3u';
 
 function getCachedPlaylist() {
   try {
@@ -50,56 +35,16 @@ function safeCacheSet(data) {
   }
 }
 
-async function fetchXtreamPlaylist() {
-  const creds = getStoredCreds();
-  if (!creds.username || !creds.password) throw new Error('Not logged in.');
-
-  const base = (creds.baseUrl || CURRENT_BASE).replace(/\/+$/, '');
-
-  // Fetch directly from the browser to avoid cloud IP blocking
-  const [catRes, streamRes] = await Promise.all([
-    fetch(`${base}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}&action=get_live_categories`),
-    fetch(`${base}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}&action=get_live_streams`),
-  ]);
-
-  if (!catRes.ok) throw new Error(`Server error: ${catRes.status}`);
-  if (!streamRes.ok) throw new Error(`Server error: ${streamRes.status}`);
-
-  const categories = await catRes.json();
-  const rawStreams = await streamRes.json();
-
-  if (!Array.isArray(categories) || categories.length === 0) {
-    throw new Error('No categories returned. Check your credentials.');
-  }
-  if (!Array.isArray(rawStreams)) {
-    throw new Error('No streams returned from server.');
-  }
-
-  const streams = rawStreams
-    .filter(s => s && s.stream_id)
-    .map(s => ({
-      stream_id:   String(s.stream_id),
-      name:        s.name || 'Unknown',
-      stream_icon: s.stream_icon || null,
-      category_id: String(s.category_id || ''),
-      num:         s.num || 0,
-    }));
-
-  const normalizedCats = categories
-    .filter(c => c && c.category_id)
-    .map(c => ({
-      category_id:   String(c.category_id),
-      category_name: c.category_name || 'General',
-    }));
-
-  return { categories: normalizedCats, streams };
+async function fetchM3UPlaylist() {
+  // Use backend proxy to avoid CORS issues
+  const res = await base44.functions.invoke('fetchPlaylist', { fetchM3U: true, m3uUrl: M3U_URL });
+  const text = res.data;
+  if (!text || typeof text !== 'string') throw new Error('Empty playlist response.');
+  return parseM3U(text);
 }
 
-export function resolveStreamUrl(stream_id) {
-  const creds = getStoredCreds();
-  const base = (creds.baseUrl || CURRENT_BASE).replace(/\/+$/, '');
-  if (!creds.username || !creds.password) return null;
-  return `${base}/live/${encodeURIComponent(creds.username)}/${encodeURIComponent(creds.password)}/${stream_id}.m3u8`;
+export function resolveStreamUrl(stream) {
+  return stream?.direct_url || null;
 }
 
 export function useM3UPlaylist() {
@@ -115,12 +60,11 @@ export function useM3UPlaylist() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchXtreamPlaylist();
+      const data = await fetchM3UPlaylist();
       safeCacheSet(data);
       setPlaylist(data);
     } catch (e) {
       setError(e.message || 'Failed to load channels. Please try again.');
-      // Show stale cache if available
       const stale = (() => {
         try { const raw = localStorage.getItem(CACHE_KEY); return raw ? JSON.parse(raw).data : null; } catch (_) { return null; }
       })();
@@ -136,7 +80,7 @@ export function useM3UPlaylist() {
 }
 
 export async function playM3UStream(stream) {
-  const src = resolveStreamUrl(stream.stream_id);
+  const src = stream?.direct_url;
   if (src) {
     setState({ player: { src, title: cleanName(stream.name), type: 'live' } });
   }

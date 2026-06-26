@@ -117,7 +117,11 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
     user_id = payload.get("sub")
     if not user_id or payload.get("role") != "user":
         raise HTTPException(status_code=401, detail="Invalid token")
-    user = await db.users.find_one({"id": user_id})
+    user = await db.users.find_one(
+        {"id": user_id},
+        {"id": 1, "username": 1, "display_name": 1, "status": 1, "avatar": 1,
+         "watchlist": 1, "favorites": 1, "password_hash": 1},
+    )
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     if user.get("status") != "active":
@@ -476,7 +480,11 @@ async def admin_list_users(admin: dict = Depends(get_current_admin), q: Optional
             {"username": {"$regex": q, "$options": "i"}},
             {"display_name": {"$regex": q, "$options": "i"}},
         ]
-    cursor = db.users.find(query).sort("created_at", -1).limit(500)
+    cursor = db.users.find(
+        query,
+        {"id": 1, "username": 1, "display_name": 1, "status": 1,
+         "created_at": 1, "last_login": 1, "watchlist": 1, "favorites": 1},
+    ).sort("created_at", -1).limit(500)
     out = []
     async for u in cursor:
         out.append({
@@ -521,7 +529,10 @@ async def admin_stats(admin: dict = Depends(get_current_admin)):
 
 @api.get("/admin/activity")
 async def admin_activity(admin: dict = Depends(get_current_admin), limit: int = 50):
-    cursor = db.users.find({"last_login": {"$ne": None}}).sort("last_login", -1).limit(limit)
+    cursor = db.users.find(
+        {"last_login": {"$ne": None}},
+        {"id": 1, "username": 1, "display_name": 1, "last_login": 1},
+    ).sort("last_login", -1).limit(limit)
     out = []
     async for u in cursor:
         out.append({

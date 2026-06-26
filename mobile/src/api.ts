@@ -2,7 +2,10 @@ import axios from "axios";
 import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export const BACKEND = Constants.expoConfig?.extra?.backendUrl || "";
+export const BACKEND =
+  process.env.EXPO_PUBLIC_BACKEND_URL ||
+  Constants.expoConfig?.extra?.backendUrl ||
+  "";
 export const API = `${BACKEND}/api`;
 
 const client = axios.create({ baseURL: API, timeout: 25000 });

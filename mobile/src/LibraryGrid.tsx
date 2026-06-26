@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import client, { BACKEND, colors } from "../../src/api";
+import client, { BACKEND, colors } from "./api";
 
 export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: string }) {
   const router = useRouter();

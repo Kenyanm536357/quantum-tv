@@ -4,7 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { Platform } from "react-native";
-import client, { BACKEND, colors } from "../../src/api";
+import client, { BACKEND, colors } from "./api";
 
 const isTV = Platform.isTV;
 

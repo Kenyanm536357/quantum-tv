@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import uuid
+import asyncio
 import base64
 import logging
 import hashlib
@@ -799,16 +800,17 @@ async def _enrich_keys(keys: list[str]) -> list[dict]:
     if not keys:
         return []
     uri, token = await _server_ctx()
-    items: list[dict] = []
-    for rk in keys:
+
+    async def fetch_one(rk: str) -> Optional[dict]:
         try:
             data = await plex_get(f"{uri}/library/metadata/{rk}", token=token)
             md = (data.get("MediaContainer", {}).get("Metadata") or [None])[0]
-            if md:
-                items.append(_normalize_item(uri, token, md))
+            return _normalize_item(uri, token, md) if md else None
         except Exception:
-            continue
-    return items
+            return None
+
+    results = await asyncio.gather(*(fetch_one(rk) for rk in keys))
+    return [item for item in results if item is not None]
 
 
 @api.get("/me/watchlist")

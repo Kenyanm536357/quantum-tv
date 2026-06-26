@@ -168,7 +168,7 @@ export default function Dashboard() {
     <div data-testid="dashboard-page" className="space-y-8 fade-in">
       <div>
         <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">Overview</div>
-        <h1 className="font-heading text-3xl font-bold mt-1">Mission Control</h1>
+        <h1 className="font-heading text-3xl font-bold mt-1">Control Panel</h1>
         <p className="text-zinc-400 text-sm mt-2">Manage your Plex link, accounts, and activity.</p>
       </div>
 

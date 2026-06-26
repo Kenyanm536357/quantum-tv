@@ -12,14 +12,17 @@ import os
 import uuid
 import base64
 import logging
+import hashlib
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from typing import Optional, Any
 from urllib.parse import urlencode
 
 import httpx
 import xmltodict
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Response
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Response, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorClient
 from cryptography.fernet import Fernet
@@ -857,6 +860,139 @@ async def public_config():
 
 
 app.include_router(api)
+
+
+# ============================================================
+# Fire TV / Android APK hosting (Downloader-friendly)
+# ============================================================
+APK_DIR = Path(__file__).parent / "storage"
+APK_DIR.mkdir(parents=True, exist_ok=True)
+APK_PATH = APK_DIR / "quantum-tv.apk"
+
+
+async def _apk_meta_doc():
+    return await db.apk.find_one({"id": "current"}) or {}
+
+
+@app.post("/api/admin/apk/upload")
+async def upload_apk(
+    file: UploadFile = File(...),
+    version: Optional[str] = None,
+    admin: dict = Depends(get_current_admin),
+):
+    fn = (file.filename or "").lower()
+    if not fn.endswith(".apk"):
+        raise HTTPException(400, "File must be an .apk")
+    data = await file.read()
+    if len(data) < 1024:
+        raise HTTPException(400, "APK looks empty")
+    APK_PATH.write_bytes(data)
+    sha = hashlib.sha256(data).hexdigest()
+    await db.apk.update_one(
+        {"id": "current"},
+        {"$set": {
+            "id": "current",
+            "filename": file.filename,
+            "size": len(data),
+            "sha256": sha,
+            "version": version or "1.0.0",
+            "uploaded_at": now_iso(),
+        }},
+        upsert=True,
+    )
+    return {"ok": True, "size": len(data), "sha256": sha[:12], "version": version or "1.0.0"}
+
+
+@app.delete("/api/admin/apk")
+async def delete_apk(admin: dict = Depends(get_current_admin)):
+    if APK_PATH.exists():
+        APK_PATH.unlink()
+    await db.apk.delete_one({"id": "current"})
+    return {"ok": True}
+
+
+@app.get("/api/admin/apk/info")
+async def apk_info(admin: dict = Depends(get_current_admin)):
+    meta = await _apk_meta_doc()
+    return {
+        "available": APK_PATH.exists(),
+        "size": meta.get("size"),
+        "version": meta.get("version"),
+        "uploaded_at": meta.get("uploaded_at"),
+        "sha256": (meta.get("sha256") or "")[:12],
+        "filename": meta.get("filename"),
+    }
+
+
+def _serve_apk():
+    if not APK_PATH.exists():
+        return HTMLResponse(
+            content=(
+                "<html><body style='background:#060714;color:#fff;font-family:sans-serif;"
+                "display:flex;align-items:center;justify-content:center;height:100vh;text-align:center'>"
+                "<div><h1 style='font-size:28px;margin:0'>Quantum TV</h1>"
+                "<p style='color:#A1A1AA;margin-top:14px'>APK not uploaded yet.<br/>"
+                "The admin must upload the .apk in the Control Panel → Fire TV.</p></div></body></html>"
+            ),
+            status_code=404,
+        )
+    return FileResponse(
+        path=str(APK_PATH),
+        media_type="application/vnd.android.package-archive",
+        filename="quantum-tv.apk",
+        headers={
+            "Content-Disposition": 'attachment; filename="quantum-tv.apk"',
+            "Cache-Control": "no-cache",
+        },
+    )
+
+
+# Short URLs for the Downloader app on Fire TV — these must live under /api
+# because the kubernetes ingress only routes /api/* to the backend.
+@app.get("/api/q")
+async def short_apk():
+    return _serve_apk()
+
+
+@app.get("/api/quantum-tv.apk")
+async def named_apk():
+    return _serve_apk()
+
+
+@app.get("/api/install")
+async def install_landing(request: Request):
+    """A friendly landing page when users hit /install on the Fire TV browser
+    (so even if they typed the long URL, they get a clear download button)."""
+    meta = await _apk_meta_doc()
+    host = str(request.base_url).rstrip("/")
+    ver = meta.get("version") or ""
+    short = f"{host}/api/q"
+    return HTMLResponse(
+        content=f"""
+<!doctype html><html><head><meta charset=utf-8><title>Install Quantum TV</title>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<style>
+  body{{margin:0;background:#060714;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+       min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}}
+  .card{{background:rgba(13,14,35,0.7);border:1px solid rgba(255,255,255,0.08);border-radius:24px;
+        padding:32px;max-width:520px;text-align:center}}
+  h1{{margin:0;background:linear-gradient(135deg,#8B5CF6,#06B6D4);
+      -webkit-background-clip:text;background-clip:text;color:transparent;font-size:36px}}
+  p{{color:#A1A1AA;line-height:1.6}}
+  a.btn{{display:inline-block;margin-top:18px;padding:16px 32px;border-radius:9999px;
+       background:linear-gradient(135deg,#8B5CF6,#06B6D4);color:#fff;text-decoration:none;font-weight:700;
+       box-shadow:0 6px 22px rgba(139,92,246,0.35)}}
+  code{{display:block;margin-top:18px;background:rgba(255,255,255,0.05);padding:12px;border-radius:10px;
+       color:#06B6D4;font-size:14px;word-break:break-all}}
+</style></head><body><div class=card>
+<h1>Quantum TV</h1>
+<p>Install the Quantum TV Fire TV / Android app{f' (v{ver})' if ver else ''}.</p>
+<a class=btn href="/api/q">Download APK</a>
+<p style="font-size:13px;margin-top:24px">In the <b>Downloader</b> app on Fire TV, enter:</p>
+<code>{short}</code>
+</div></body></html>""",
+        media_type="text/html",
+    )
 
 
 @app.on_event("startup")

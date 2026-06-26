@@ -3,7 +3,7 @@
     "name": "Quantum TV",
     "slug": "quantum-tv",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "landscape",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "dark",
     "scheme": "quantumtv",
@@ -17,19 +17,41 @@
       "bundleIdentifier": "com.quantumtv.app"
     },
     "android": {
+      "package": "com.quantumtv.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#060714"
       },
-      "package": "com.quantumtv.app"
+      "permissions": ["INTERNET", "ACCESS_NETWORK_STATE", "WAKE_LOCK"],
+      "intentFilters": [
+        {
+          "action": "MAIN",
+          "category": ["LAUNCHER", "LEANBACK_LAUNCHER"]
+        }
+      ]
     },
     "plugins": [
       "expo-router",
-      "expo-video"
+      "expo-video",
+      [
+        "@react-native-tvos/config-tv",
+        { "isTV": true, "showVerboseWarnings": false }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34,
+            "minSdkVersion": 22
+          }
+        }
+      ]
     ],
     "experiments": { "typedRoutes": true },
     "extra": {
-      "backendUrl": "https://740c242f-4923-4028-ac71-f7cfb28f51cc.preview.emergentagent.com"
+      "backendUrl": "https://stream-plex-mobile.emergent.host"
     }
   }
 }

@@ -1,7 +1,7 @@
 import React from "react";
 import { Routes, Route, Navigate, useLocation, useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { LayoutDashboard, Users, Server, Settings, Activity, LogOut, Tv, Smartphone } from "lucide-react";
+import { LayoutDashboard, Users, Server, Settings, Activity, LogOut, Tv, Smartphone, Download } from "lucide-react";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import UsersPage from "./pages/Users";
@@ -9,6 +9,7 @@ import Servers from "./pages/Servers";
 import SettingsPage from "./pages/Settings";
 import ActivityPage from "./pages/Activity";
 import MobilePreview from "./pages/MobilePreview";
+import FireTV from "./pages/FireTV";
 
 const Shell = ({ children }) => {
   const nav = useNavigate();
@@ -18,6 +19,7 @@ const Shell = ({ children }) => {
     { to: "/users", label: "Users", icon: Users, testid: "nav-users" },
     { to: "/servers", label: "Plex Servers", icon: Server, testid: "nav-servers" },
     { to: "/preview", label: "App Preview", icon: Smartphone, testid: "nav-preview" },
+    { to: "/firetv", label: "Fire TV Install", icon: Download, testid: "nav-firetv" },
     { to: "/activity", label: "Activity", icon: Activity, testid: "nav-activity" },
     { to: "/settings", label: "Settings", icon: Settings, testid: "nav-settings" },
   ];
@@ -99,6 +101,7 @@ export default function App() {
       <Route path="/servers" element={<RequireAuth><Servers /></RequireAuth>} />
       <Route path="/activity" element={<RequireAuth><ActivityPage /></RequireAuth>} />
       <Route path="/preview" element={<RequireAuth><MobilePreview /></RequireAuth>} />
+      <Route path="/firetv" element={<RequireAuth><FireTV /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>

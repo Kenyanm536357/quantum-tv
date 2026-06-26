@@ -6,17 +6,20 @@
     "start": "expo start",
     "ios": "expo run:ios",
     "android": "expo run:android",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "build:firetv": "eas build -p android --profile firetv"
   },
   "dependencies": {
-    "@expo-google-fonts/outfit": "^0.4.3",
-    "@expo-google-fonts/unbounded": "^0.4.1",
+    "@expo-google-fonts/outfit": "^0.2.3",
+    "@expo-google-fonts/unbounded": "^0.2.3",
     "@expo/vector-icons": "^14.0.0",
     "@react-native-async-storage/async-storage": "1.23.1",
+    "@react-native-tvos/config-tv": "^0.1.0",
     "@tanstack/react-query": "^5.59.0",
     "axios": "^1.7.7",
     "expo": "~51.0.28",
     "expo-blur": "~13.0.2",
+    "expo-build-properties": "~0.12.5",
     "expo-constants": "~16.0.2",
     "expo-linear-gradient": "~13.0.2",
     "expo-linking": "~6.3.1",

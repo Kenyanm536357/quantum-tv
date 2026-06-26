@@ -63,7 +63,6 @@
       "typedRoutes": true
     },
     "extra": {
-      "backendUrl": "https://stream-plex-mobile.emergent.host",
       "router": {
         "origin": false
       },

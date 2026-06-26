@@ -40,7 +40,7 @@ export default function Login() {
           <h1 className="font-heading text-3xl font-bold tracking-tight">
             <span className="gradient-text">Quantum TV</span>
           </h1>
-          <p className="text-zinc-400 text-sm mt-2 uppercase tracking-[0.25em]">Admin Console</p>
+          <p className="text-zinc-400 text-sm mt-2">Sign in to your account</p>
         </div>
 
         <div className="glass rounded-3xl p-8">
@@ -49,7 +49,7 @@ export default function Login() {
               <label className="text-[11px] uppercase tracking-[0.2em] text-zinc-400 font-heading">Username</label>
               <input
                 data-testid="admin-username"
-                className="qtv-input mt-2" placeholder="Enter admin username"
+                className="qtv-input mt-2" placeholder="Enter your username"
                 value={u} onChange={(e) => setU(e.target.value)} required
               />
             </div>
@@ -59,7 +59,7 @@ export default function Login() {
                 <input
                   data-testid="admin-password"
                   type={show ? "text" : "password"}
-                  className="qtv-input pr-12" placeholder="Enter admin password"
+                  className="qtv-input pr-12" placeholder="Enter your password"
                   value={p} onChange={(e) => setP(e.target.value)} required
                 />
                 <button
@@ -82,9 +82,6 @@ export default function Login() {
               {loading ? "Signing in..." : "Sign In"}
             </button>
           </form>
-        </div>
-        <div className="text-center mt-6 text-xs text-zinc-500 font-mono">
-          Plex powered • secure admin panel
         </div>
       </motion.div>
     </div>

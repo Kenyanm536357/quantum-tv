@@ -20,9 +20,6 @@
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"
-      },
-      "env": {
-        "EXPO_TV": "1"
       }
     },
     "production": {

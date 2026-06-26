@@ -14,7 +14,6 @@
     "@expo-google-fonts/unbounded": "^0.2.3",
     "@expo/vector-icons": "^14.0.0",
     "@react-native-async-storage/async-storage": "1.23.1",
-    "@react-native-tvos/config-tv": "^0.1.0",
     "@tanstack/react-query": "^5.59.0",
     "axios": "^1.7.7",
     "expo": "~51.0.28",

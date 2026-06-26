@@ -42,13 +42,6 @@
       "expo-router",
       "expo-video",
       [
-        "@react-native-tvos/config-tv",
-        {
-          "isTV": true,
-          "showVerboseWarnings": false
-        }
-      ],
-      [
         "expo-build-properties",
         {
           "android": {

@@ -1,7 +1,10 @@
 """Quantum TV — FastAPI backend.
 
-Plex authentication (PIN flow), library/movies/shows/live TV listing,
-streaming URL generation, image proxy, and admin panel APIs.
+Architecture:
+  - Admin links their Plex account ONCE in the admin panel.
+  - Admin creates user accounts (username + password + status). Users cannot self-register.
+  - One login endpoint routes to admin or user based on credentials.
+  - Users see the admin's Plex libraries; each user has private watchlist + favorites.
 """
 from __future__ import annotations
 
@@ -9,17 +12,15 @@ import os
 import uuid
 import base64
 import logging
-import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Any
 from urllib.parse import urlencode
 
 import httpx
 import xmltodict
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Query, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, RedirectResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorClient
 from cryptography.fernet import Fernet
 from jose import jwt, JWTError
@@ -46,7 +47,6 @@ ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
 
 fernet = Fernet(FERNET_KEY)
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 mongo = AsyncIOMotorClient(MONGO_URL)
 db = mongo[DB_NAME]
 
@@ -78,8 +78,19 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def hash_password(p: str) -> str:
+    return pwd_ctx.hash(p)
+
+
+def verify_password(p: str, h: str) -> bool:
+    try:
+        return pwd_ctx.verify(p, h)
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
-# Auth helpers (JWT for our app users + admin)
+# JWT helpers
 # ---------------------------------------------------------------------------
 
 def create_jwt(payload: dict, expires_hours: int = 24 * 30) -> str:
@@ -100,11 +111,13 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
         raise HTTPException(status_code=401, detail="Missing bearer token")
     payload = decode_jwt(authorization.split(None, 1)[1])
     user_id = payload.get("sub")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token payload")
+    if not user_id or payload.get("role") != "user":
+        raise HTTPException(status_code=401, detail="Invalid token")
     user = await db.users.find_one({"id": user_id})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    if user.get("status") != "active":
+        raise HTTPException(status_code=403, detail="Account not activated")
     return user
 
 
@@ -134,17 +147,10 @@ async def plex_get(url: str, token: Optional[str] = None, params: Optional[dict]
         return xmltodict.parse(r.text)
 
 
-async def plex_post(url: str, token: Optional[str] = None, params: Optional[dict] = None) -> Any:
-    async with httpx.AsyncClient(timeout=20.0, verify=False, follow_redirects=True) as c:
-        r = await c.post(url, headers=plex_headers(token), params=params)
-        r.raise_for_status()
-        return r.json()
-
-
 # ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
-app = FastAPI(title="Quantum TV API", version="1.0.0")
+app = FastAPI(title="Quantum TV API", version="1.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -165,19 +171,55 @@ async def root():
 
 
 # ============================================================
-# Plex PIN OAuth Flow
+# Unified login
 # ============================================================
-class PinResponse(BaseModel):
-    pin_id: int
-    code: str
-    auth_url: str
-    client_identifier: str
+class LoginBody(BaseModel):
+    username: str
+    password: str
 
 
-@api.post("/plex/pin", response_model=PinResponse)
-async def create_plex_pin():
-    """Create a Plex auth pin. The mobile client opens auth_url in a browser,
-    user signs in, then we poll /plex/pin/{id} for the authToken."""
+@api.post("/auth/login")
+async def login(body: LoginBody):
+    """Unified login. If credentials match admin in env -> admin token.
+    Otherwise looks up user in DB. Inactive / not-found returns generic error."""
+    # Admin path
+    if body.username == ADMIN_USERNAME and body.password == ADMIN_PASSWORD:
+        token = create_jwt({"sub": "admin", "role": "admin"}, expires_hours=24 * 7)
+        return {"token": token, "role": "admin", "username": ADMIN_USERNAME}
+
+    # User path
+    user = await db.users.find_one({"username": body.username})
+    if not user or not user.get("password_hash"):
+        raise HTTPException(401, "Account is not registered or not activated")
+    if user.get("status") != "active":
+        raise HTTPException(403, "Account is not registered or not activated")
+    if not verify_password(body.password, user["password_hash"]):
+        raise HTTPException(401, "Account is not registered or not activated")
+    await db.users.update_one({"id": user["id"]}, {"$set": {"last_login": now_iso()}})
+    token = create_jwt({"sub": user["id"], "role": "user", "username": user["username"]})
+    return {
+        "token": token,
+        "role": "user",
+        "username": user["username"],
+        "display_name": user.get("display_name") or user["username"],
+        "avatar": user.get("avatar"),
+    }
+
+
+# Backwards-compat alias (web admin panel uses /admin/login)
+@api.post("/admin/login")
+async def admin_login_compat(body: LoginBody):
+    if body.username != ADMIN_USERNAME or body.password != ADMIN_PASSWORD:
+        raise HTTPException(401, "Invalid admin credentials")
+    token = create_jwt({"sub": "admin", "role": "admin"}, expires_hours=24 * 7)
+    return {"token": token, "username": ADMIN_USERNAME, "role": "admin"}
+
+
+# ============================================================
+# Admin: link Plex account (system-wide Plex token)
+# ============================================================
+@api.post("/admin/plex/link/start")
+async def admin_plex_link_start(admin: dict = Depends(get_current_admin)):
     client_id = str(uuid.uuid4())
     async with httpx.AsyncClient(timeout=20.0) as c:
         r = await c.post(
@@ -185,254 +227,391 @@ async def create_plex_pin():
             headers={**plex_headers(client_id=client_id), "Content-Type": "application/json"},
         )
         r.raise_for_status()
-        data = r.json()
-    pin_id = data["id"]
-    code = data["code"]
+        d = r.json()
+    pin_id = d["id"]; code = d["code"]
     params = {
-        "clientID": client_id,
-        "code": code,
+        "clientID": client_id, "code": code,
         "context[device][product]": PLEX_PRODUCT,
         "context[device][version]": PLEX_VERSION,
         "context[device][platform]": PLEX_PLATFORM,
     }
     auth_url = f"https://app.plex.tv/auth#?{urlencode(params)}"
     await db.plex_pins.insert_one({
-        "pin_id": pin_id,
-        "code": code,
-        "client_identifier": client_id,
-        "created_at": now_iso(),
+        "pin_id": pin_id, "code": code, "client_identifier": client_id,
+        "purpose": "admin_link", "created_at": now_iso(),
     })
-    return PinResponse(pin_id=pin_id, code=code, auth_url=auth_url, client_identifier=client_id)
+    return {"pin_id": pin_id, "code": code, "auth_url": auth_url, "client_identifier": client_id}
 
 
-class PinCheckResponse(BaseModel):
-    linked: bool
-    token: Optional[str] = None  # our JWT (only after linking + user created)
-    plex_username: Optional[str] = None
-    plex_email: Optional[str] = None
-    avatar: Optional[str] = None
-
-
-@api.get("/plex/pin/{pin_id}", response_model=PinCheckResponse)
-async def check_plex_pin(pin_id: int):
+@api.get("/admin/plex/link/check/{pin_id}")
+async def admin_plex_link_check(pin_id: int, admin: dict = Depends(get_current_admin)):
     pin_doc = await db.plex_pins.find_one({"pin_id": pin_id})
     if not pin_doc:
         raise HTTPException(404, "Pin not found")
     client_id = pin_doc["client_identifier"]
     async with httpx.AsyncClient(timeout=20.0) as c:
-        r = await c.get(
-            f"{PLEX_AUTH_BASE}/pins/{pin_id}",
-            headers=plex_headers(client_id=client_id),
-        )
+        r = await c.get(f"{PLEX_AUTH_BASE}/pins/{pin_id}", headers=plex_headers(client_id=client_id))
         r.raise_for_status()
         data = r.json()
     auth_token = data.get("authToken")
     if not auth_token:
-        return PinCheckResponse(linked=False)
-    # Fetch user profile
-    user_info = await plex_get(f"{PLEX_AUTH_BASE}/user", token=auth_token)
-    plex_user_id = str(user_info.get("id"))
-    username = user_info.get("username") or user_info.get("title")
-    email = user_info.get("email")
-    thumb = user_info.get("thumb")
-
-    existing = await db.users.find_one({"plex_user_id": plex_user_id})
-    if existing:
-        await db.users.update_one(
-            {"id": existing["id"]},
-            {"$set": {
-                "plex_token_enc": encrypt_token(auth_token),
-                "plex_client_identifier": client_id,
-                "username": username,
-                "email": email,
-                "avatar": thumb,
-                "updated_at": now_iso(),
-                "last_login": now_iso(),
-            }},
-        )
-        user_id = existing["id"]
-    else:
-        user_id = str(uuid.uuid4())
-        await db.users.insert_one({
-            "id": user_id,
-            "plex_user_id": plex_user_id,
+        return {"linked": False}
+    # Fetch profile
+    info = await plex_get(f"{PLEX_AUTH_BASE}/user", token=auth_token)
+    await db.system.update_one(
+        {"id": "plex"},
+        {"$set": {
+            "id": "plex",
             "plex_token_enc": encrypt_token(auth_token),
-            "plex_client_identifier": client_id,
-            "username": username,
-            "email": email,
-            "avatar": thumb,
-            "status": "active",
-            "created_at": now_iso(),
-            "updated_at": now_iso(),
-            "last_login": now_iso(),
-        })
-    our_jwt = create_jwt({"sub": user_id, "role": "user", "plex_user_id": plex_user_id})
-    # delete pin
+            "client_identifier": client_id,
+            "plex_username": info.get("username") or info.get("title"),
+            "plex_email": info.get("email"),
+            "avatar": info.get("thumb"),
+            "linked_at": now_iso(),
+        }},
+        upsert=True,
+    )
     await db.plex_pins.delete_one({"pin_id": pin_id})
-    return PinCheckResponse(linked=True, token=our_jwt, plex_username=username,
-                            plex_email=email, avatar=thumb)
+    return {"linked": True, "plex_username": info.get("username") or info.get("title"),
+            "avatar": info.get("thumb")}
 
 
-# ============================================================
-# User endpoints
-# ============================================================
-@api.get("/me")
-async def me(user: dict = Depends(get_current_user)):
+@api.get("/admin/plex/status")
+async def admin_plex_status(admin: dict = Depends(get_current_admin)):
+    s = await db.system.find_one({"id": "plex"})
+    if not s or not s.get("plex_token_enc"):
+        return {"linked": False}
     return {
-        "id": user["id"],
-        "username": user.get("username"),
-        "email": user.get("email"),
-        "avatar": user.get("avatar"),
-        "plex_user_id": user.get("plex_user_id"),
+        "linked": True,
+        "plex_username": s.get("plex_username"),
+        "plex_email": s.get("plex_email"),
+        "avatar": s.get("avatar"),
+        "linked_at": s.get("linked_at"),
+        "selected_server": s.get("selected_server"),
     }
 
 
-# ---- Plex Resources (servers) ----
-async def _resources(user: dict) -> list[dict]:
-    token = decrypt_token(user["plex_token_enc"])
-    client_id = user.get("plex_client_identifier", PLEX_CLIENT_IDENTIFIER)
+@api.delete("/admin/plex/link")
+async def admin_plex_unlink(admin: dict = Depends(get_current_admin)):
+    await db.system.delete_one({"id": "plex"})
+    return {"ok": True}
+
+
+# ============================================================
+# System Plex context helpers
+# ============================================================
+async def _sys_plex():
+    s = await db.system.find_one({"id": "plex"})
+    if not s or not s.get("plex_token_enc"):
+        raise HTTPException(503, "Plex is not connected. Ask the admin to link a Plex account.")
+    return s
+
+
+async def _sys_resources():
+    s = await _sys_plex()
+    token = decrypt_token(s["plex_token_enc"])
+    cid = s["client_identifier"]
     async with httpx.AsyncClient(timeout=20.0) as c:
         r = await c.get(
             f"{PLEX_AUTH_BASE}/resources",
-            headers=plex_headers(token=token, client_id=client_id),
+            headers=plex_headers(token=token, client_id=cid),
             params={"includeHttps": 1, "includeRelay": 1},
         )
         r.raise_for_status()
-        return r.json()
+        return s, r.json()
 
 
 def _pick_best_connection(resource: dict) -> Optional[str]:
     conns = resource.get("connections") or []
-    # Prefer local non-relay https
     locals_ = [c for c in conns if c.get("local") and not c.get("relay")]
     remotes = [c for c in conns if not c.get("local") and not c.get("relay")]
     relays = [c for c in conns if c.get("relay")]
     for group in (locals_, remotes, relays):
         for c in group:
-            uri = c.get("uri")
-            if uri:
-                return uri
+            if c.get("uri"):
+                return c["uri"]
     return None
 
 
-@api.get("/servers")
-async def list_servers(user: dict = Depends(get_current_user)):
-    resources = await _resources(user)
-    servers = []
+async def _server_ctx() -> tuple[str, str]:
+    """Return (server_uri, plex_token) for the admin-linked Plex account."""
+    s, resources = await _sys_resources()
+    sel = s.get("selected_server")
+    chosen = None
     for r in resources:
         if "server" not in (r.get("provides") or ""):
             continue
-        servers.append({
+        if sel and r.get("clientIdentifier") == sel.get("client_identifier"):
+            chosen = r
+            break
+    if not chosen:
+        # pick first owned, else first
+        owned = [r for r in resources if "server" in (r.get("provides") or "") and r.get("owned")]
+        any_ = [r for r in resources if "server" in (r.get("provides") or "")]
+        chosen = (owned or any_ or [None])[0]
+    if not chosen:
+        raise HTTPException(404, "No Plex servers on linked account")
+    uri = _pick_best_connection(chosen)
+    if not uri:
+        raise HTTPException(503, "Plex server has no reachable connection")
+    token = chosen.get("accessToken") or decrypt_token(s["plex_token_enc"])
+    return uri, token
+
+
+@api.get("/admin/plex/servers")
+async def admin_list_plex_servers(admin: dict = Depends(get_current_admin)):
+    s, resources = await _sys_resources()
+    out = []
+    for r in resources:
+        if "server" not in (r.get("provides") or ""):
+            continue
+        out.append({
             "name": r.get("name"),
             "client_identifier": r.get("clientIdentifier"),
+            "owned": r.get("owned"),
             "product": r.get("product"),
             "version": r.get("productVersion"),
-            "platform": r.get("platform"),
-            "owned": r.get("owned"),
-            "home": r.get("home"),
             "uri": _pick_best_connection(r),
-            "access_token": r.get("accessToken"),
-            "public_address": r.get("publicAddress"),
         })
-    return {"servers": servers}
+    return {"servers": out, "selected": (s.get("selected_server") or {}).get("client_identifier")}
 
 
-# Server selection (per-user)
 class SelectServerBody(BaseModel):
     client_identifier: str
 
 
-@api.post("/servers/select")
-async def select_server(body: SelectServerBody, user: dict = Depends(get_current_user)):
-    servers = (await list_servers(user))["servers"]
-    chosen = next((s for s in servers if s["client_identifier"] == body.client_identifier), None)
+@api.post("/admin/plex/servers/select")
+async def admin_select_server(body: SelectServerBody, admin: dict = Depends(get_current_admin)):
+    servers = (await admin_list_plex_servers(admin))["servers"]
+    chosen = next((x for x in servers if x["client_identifier"] == body.client_identifier), None)
     if not chosen:
         raise HTTPException(404, "Server not found")
-    await db.users.update_one(
-        {"id": user["id"]},
-        {"$set": {
-            "selected_server": {
-                "client_identifier": chosen["client_identifier"],
-                "uri": chosen["uri"],
-                "name": chosen["name"],
-                "access_token_enc": encrypt_token(chosen["access_token"]) if chosen.get("access_token") else None,
-            }
-        }},
-    )
-    return {"ok": True, "server": chosen}
-
-
-async def _server_ctx(user: dict) -> tuple[str, str]:
-    sel = user.get("selected_server")
-    if not sel:
-        # Auto-pick first owned server
-        servers = (await list_servers(user))["servers"]
-        if not servers:
-            raise HTTPException(404, "No Plex servers found on this account")
-        chosen = next((s for s in servers if s.get("owned")), servers[0])
-        await db.users.update_one(
-            {"id": user["id"]},
-            {"$set": {"selected_server": {
-                "client_identifier": chosen["client_identifier"],
-                "uri": chosen["uri"],
-                "name": chosen["name"],
-                "access_token_enc": encrypt_token(chosen["access_token"]) if chosen.get("access_token") else None,
-            }}},
-        )
-        sel = {
+    await db.system.update_one(
+        {"id": "plex"},
+        {"$set": {"selected_server": {
+            "client_identifier": chosen["client_identifier"],
+            "name": chosen["name"],
             "uri": chosen["uri"],
-            "access_token_enc": encrypt_token(chosen["access_token"]) if chosen.get("access_token") else None,
-        }
-    token = decrypt_token(sel["access_token_enc"]) if sel.get("access_token_enc") else decrypt_token(user["plex_token_enc"])
-    return sel["uri"], token
-
-
-# ---- Libraries ----
-@api.get("/libraries")
-async def list_libraries(user: dict = Depends(get_current_user)):
-    uri, token = await _server_ctx(user)
-    data = await plex_get(f"{uri}/library/sections", token=token)
-    dirs = data.get("MediaContainer", {}).get("Directory", []) or []
-    return {"libraries": [
-        {
-            "key": d.get("key"),
-            "title": d.get("title"),
-            "type": d.get("type"),  # movie, show, photo, music
-            "agent": d.get("agent"),
-            "scanner": d.get("scanner"),
-            "uuid": d.get("uuid"),
-        }
-        for d in dirs
-    ]}
-
-
-@api.get("/libraries/{key}/items")
-async def library_items(
-    key: str,
-    user: dict = Depends(get_current_user),
-    offset: int = 0,
-    limit: int = 50,
-    sort: str = "addedAt:desc",
-):
-    uri, token = await _server_ctx(user)
-    data = await plex_get(
-        f"{uri}/library/sections/{key}/all",
-        token=token,
-        params={
-            "X-Plex-Container-Start": offset,
-            "X-Plex-Container-Size": limit,
-            "sort": sort,
-        },
+        }}},
     )
-    mc = data.get("MediaContainer", {})
-    items = mc.get("Metadata", []) or []
-    return {"total": mc.get("totalSize", len(items)), "items": [_normalize_item(uri, token, i) for i in items]}
+    return {"ok": True}
+
+
+# ============================================================
+# Admin: user management with password
+# ============================================================
+class CreateUserBody(BaseModel):
+    username: str
+    password: str
+    display_name: Optional[str] = None
+    status: Optional[str] = "active"
+
+
+@api.post("/admin/users")
+async def admin_create_user(body: CreateUserBody, admin: dict = Depends(get_current_admin)):
+    if not body.username or not body.password:
+        raise HTTPException(400, "username and password required")
+    existing = await db.users.find_one({"username": body.username})
+    if existing:
+        raise HTTPException(409, "Username already exists")
+    user_id = str(uuid.uuid4())
+    await db.users.insert_one({
+        "id": user_id,
+        "username": body.username,
+        "password_hash": hash_password(body.password),
+        "display_name": body.display_name or body.username,
+        "status": body.status if body.status in {"active", "disabled"} else "active",
+        "watchlist": [],
+        "favorites": [],
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "last_login": None,
+    })
+    return {"id": user_id, "username": body.username, "status": body.status}
+
+
+class UpdateUserBody(BaseModel):
+    password: Optional[str] = None
+    display_name: Optional[str] = None
+    status: Optional[str] = None  # active | disabled
+
+
+@api.patch("/admin/users/{user_id}")
+async def admin_update_user(user_id: str, body: UpdateUserBody, admin: dict = Depends(get_current_admin)):
+    update: dict = {}
+    if body.password:
+        update["password_hash"] = hash_password(body.password)
+    if body.display_name is not None:
+        update["display_name"] = body.display_name
+    if body.status is not None:
+        if body.status not in {"active", "disabled"}:
+            raise HTTPException(400, "Invalid status")
+        update["status"] = body.status
+    if not update:
+        return {"ok": True}
+    update["updated_at"] = now_iso()
+    r = await db.users.update_one({"id": user_id}, {"$set": update})
+    if r.matched_count == 0:
+        raise HTTPException(404, "User not found")
+    return {"ok": True}
+
+
+@api.delete("/admin/users/{user_id}")
+async def admin_delete_user(user_id: str, admin: dict = Depends(get_current_admin)):
+    r = await db.users.delete_one({"id": user_id})
+    if r.deleted_count == 0:
+        raise HTTPException(404, "User not found")
+    return {"ok": True}
+
+
+@api.get("/admin/users")
+async def admin_list_users(admin: dict = Depends(get_current_admin), q: Optional[str] = None):
+    query: dict = {}
+    if q:
+        query["$or"] = [
+            {"username": {"$regex": q, "$options": "i"}},
+            {"display_name": {"$regex": q, "$options": "i"}},
+        ]
+    cursor = db.users.find(query).sort("created_at", -1).limit(500)
+    out = []
+    async for u in cursor:
+        out.append({
+            "id": u.get("id"),
+            "username": u.get("username"),
+            "display_name": u.get("display_name") or u.get("username"),
+            "status": u.get("status", "active"),
+            "created_at": u.get("created_at"),
+            "last_login": u.get("last_login"),
+            "watchlist_count": len(u.get("watchlist") or []),
+            "favorites_count": len(u.get("favorites") or []),
+        })
+    return {"users": out}
+
+
+# ============================================================
+# Admin: stats, settings, activity
+# ============================================================
+@api.get("/admin/me")
+async def admin_me(admin: dict = Depends(get_current_admin)):
+    return {"username": admin.get("sub"), "role": admin.get("role")}
+
+
+@api.get("/admin/stats")
+async def admin_stats(admin: dict = Depends(get_current_admin)):
+    users = await db.users.count_documents({})
+    active = await db.users.count_documents({"status": "active"})
+    recent = await db.users.count_documents({
+        "last_login": {"$gte": (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()}
+    })
+    s = await db.settings.find_one({"id": "global"}) or {}
+    plex = await db.system.find_one({"id": "plex"}) or {}
+    return {
+        "users_total": users,
+        "users_active": active,
+        "users_recent_logins_7d": recent,
+        "service_name": s.get("service_name", "Quantum TV"),
+        "plex_linked": bool(plex.get("plex_token_enc")),
+        "plex_username": plex.get("plex_username"),
+    }
+
+
+@api.get("/admin/activity")
+async def admin_activity(admin: dict = Depends(get_current_admin), limit: int = 50):
+    cursor = db.users.find({"last_login": {"$ne": None}}).sort("last_login", -1).limit(limit)
+    out = []
+    async for u in cursor:
+        out.append({
+            "id": u.get("id"),
+            "username": u.get("username"),
+            "display_name": u.get("display_name") or u.get("username"),
+            "action": "login",
+            "at": u.get("last_login"),
+        })
+    return {"activity": out}
+
+
+class SettingsBody(BaseModel):
+    service_name: Optional[str] = None
+    motd: Optional[str] = None
+
+
+@api.get("/admin/settings")
+async def admin_get_settings(admin: dict = Depends(get_current_admin)):
+    s = await db.settings.find_one({"id": "global"}) or {}
+    return {"service_name": s.get("service_name", "Quantum TV"), "motd": s.get("motd", "")}
+
+
+@api.put("/admin/settings")
+async def admin_update_settings(body: SettingsBody, admin: dict = Depends(get_current_admin)):
+    update = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not update:
+        return {"ok": True}
+    update["updated_at"] = now_iso()
+    await db.settings.update_one({"id": "global"}, {"$set": update, "$setOnInsert": {"id": "global"}}, upsert=True)
+    return {"ok": True}
+
+
+@api.get("/admin/servers")
+async def admin_servers_aggregate(admin: dict = Depends(get_current_admin)):
+    """Same shape as before — but driven by the admin-linked Plex account."""
+    plex = await db.system.find_one({"id": "plex"})
+    if not plex:
+        return {"servers": []}
+    try:
+        s, resources = await _sys_resources()
+    except HTTPException:
+        return {"servers": []}
+    out = []
+    for r in resources:
+        if "server" not in (r.get("provides") or ""):
+            continue
+        out.append({
+            "name": r.get("name"),
+            "client_identifier": r.get("clientIdentifier"),
+            "uri": _pick_best_connection(r),
+            "owned": r.get("owned"),
+            "users": [],
+        })
+    return {"servers": out}
+
+
+# ============================================================
+# User endpoints (mobile app)
+# ============================================================
+@api.get("/me")
+async def me(user: dict = Depends(get_current_user)):
+    return {
+        "id": user["id"],
+        "username": user["username"],
+        "display_name": user.get("display_name") or user["username"],
+        "avatar": user.get("avatar"),
+        "watchlist_count": len(user.get("watchlist") or []),
+        "favorites_count": len(user.get("favorites") or []),
+    }
+
+
+def _proxy_image(uri: str, token: str, path: str) -> str:
+    payload = base64.urlsafe_b64encode(f"{uri}|{path}|{token}".encode()).decode()
+    return f"/api/image?p={payload}"
+
+
+@api.get("/image")
+async def image_proxy(p: str, w: int = 400, h: int = 600):
+    try:
+        decoded = base64.urlsafe_b64decode(p.encode()).decode()
+        srv, path, tok = decoded.split("|", 2)
+    except Exception:
+        raise HTTPException(400, "Bad image token")
+    target = f"{srv}/photo/:/transcode"
+    params = {"width": w, "height": h, "url": path, "X-Plex-Token": tok, "minSize": 1, "upscale": 1}
+    async with httpx.AsyncClient(timeout=20.0, verify=False) as c:
+        r = await c.get(target, params=params)
+        return Response(content=r.content, media_type=r.headers.get("content-type", "image/jpeg"))
 
 
 def _normalize_item(uri: str, token: str, m: dict) -> dict:
-    rk = m.get("ratingKey")
     return {
-        "rating_key": rk,
+        "rating_key": m.get("ratingKey"),
         "title": m.get("title"),
         "type": m.get("type"),
         "summary": m.get("summary"),
@@ -452,38 +631,41 @@ def _normalize_item(uri: str, token: str, m: dict) -> dict:
     }
 
 
-def _proxy_image(uri: str, token: str, path: str) -> str:
-    """Return our proxied image URL so the client never needs Plex token."""
-    # We'll create /api/image proxy that takes encrypted server+path
-    payload = base64.urlsafe_b64encode(f"{uri}|{path}|{token}".encode()).decode()
-    return f"/api/image?p={payload}"
+@api.get("/libraries")
+async def list_libraries(user: dict = Depends(get_current_user)):
+    uri, token = await _server_ctx()
+    data = await plex_get(f"{uri}/library/sections", token=token)
+    dirs = data.get("MediaContainer", {}).get("Directory", []) or []
+    return {"libraries": [
+        {"key": d.get("key"), "title": d.get("title"), "type": d.get("type"),
+         "agent": d.get("agent"), "uuid": d.get("uuid")}
+        for d in dirs
+    ]}
 
 
-@api.get("/image")
-async def image_proxy(p: str, w: int = 400, h: int = 600):
-    try:
-        decoded = base64.urlsafe_b64decode(p.encode()).decode()
-        srv, path, tok = decoded.split("|", 2)
-    except Exception:
-        raise HTTPException(400, "Bad image token")
-    target = f"{srv}/photo/:/transcode"
-    params = {"width": w, "height": h, "url": path, "X-Plex-Token": tok, "minSize": 1, "upscale": 1}
-    async with httpx.AsyncClient(timeout=20.0, verify=False) as c:
-        r = await c.get(target, params=params)
-        return Response(content=r.content, media_type=r.headers.get("content-type", "image/jpeg"))
+@api.get("/libraries/{key}/items")
+async def library_items(key: str, user: dict = Depends(get_current_user),
+                        offset: int = 0, limit: int = 50, sort: str = "addedAt:desc"):
+    uri, token = await _server_ctx()
+    data = await plex_get(
+        f"{uri}/library/sections/{key}/all",
+        token=token,
+        params={"X-Plex-Container-Start": offset, "X-Plex-Container-Size": limit, "sort": sort},
+    )
+    mc = data.get("MediaContainer", {})
+    items = mc.get("Metadata", []) or []
+    return {"total": mc.get("totalSize", len(items)), "items": [_normalize_item(uri, token, i) for i in items]}
 
 
-# ---- Metadata details ----
 @api.get("/metadata/{rating_key}")
 async def metadata_detail(rating_key: str, user: dict = Depends(get_current_user)):
-    uri, token = await _server_ctx(user)
+    uri, token = await _server_ctx()
     data = await plex_get(f"{uri}/library/metadata/{rating_key}", token=token)
     items = data.get("MediaContainer", {}).get("Metadata", []) or []
     if not items:
         raise HTTPException(404, "Not found")
     item = items[0]
     norm = _normalize_item(uri, token, item)
-    # Include media parts for direct play hints
     medias = []
     for media in item.get("Media", []) or []:
         for part in media.get("Part", []) or []:
@@ -499,62 +681,47 @@ async def metadata_detail(rating_key: str, user: dict = Depends(get_current_user
                 "bitrate": media.get("bitrate"),
             })
     norm["media"] = medias
+    norm["in_watchlist"] = str(rating_key) in [str(x) for x in (user.get("watchlist") or [])]
+    norm["in_favorites"] = str(rating_key) in [str(x) for x in (user.get("favorites") or [])]
     return norm
 
 
-# ---- Children (seasons / episodes) ----
 @api.get("/metadata/{rating_key}/children")
 async def metadata_children(rating_key: str, user: dict = Depends(get_current_user)):
-    uri, token = await _server_ctx(user)
+    uri, token = await _server_ctx()
     data = await plex_get(f"{uri}/library/metadata/{rating_key}/children", token=token)
     items = data.get("MediaContainer", {}).get("Metadata", []) or []
     return {"items": [_normalize_item(uri, token, i) for i in items]}
 
 
-# ---- Recently added ----
 @api.get("/recently-added")
 async def recently_added(user: dict = Depends(get_current_user), limit: int = 30):
-    uri, token = await _server_ctx(user)
-    data = await plex_get(
-        f"{uri}/library/recentlyAdded",
-        token=token,
-        params={"X-Plex-Container-Size": limit, "X-Plex-Container-Start": 0},
-    )
+    uri, token = await _server_ctx()
+    data = await plex_get(f"{uri}/library/recentlyAdded", token=token,
+                          params={"X-Plex-Container-Size": limit, "X-Plex-Container-Start": 0})
     items = data.get("MediaContainer", {}).get("Metadata", []) or []
     return {"items": [_normalize_item(uri, token, i) for i in items]}
 
 
-# ---- Continue watching (onDeck) ----
 @api.get("/continue-watching")
 async def on_deck(user: dict = Depends(get_current_user), limit: int = 30):
-    uri, token = await _server_ctx(user)
-    data = await plex_get(
-        f"{uri}/library/onDeck",
-        token=token,
-        params={"X-Plex-Container-Size": limit},
-    )
+    uri, token = await _server_ctx()
+    data = await plex_get(f"{uri}/library/onDeck", token=token, params={"X-Plex-Container-Size": limit})
     items = data.get("MediaContainer", {}).get("Metadata", []) or []
     return {"items": [_normalize_item(uri, token, i) for i in items]}
 
 
-# ---- Search ----
 @api.get("/search")
 async def search(q: str, user: dict = Depends(get_current_user), limit: int = 30):
-    uri, token = await _server_ctx(user)
-    data = await plex_get(
-        f"{uri}/search",
-        token=token,
-        params={"query": q, "limit": limit},
-    )
+    uri, token = await _server_ctx()
+    data = await plex_get(f"{uri}/search", token=token, params={"query": q, "limit": limit})
     items = data.get("MediaContainer", {}).get("Metadata", []) or []
     return {"items": [_normalize_item(uri, token, i) for i in items]}
 
 
-# ---- Live TV ----
 @api.get("/livetv/channels")
 async def live_channels(user: dict = Depends(get_current_user)):
-    uri, token = await _server_ctx(user)
-    # Try /livetv/dvrs/<dvr>/channels (Plex Pass DVR) and /tv.plex.providers.epg.cloud sections
+    uri, token = await _server_ctx()
     out: list[dict] = []
     try:
         dvrs = await plex_get(f"{uri}/livetv/dvrs", token=token)
@@ -568,8 +735,7 @@ async def live_channels(user: dict = Depends(get_current_user)):
                     "source": "dvr",
                 })
     except Exception as e:
-        log.info("No DVR or fetch failed: %s", e)
-    # Cloud EPG (Plex's free live TV) — list as a section if present
+        log.info("No DVR: %s", e)
     try:
         secs = await plex_get(f"{uri}/library/sections", token=token)
         for d in secs.get("MediaContainer", {}).get("Directory", []) or []:
@@ -589,207 +755,104 @@ async def live_channels(user: dict = Depends(get_current_user)):
     return {"channels": out}
 
 
-# ---- Streaming URLs ----
 @api.get("/stream/{rating_key}")
-async def stream_url(
-    rating_key: str,
-    user: dict = Depends(get_current_user),
-    direct: bool = False,
-    max_bitrate: int = 8000,
-):
-    """Return a playable URL for the given item. If direct=True returns the
-    raw Plex part URL; otherwise returns an HLS transcode URL."""
-    uri, token = await _server_ctx(user)
+async def stream_url(rating_key: str, user: dict = Depends(get_current_user),
+                    direct: bool = True, max_bitrate: int = 8000):
+    uri, token = await _server_ctx()
     if direct:
         meta = await plex_get(f"{uri}/library/metadata/{rating_key}", token=token)
         items = meta.get("MediaContainer", {}).get("Metadata", []) or []
         if not items:
             raise HTTPException(404, "Not found")
-        part = items[0]["Media"][0]["Part"][0]
-        url = f"{uri}{part['key']}?X-Plex-Token={token}"
-        return {"url": url, "type": "direct"}
-
+        try:
+            part = items[0]["Media"][0]["Part"][0]
+            url = f"{uri}{part['key']}?X-Plex-Token={token}"
+            return {"url": url, "type": "direct"}
+        except Exception:
+            pass
+    # fallback HLS
     session = str(uuid.uuid4())
     params = {
         "path": f"/library/metadata/{rating_key}",
-        "mediaIndex": 0,
-        "partIndex": 0,
-        "protocol": "hls",
-        "fastSeek": 1,
-        "directPlay": 0,
-        "directStream": 1,
-        "subtitleSize": 100,
-        "audioBoost": 100,
-        "session": session,
-        "maxVideoBitrate": max_bitrate,
-        "videoQuality": 100,
-        "videoResolution": "1920x1080",
+        "mediaIndex": 0, "partIndex": 0, "protocol": "hls",
+        "fastSeek": 1, "directPlay": 0, "directStream": 1,
+        "session": session, "maxVideoBitrate": max_bitrate,
+        "videoQuality": 100, "videoResolution": "1920x1080",
         "X-Plex-Token": token,
-        "X-Plex-Client-Identifier": user.get("plex_client_identifier", PLEX_CLIENT_IDENTIFIER),
-        "X-Plex-Product": PLEX_PRODUCT,
-        "X-Plex-Version": PLEX_VERSION,
-        "X-Plex-Platform": PLEX_PLATFORM,
+        "X-Plex-Client-Identifier": PLEX_CLIENT_IDENTIFIER,
+        "X-Plex-Product": PLEX_PRODUCT, "X-Plex-Version": PLEX_VERSION, "X-Plex-Platform": PLEX_PLATFORM,
     }
-    hls = f"{uri}/video/:/transcode/universal/start.m3u8?{urlencode(params)}"
-    return {"url": hls, "type": "hls", "session": session}
+    return {"url": f"{uri}/video/:/transcode/universal/start.m3u8?{urlencode(params)}", "type": "hls", "session": session}
 
 
 # ============================================================
-# Admin Panel
+# Per-user watchlist & favorites
 # ============================================================
-class AdminLoginBody(BaseModel):
-    username: str
-    password: str
+class RatingKeyBody(BaseModel):
+    rating_key: str
 
 
-@api.post("/admin/login")
-async def admin_login(body: AdminLoginBody):
-    if body.username != ADMIN_USERNAME or body.password != ADMIN_PASSWORD:
-        raise HTTPException(401, "Invalid admin credentials")
-    token = create_jwt({"sub": "admin", "role": "admin"}, expires_hours=24 * 7)
-    return {"token": token, "username": ADMIN_USERNAME}
+async def _enrich_keys(keys: list[str]) -> list[dict]:
+    if not keys:
+        return []
+    uri, token = await _server_ctx()
+    items: list[dict] = []
+    for rk in keys:
+        try:
+            data = await plex_get(f"{uri}/library/metadata/{rk}", token=token)
+            md = (data.get("MediaContainer", {}).get("Metadata") or [None])[0]
+            if md:
+                items.append(_normalize_item(uri, token, md))
+        except Exception:
+            continue
+    return items
 
 
-@api.get("/admin/me")
-async def admin_me(admin: dict = Depends(get_current_admin)):
-    return {"username": admin.get("sub"), "role": admin.get("role")}
+@api.get("/me/watchlist")
+async def my_watchlist(user: dict = Depends(get_current_user)):
+    keys = [str(x) for x in (user.get("watchlist") or [])]
+    return {"items": await _enrich_keys(keys)}
 
 
-@api.get("/admin/stats")
-async def admin_stats(admin: dict = Depends(get_current_admin)):
-    users = await db.users.count_documents({})
-    active = await db.users.count_documents({"status": "active"})
-    recent = await db.users.count_documents({
-        "last_login": {"$gte": (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()}
-    })
-    pins = await db.plex_pins.count_documents({})
-    settings = await db.settings.find_one({"id": "global"}) or {}
-    return {
-        "users_total": users,
-        "users_active": active,
-        "users_recent_logins_7d": recent,
-        "open_pins": pins,
-        "service_name": settings.get("service_name", "Quantum TV"),
-    }
-
-
-@api.get("/admin/users")
-async def admin_list_users(admin: dict = Depends(get_current_admin), q: Optional[str] = None):
-    query: dict = {}
-    if q:
-        query["$or"] = [
-            {"username": {"$regex": q, "$options": "i"}},
-            {"email": {"$regex": q, "$options": "i"}},
-        ]
-    cursor = db.users.find(query).sort("created_at", -1).limit(200)
-    users = []
-    async for u in cursor:
-        users.append({
-            "id": u.get("id"),
-            "username": u.get("username"),
-            "email": u.get("email"),
-            "avatar": u.get("avatar"),
-            "status": u.get("status", "active"),
-            "selected_server": (u.get("selected_server") or {}).get("name"),
-            "created_at": u.get("created_at"),
-            "last_login": u.get("last_login"),
-            "plex_user_id": u.get("plex_user_id"),
-        })
-    return {"users": users}
-
-
-class UserStatusBody(BaseModel):
-    status: str  # active | banned | revoked
-
-
-@api.patch("/admin/users/{user_id}")
-async def admin_set_user_status(user_id: str, body: UserStatusBody, admin: dict = Depends(get_current_admin)):
-    if body.status not in {"active", "banned", "revoked"}:
-        raise HTTPException(400, "Invalid status")
-    r = await db.users.update_one({"id": user_id}, {"$set": {"status": body.status, "updated_at": now_iso()}})
-    if r.matched_count == 0:
-        raise HTTPException(404, "User not found")
+@api.post("/me/watchlist")
+async def add_watchlist(body: RatingKeyBody, user: dict = Depends(get_current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$addToSet": {"watchlist": str(body.rating_key)}})
     return {"ok": True}
 
 
-@api.delete("/admin/users/{user_id}")
-async def admin_delete_user(user_id: str, admin: dict = Depends(get_current_admin)):
-    r = await db.users.delete_one({"id": user_id})
-    if r.deleted_count == 0:
-        raise HTTPException(404, "User not found")
+@api.delete("/me/watchlist/{rating_key}")
+async def del_watchlist(rating_key: str, user: dict = Depends(get_current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$pull": {"watchlist": str(rating_key)}})
     return {"ok": True}
 
 
-@api.get("/admin/servers")
-async def admin_list_servers(admin: dict = Depends(get_current_admin)):
-    """Aggregate all Plex servers across users."""
-    seen: dict[str, dict] = {}
-    async for u in db.users.find({}):
-        sel = u.get("selected_server") or {}
-        if sel.get("client_identifier"):
-            cid = sel["client_identifier"]
-            seen.setdefault(cid, {
-                "client_identifier": cid,
-                "name": sel.get("name"),
-                "uri": sel.get("uri"),
-                "users": [],
-            })
-            seen[cid]["users"].append(u.get("username"))
-    return {"servers": list(seen.values())}
+@api.get("/me/favorites")
+async def my_favorites(user: dict = Depends(get_current_user)):
+    keys = [str(x) for x in (user.get("favorites") or [])]
+    return {"items": await _enrich_keys(keys)}
 
 
-class SettingsBody(BaseModel):
-    service_name: Optional[str] = None
-    allow_new_signups: Optional[bool] = None
-    require_invite: Optional[bool] = None
-    motd: Optional[str] = None
-
-
-@api.get("/admin/settings")
-async def admin_get_settings(admin: dict = Depends(get_current_admin)):
-    s = await db.settings.find_one({"id": "global"}) or {}
-    return {
-        "service_name": s.get("service_name", "Quantum TV"),
-        "allow_new_signups": s.get("allow_new_signups", True),
-        "require_invite": s.get("require_invite", False),
-        "motd": s.get("motd", ""),
-    }
-
-
-@api.put("/admin/settings")
-async def admin_update_settings(body: SettingsBody, admin: dict = Depends(get_current_admin)):
-    update = {k: v for k, v in body.model_dump().items() if v is not None}
-    if not update:
-        return {"ok": True}
-    update["updated_at"] = now_iso()
-    await db.settings.update_one({"id": "global"}, {"$set": update, "$setOnInsert": {"id": "global"}}, upsert=True)
+@api.post("/me/favorites")
+async def add_favorite(body: RatingKeyBody, user: dict = Depends(get_current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$addToSet": {"favorites": str(body.rating_key)}})
     return {"ok": True}
 
 
-@api.get("/admin/activity")
-async def admin_activity(admin: dict = Depends(get_current_admin), limit: int = 50):
-    """Return recent user activity (logins). For MVP we synthesize from users."""
-    cursor = db.users.find({}).sort("last_login", -1).limit(limit)
-    out = []
-    async for u in cursor:
-        out.append({
-            "id": u.get("id"),
-            "username": u.get("username"),
-            "avatar": u.get("avatar"),
-            "action": "login",
-            "at": u.get("last_login"),
-            "server": (u.get("selected_server") or {}).get("name"),
-        })
-    return {"activity": out}
+@api.delete("/me/favorites/{rating_key}")
+async def del_favorite(rating_key: str, user: dict = Depends(get_current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$pull": {"favorites": str(rating_key)}})
+    return {"ok": True}
 
 
-# Public service config (for mobile app branding)
+# Public service config
 @api.get("/config")
 async def public_config():
     s = await db.settings.find_one({"id": "global"}) or {}
+    plex = await db.system.find_one({"id": "plex"})
     return {
         "service_name": s.get("service_name", "Quantum TV"),
         "motd": s.get("motd", ""),
+        "plex_linked": bool(plex and plex.get("plex_token_enc")),
     }
 
 
@@ -799,6 +862,6 @@ app.include_router(api)
 @app.on_event("startup")
 async def startup():
     await db.users.create_index("id", unique=True)
-    await db.users.create_index("plex_user_id")
+    await db.users.create_index("username", unique=True, sparse=True)
     await db.plex_pins.create_index("pin_id", unique=True)
     log.info("Quantum TV API started")

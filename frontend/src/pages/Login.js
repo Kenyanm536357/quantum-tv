@@ -16,11 +16,17 @@ export default function Login() {
     e.preventDefault();
     setErr(""); setLoading(true);
     try {
-      const { data } = await api.post("/admin/login", { username: u, password: p });
-      localStorage.setItem("qtv_admin_token", data.token);
-      nav("/");
+      const { data } = await api.post("/auth/login", { username: u, password: p });
+      if (data.role === "admin") {
+        localStorage.setItem("qtv_admin_token", data.token);
+        nav("/");
+      } else {
+        // Regular user signed in on the web — show a friendly message.
+        // The native app is the proper place for streaming; the web is the admin's tool.
+        setErr("This is the Quantum TV web portal. Please use the Quantum TV mobile app to start watching.");
+      }
     } catch (e) {
-      setErr(e?.response?.data?.detail || "Sign in failed");
+      setErr(e?.response?.data?.detail || "Account is not registered or not activated");
     } finally { setLoading(false); }
   };
 

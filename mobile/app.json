@@ -23,11 +23,18 @@
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#060714"
       },
-      "permissions": ["INTERNET", "ACCESS_NETWORK_STATE", "WAKE_LOCK"],
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "WAKE_LOCK"
+      ],
       "intentFilters": [
         {
           "action": "MAIN",
-          "category": ["LAUNCHER", "LEANBACK_LAUNCHER"]
+          "category": [
+            "LAUNCHER",
+            "LEANBACK_LAUNCHER"
+          ]
         }
       ]
     },
@@ -36,7 +43,10 @@
       "expo-video",
       [
         "@react-native-tvos/config-tv",
-        { "isTV": true, "showVerboseWarnings": false }
+        {
+          "isTV": true,
+          "showVerboseWarnings": false
+        }
       ],
       [
         "expo-build-properties",
@@ -49,9 +59,18 @@
         }
       ]
     ],
-    "experiments": { "typedRoutes": true },
+    "experiments": {
+      "typedRoutes": true
+    },
     "extra": {
-      "backendUrl": "https://stream-plex-mobile.emergent.host"
-    }
+      "backendUrl": "https://stream-plex-mobile.emergent.host",
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "dcff3612-a952-43e9-a210-ddefaffcd9e8"
+      }
+    },
+    "owner": "kenyanm"
   }
 }

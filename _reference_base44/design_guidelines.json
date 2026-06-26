@@ -1,0 +1,226 @@
+{
+  "project_name": "Quantum TV",
+  "theme": "DARK",
+  "archetype": "7 (Electric & Neon)",
+  "global_design_system": {
+    "colors": {
+      "background": {
+        "base": "#060714",
+        "surface": "#0D0E23",
+        "surface_glass": "rgba(13, 14, 35, 0.6)",
+        "surface_highlight": "#1A1C3A"
+      },
+      "brand": {
+        "primary": "#8B5CF6",
+        "secondary": "#06B6D4",
+        "gradient": "linear-gradient(135deg, #8B5CF6 0%, #06B6D4 100%)",
+        "gradient_rn": ["#8B5CF6", "#06B6D4"]
+      },
+      "text": {
+        "primary": "#FFFFFF",
+        "secondary": "#A1A1AA",
+        "muted": "#71717A",
+        "inverse": "#060714"
+      },
+      "status": {
+        "live": "#EF4444",
+        "live_gradient": "linear-gradient(135deg, #EF4444 0%, #B91C1C 100%)",
+        "success": "#10B981",
+        "warning": "#F59E0B"
+      },
+      "borders": {
+        "subtle": "rgba(255, 255, 255, 0.1)",
+        "focus": "rgba(6, 182, 212, 0.5)"
+      }
+    },
+    "typography": {
+      "google_fonts_url": "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=Unbounded:wght@400;600;800&display=swap",
+      "families": {
+        "heading": "'Unbounded', sans-serif",
+        "body": "'Outfit', sans-serif",
+        "mono": "'JetBrains Mono', monospace"
+      },
+      "scale": {
+        "h1": "2.5rem",
+        "h2": "2rem",
+        "h3": "1.5rem",
+        "h4": "1.25rem",
+        "body": "1rem",
+        "small": "0.875rem",
+        "tiny": "0.75rem"
+      }
+    },
+    "spacing": {
+      "xs": "4px",
+      "sm": "8px",
+      "md": "16px",
+      "lg": "24px",
+      "xl": "32px",
+      "2xl": "48px",
+      "3xl": "64px"
+    },
+    "radii": {
+      "sm": "8px",
+      "md": "12px",
+      "lg": "16px",
+      "xl": "24px",
+      "pill": "9999px"
+    }
+  },
+  "mobile": {
+    "framework": "React Native / Expo",
+    "core_principles": [
+      "Pure dark theme with high contrast text.",
+      "Use React Native LinearGradient for all buttons and active states.",
+      "Extensive use of BlurView for glassmorphism panels, bottom sheets, and tab bars.",
+      "Fluid horizontal scrolling for media carousels."
+    ],
+    "components": {
+      "button_primary": {
+        "background": "LinearGradient (#8B5CF6 to #06B6D4)",
+        "borderRadius": "9999px",
+        "padding": "16px 24px",
+        "fontFamily": "Unbounded",
+        "fontWeight": "600",
+        "color": "#FFFFFF",
+        "shadow": "0px 4px 15px rgba(139, 92, 246, 0.4)"
+      },
+      "input_glass": {
+        "backgroundColor": "rgba(255,255,255,0.05)",
+        "borderColor": "rgba(255,255,255,0.1)",
+        "borderWidth": "1px",
+        "borderRadius": "12px",
+        "padding": "16px",
+        "color": "#FFFFFF",
+        "fontFamily": "Outfit"
+      },
+      "bottom_tab_bar": {
+        "backgroundColor": "rgba(6, 7, 20, 0.85)",
+        "blurEffect": "dark",
+        "borderTopColor": "rgba(255,255,255,0.05)",
+        "activeIconColor": "#06B6D4",
+        "inactiveIconColor": "#71717A"
+      },
+      "category_pill": {
+        "active": {
+          "backgroundColor": "#06B6D4",
+          "color": "#060714",
+          "borderRadius": "9999px",
+          "padding": "8px 16px",
+          "fontWeight": "600"
+        },
+        "inactive": {
+          "backgroundColor": "transparent",
+          "borderColor": "rgba(255,255,255,0.2)",
+          "borderWidth": "1px",
+          "color": "#FFFFFF",
+          "borderRadius": "9999px",
+          "padding": "8px 16px"
+        }
+      },
+      "channel_card": {
+        "backgroundColor": "rgba(255,255,255,0.03)",
+        "borderRadius": "16px",
+        "overflow": "hidden",
+        "borderColor": "rgba(255,255,255,0.05)",
+        "borderWidth": "1px"
+      },
+      "live_badge": {
+        "backgroundColor": "#EF4444",
+        "color": "#FFFFFF",
+        "fontSize": "10px",
+        "fontWeight": "800",
+        "padding": "4px 8px",
+        "borderRadius": "4px",
+        "letterSpacing": "1px"
+      },
+      "bottom_sheet": {
+        "backgroundColor": "#0D0E23",
+        "borderTopLeftRadius": "24px",
+        "borderTopRightRadius": "24px",
+        "shadowColor": "#000",
+        "shadowOffset": {"width": 0, "height": -4},
+        "shadowOpacity": 0.5,
+        "shadowRadius": 10
+      }
+    },
+    "screens": {
+      "Login": "Features centered logo with glowing hex/floral icon, gradient wordmark, glassy input cards, top right settings cog for server URL, and gradient Sign In pill.",
+      "Home_Browse": "Top category pills, country section headers with flags and channel counts, horizontal scroll carousels for channels/movies. Featured LIVE NOW hero card.",
+      "Live_TV": "Grid layout of channel cards with LIVE red badges, currently playing info.",
+      "Player": "Immersive full-screen player, floating transparent controls, back button, server info."
+    }
+  },
+  "admin_web": {
+    "framework": "React / Tailwind / Shadcn UI",
+    "core_principles": [
+      "Data-dense, control center aesthetic.",
+      "Dark mode ONLY. No light mode toggle.",
+      "Use neon cyan and purple to highlight key data points and active states.",
+      "Avoid traditional white-background cards. Use semi-transparent #0D0E23 with 1px border-white/5."
+    ],
+    "components": {
+      "sidebar": {
+        "classes": "w-64 bg-[#060714] border-r border-white/5 flex flex-col",
+        "active_link": "bg-gradient-to-r from-purple-500/20 to-transparent border-l-2 border-cyan-400 text-white",
+        "inactive_link": "text-zinc-400 hover:text-white hover:bg-white/5"
+      },
+      "stat_card": {
+        "classes": "bg-[#0D0E23]/60 backdrop-blur-md border border-white/5 rounded-xl p-6 relative overflow-hidden",
+        "hover": "hover:-translate-y-1 hover:shadow-[0_8px_32px_rgba(6,182,212,0.1)] transition-all",
+        "neon_glow": "absolute -top-10 -right-10 w-24 h-24 bg-purple-500/20 blur-2xl rounded-full"
+      },
+      "table": {
+        "container": "w-full border-collapse",
+        "header": "bg-white/5 text-xs uppercase tracking-widest text-zinc-400 border-b border-white/10",
+        "row": "border-b border-white/5 hover:bg-white/5 transition-colors",
+        "cell": "text-sm text-zinc-200 py-4 px-4"
+      },
+      "button": {
+        "primary": "bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-400 hover:to-cyan-400 text-white rounded-full px-6 py-2 font-unbounded text-sm font-semibold shadow-[0_0_15px_rgba(139,92,246,0.3)]",
+        "secondary": "bg-white/5 border border-white/10 hover:bg-white/10 text-white rounded-full px-6 py-2 font-outfit text-sm"
+      }
+    },
+    "screens": {
+      "Dashboard": "Overview of Plex server stats (active streams, bandwidth, users online). Features glowing neon stat cards.",
+      "Users": "Data table managing access, revoke tokens, view watch history.",
+      "Servers": "List of connected Plex endpoints, sync status, latency metrics."
+    }
+  },
+  "media": {
+    "icons": {
+      "library": "lucide-react (Web), expo/vector-icons (Mobile)",
+      "style": "Phosphor-like, sharp, consistent stroke width."
+    },
+    "image_urls": [
+      {
+        "category": "hero_background",
+        "url": "https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzh8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMG5lb24lMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc4MjM3ODQ2MXww&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract purple and pink gradient waves, used for the login screen background overlay."
+      },
+      {
+        "category": "featured_movie",
+        "url": "https://images.unsplash.com/photo-1767048264833-5b65aacd1039?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2MzR8MHwxfHNlYXJjaHwzfHxzY2ktZmklMjBtb3ZpZSUyMHBvc3RlcnxlbnwwfHx8fDE3ODIyOTE2MTZ8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Sci-fi movie poster for library placeholders."
+      },
+      {
+        "category": "live_news",
+        "url": "https://images.unsplash.com/photo-1742805382149-3c2f0cd0f300?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNzl8MHwxfHNlYXJjaHwxfHx0diUyMGxpdmUlMjBuZXdzJTIwYWN0aW9ufGVufDB8fHx8MTc4MjM3ODQ0N3ww&ixlib=rb-4.1.0&q=85",
+        "description": "Breaking news studio, used for Live TV channel placeholders."
+      },
+      {
+        "category": "live_sports",
+        "url": "https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNzl8MHwxfHNlYXJjaHwxfHxmb290YmFsbCUyMG1hdGNoJTIwYWN0aW9ufGVufDB8fHx8MTc4MjM3ODQ2MXww&ixlib=rb-4.1.0&q=85",
+        "description": "Soccer match, used for Live Sports channel placeholders."
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "DO NOT use Inter or Roboto. Use Unbounded for headings and Outfit for body.",
+    "For the mobile app, implement React Native's LinearGradient for the primary button and 'Quantum TV' wordmark.",
+    "For the mobile app, use absolute positioning with BlurView for the bottom sheet and glassy input fields.",
+    "For the admin web panel, enforce the dark theme explicitly. Do not use white cards.",
+    "Ensure the 'LIVE NOW' badges on mobile are high contrast red with tight letter spacing.",
+    "Add 'data-testid' to all interactive elements for both React Native and Web."
+  ]
+}

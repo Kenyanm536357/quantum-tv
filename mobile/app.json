@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "Quantum TV",
+    "slug": "quantum-tv",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/logo.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "quantumtv",
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#060714"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.quantumtv.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logo.png",
+        "backgroundColor": "#060714"
+      },
+      "package": "com.quantumtv.app"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-video"
+    ],
+    "experiments": { "typedRoutes": true },
+    "extra": {
+      "backendUrl": "https://740c242f-4923-4028-ac71-f7cfb28f51cc.preview.emergentagent.com"
+    }
+  }
+}

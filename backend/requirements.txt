@@ -1,0 +1,12 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+motor==3.6.0
+pymongo==4.9.1
+pydantic==2.9.2
+python-dotenv==1.0.1
+httpx==0.27.2
+cryptography==43.0.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+xmltodict==0.13.0
+python-multipart==0.0.12

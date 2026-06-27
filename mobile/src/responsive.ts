@@ -23,11 +23,11 @@ const win = Dimensions.get("window");
 export const SCREEN_W = win.width;
 export const SCREEN_H = win.height;
 
-// Detect a TV-like environment: Android TV / Fire TV / tvOS / very wide aspect
+// Detect a TV-like environment: Android TV / Fire TV / tvOS / very wide aspect.
+// Platform.isTV is `true` on the react-native-tvos fork when running on a TV.
 export const IS_TV =
-  Platform.isTV ||
-  // Fire TV: landscape, no notch, big screen
-  (SCREEN_W >= 800 && SCREEN_W / SCREEN_H > 1.4);
+  (Platform as any).isTV === true ||
+  Platform.OS === "android" && SCREEN_W >= 960 && SCREEN_W / SCREEN_H > 1.4;
 
 // Horizontal scaling: stretches to the screen width
 export const s = (size: number): number => {

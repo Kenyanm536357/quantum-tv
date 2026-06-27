@@ -927,6 +927,7 @@ async def delete_apk(admin: dict = Depends(get_current_admin)):
 @app.get("/api/admin/apk/info")
 async def apk_info(admin: dict = Depends(get_current_admin)):
     meta = await _apk_meta_doc()
+    s = await db.settings.find_one({"id": "short_urls"}) or {}
     return {
         "available": APK_PATH.exists(),
         "size": meta.get("size"),
@@ -934,7 +935,36 @@ async def apk_info(admin: dict = Depends(get_current_admin)):
         "uploaded_at": meta.get("uploaded_at"),
         "sha256": (meta.get("sha256") or "")[:12],
         "filename": meta.get("filename"),
+        "short_preview": s.get("preview"),
+        "short_production": s.get("production"),
     }
+
+
+async def _shorten(url: str) -> Optional[str]:
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            r = await c.get("https://is.gd/create.php", params={"format": "simple", "url": url})
+            short = r.text.strip()
+            if short.startswith("http"):
+                return short
+    except Exception as e:
+        log.info("shorten failed: %s", e)
+    return None
+
+
+@app.post("/api/admin/apk/shorten")
+async def regenerate_short_urls(admin: dict = Depends(get_current_admin)):
+    """Generate/refresh short URLs (is.gd) for the APK download endpoint."""
+    preview_url = "https://stream-plex-mobile.preview.emergentagent.com/api/q"
+    prod_url = "https://stream-plex-mobile.emergent.host/api/q"
+    p_short = await _shorten(preview_url)
+    pr_short = await _shorten(prod_url)
+    await db.settings.update_one(
+        {"id": "short_urls"},
+        {"$set": {"id": "short_urls", "preview": p_short, "production": pr_short, "updated_at": now_iso()}},
+        upsert=True,
+    )
+    return {"preview": p_short, "production": pr_short}
 
 
 def _serve_apk():

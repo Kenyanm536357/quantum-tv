@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../api";
-import { Upload, Trash2, Copy, Check, Tv, Download, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Upload, Trash2, Copy, Check, Tv, Download, CheckCircle2, AlertTriangle, Link2 } from "lucide-react";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 const SHORT_URL = `${BACKEND}/api/q`;
@@ -28,11 +28,21 @@ export default function FireTV() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [err, setErr] = useState(null);
+  const [shortening, setShortening] = useState(false);
 
   const info = useQuery({
     queryKey: ["apk-info"],
     queryFn: async () => (await api.get("/admin/apk/info")).data,
   });
+
+  const shorten = async () => {
+    setShortening(true);
+    try {
+      await api.post("/admin/apk/shorten");
+      qc.invalidateQueries({ queryKey: ["apk-info"] });
+    } catch {}
+    setShortening(false);
+  };
 
   const upload = async (file) => {
     setErr(null); setUploading(true); setProgress(0);
@@ -144,16 +154,45 @@ export default function FireTV() {
           <h3 className="font-heading font-semibold text-lg mb-4 flex items-center gap-2">
             <Tv className="w-4 h-4 text-cyan-400" /> Downloader Code
           </h3>
-          <p className="text-sm text-zinc-400 mb-4">In the <b className="text-white">Downloader</b> app on Fire TV, type this URL exactly:</p>
+          <p className="text-sm text-zinc-400 mb-4">In the <b className="text-white">Downloader</b> app on Fire TV, type one of these short URLs:</p>
 
-          <div className="bg-[#0b0c1f] border border-cyan-500/30 rounded-xl p-5 text-center">
-            <div className="font-mono text-2xl gradient-text break-all" data-testid="downloader-code">{DOWNLOADER_CODE}</div>
-          </div>
-          <div className="flex gap-2 mt-3">
-            <button data-testid="copy-code" onClick={() => copy(DOWNLOADER_CODE)}
+          {(info.data?.short_production || info.data?.short_preview) ? (
+            <div className="space-y-3">
+              {info.data?.short_production && (
+                <div className="bg-[#0b0c1f] border border-cyan-500/40 rounded-xl p-5">
+                  <div className="text-[10px] uppercase tracking-[0.25em] text-cyan-300 mb-2 font-heading">Production (recommended)</div>
+                  <div className="font-mono text-3xl gradient-text break-all text-center" data-testid="short-prod">
+                    {info.data.short_production.replace(/^https?:\/\//, "")}
+                  </div>
+                </div>
+              )}
+              {info.data?.short_preview && (
+                <div className="bg-[#0b0c1f] border border-white/10 rounded-xl p-4">
+                  <div className="text-[10px] uppercase tracking-[0.25em] text-zinc-400 mb-2 font-heading">Preview (testing)</div>
+                  <div className="font-mono text-2xl text-zinc-200 break-all text-center" data-testid="short-prev">
+                    {info.data.short_preview.replace(/^https?:\/\//, "")}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="bg-[#0b0c1f] border border-cyan-500/30 rounded-xl p-5 text-center">
+              <div className="font-mono text-xl gradient-text break-all" data-testid="downloader-code">{DOWNLOADER_CODE}</div>
+              <div className="text-xs text-zinc-500 mt-3">Long URL — click "Shorten" below for an is.gd version.</div>
+            </div>
+          )}
+
+          <div className="flex gap-2 mt-3 flex-wrap">
+            <button data-testid="copy-code"
+              onClick={() => copy((info.data?.short_production || info.data?.short_preview || `https://${DOWNLOADER_CODE}`).replace(/^https?:\/\//, ""))}
               className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-2.5 text-sm flex items-center justify-center gap-2">
               {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
               {copied ? "Copied" : "Copy code"}
+            </button>
+            <button data-testid="shorten-btn" onClick={shorten} disabled={shortening}
+              className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-2.5 text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+              <Link2 className="w-4 h-4" />
+              {shortening ? "Shortening…" : "Refresh short URLs"}
             </button>
             <a href={SHORT_URL} target="_blank" rel="noopener"
               className="flex-1 bg-gradient-to-r from-purple-500 to-cyan-500 rounded-xl py-2.5 text-sm font-heading font-bold flex items-center justify-center gap-2 hover:brightness-110">
@@ -162,7 +201,7 @@ export default function FireTV() {
           </div>
 
           <div className="mt-5 text-xs text-zinc-500">
-            Friendly landing page: <a className="text-cyan-400 hover:text-cyan-300" href={INSTALL_URL} target="_blank" rel="noopener">{INSTALL_URL}</a>
+            Friendly landing page: <a className="text-cyan-400 hover:text-cyan-300" href={INSTALL_URL} target="_blank" rel="noopener">{INSTALL_URL.replace(/^https?:\/\//, "")}</a>
           </div>
         </div>
       </div>

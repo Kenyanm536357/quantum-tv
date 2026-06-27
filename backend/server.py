@@ -330,14 +330,24 @@ async def _sys_resources():
 
 
 def _pick_best_connection(resource: dict) -> Optional[str]:
+    """Return the best publicly reachable Plex connection URI.
+
+    Priority for a CLOUD backend like ours:
+      1. Public (non-local, non-relay) — fastest, direct.
+      2. Relay (plex.tv relay) — works when port-forwarding isn't set up.
+      3. Local (192.168.x / 172.x / 10.x) — only useful when we're literally
+         on the same LAN as the Plex server (we're not), and is the WRONG
+         pick for shared/non-owned servers.
+    """
     conns = resource.get("connections") or []
-    locals_ = [c for c in conns if c.get("local") and not c.get("relay")]
-    remotes = [c for c in conns if not c.get("local") and not c.get("relay")]
+    publics = [c for c in conns if not c.get("local") and not c.get("relay")]
     relays = [c for c in conns if c.get("relay")]
-    for group in (locals_, remotes, relays):
+    locals_ = [c for c in conns if c.get("local")]
+    for group in (publics, relays, locals_):
         for c in group:
-            if c.get("uri"):
-                return c["uri"]
+            uri = c.get("uri")
+            if uri:
+                return uri
     return None
 
 
@@ -353,17 +363,41 @@ async def _server_ctx() -> tuple[str, str]:
             chosen = r
             break
     if not chosen:
-        # pick first owned, else first
         owned = [r for r in resources if "server" in (r.get("provides") or "") and r.get("owned")]
         any_ = [r for r in resources if "server" in (r.get("provides") or "")]
         chosen = (owned or any_ or [None])[0]
     if not chosen:
         raise HTTPException(404, "No Plex servers on linked account")
-    uri = _pick_best_connection(chosen)
-    if not uri:
+    # Try every connection in priority order (public, relay, local), falling
+    # back to the next if one times out. This is what fixes shared/non-owned
+    # servers whose "local" address is the owner's LAN.
+    conns = chosen.get("connections") or []
+    publics = [c for c in conns if not c.get("local") and not c.get("relay") and c.get("uri")]
+    relays = [c for c in conns if c.get("relay") and c.get("uri")]
+    locals_ = [c for c in conns if c.get("local") and c.get("uri")]
+    ordered = publics + relays + locals_
+    if not ordered:
         raise HTTPException(503, "Plex server has no reachable connection")
     token = chosen.get("accessToken") or decrypt_token(s["plex_token_enc"])
-    return uri, token
+
+    # Probe each URI quickly to find one that actually responds. Cache the
+    # winner in the system doc so subsequent requests are instant.
+    cache_key = f"reachable_uri_{chosen.get('clientIdentifier')}"
+    cached = s.get(cache_key)
+    if cached:
+        return cached, token
+
+    async with httpx.AsyncClient(timeout=5.0, verify=False) as c:
+        for conn in ordered:
+            uri = conn["uri"]
+            try:
+                r = await c.get(f"{uri}/identity", headers=plex_headers(token=token))
+                if r.status_code < 500:
+                    await db.system.update_one({"id": "plex"}, {"$set": {cache_key: uri}})
+                    return uri, token
+            except Exception:
+                continue
+    raise HTTPException(503, "Could not reach Plex server on any connection (check Plex Remote Access)")
 
 
 @api.get("/admin/plex/servers")
@@ -394,13 +428,14 @@ async def admin_select_server(body: SelectServerBody, admin: dict = Depends(get_
     chosen = next((x for x in servers if x["client_identifier"] == body.client_identifier), None)
     if not chosen:
         raise HTTPException(404, "Server not found")
+    # Clear cached reachable URI when switching servers
     await db.system.update_one(
         {"id": "plex"},
         {"$set": {"selected_server": {
             "client_identifier": chosen["client_identifier"],
             "name": chosen["name"],
             "uri": chosen["uri"],
-        }}},
+        }}, "$unset": {f"reachable_uri_{chosen['client_identifier']}": ""}},
     )
     return {"ok": True}
 

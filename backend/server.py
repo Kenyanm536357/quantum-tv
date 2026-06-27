@@ -568,7 +568,9 @@ async def admin_update_settings(body: SettingsBody, admin: dict = Depends(get_cu
 
 @api.get("/admin/servers")
 async def admin_servers_aggregate(admin: dict = Depends(get_current_admin)):
-    """Same shape as before — but driven by the admin-linked Plex account."""
+    """List every Plex server the admin's account can reach, mark which one is
+    selected as Active (the one all users stream from), and attach the active
+    user list to it."""
     plex = await db.system.find_one({"id": "plex"})
     if not plex:
         return {"servers": []}
@@ -576,17 +578,27 @@ async def admin_servers_aggregate(admin: dict = Depends(get_current_admin)):
         s, resources = await _sys_resources()
     except HTTPException:
         return {"servers": []}
+    active_cid = (s.get("selected_server") or {}).get("client_identifier")
+    # All active users follow the active server
+    active_user_names: list[str] = []
+    async for u in db.users.find({"status": "active"}, {"username": 1, "display_name": 1}):
+        active_user_names.append(u.get("display_name") or u.get("username"))
     out = []
     for r in resources:
         if "server" not in (r.get("provides") or ""):
             continue
+        is_active = r.get("clientIdentifier") == active_cid
         out.append({
             "name": r.get("name"),
             "client_identifier": r.get("clientIdentifier"),
             "uri": _pick_best_connection(r),
             "owned": r.get("owned"),
-            "users": [],
+            "active": is_active,
+            "users": active_user_names if is_active else [],
+            "user_count": len(active_user_names) if is_active else 0,
         })
+    # Sort active first
+    out.sort(key=lambda x: (not x["active"], x["name"] or ""))
     return {"servers": out}
 
 

@@ -19,11 +19,15 @@ export default function Login() {
       const { data } = await api.post("/auth/login", { username: u, password: p });
       if (data.role === "admin") {
         localStorage.setItem("qtv_admin_token", data.token);
+        localStorage.removeItem("qtv_user_token");
         nav("/");
       } else {
-        // Regular user signed in on the web — show a friendly message.
-        // The native app is the proper place for streaming; the web is the admin's tool.
-        setErr("This is the Quantum TV web portal. Please use the Quantum TV mobile app to start watching.");
+        localStorage.setItem("qtv_user_token", data.token);
+        localStorage.removeItem("qtv_admin_token");
+        localStorage.setItem("qtv_user", JSON.stringify({
+          username: data.username, display_name: data.display_name, avatar: data.avatar,
+        }));
+        nav("/watch");
       }
     } catch (e) {
       setErr(e?.response?.data?.detail || "Account is not registered or not activated");

@@ -11,6 +11,7 @@ import ActivityPage from "./pages/Activity";
 import MobilePreview from "./pages/MobilePreview";
 import FireTV from "./pages/FireTV";
 import FireTVPreview from "./pages/FireTVPreview";
+import Watch from "./pages/Watch";
 
 const Shell = ({ children }) => {
   const nav = useNavigate();
@@ -98,6 +99,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/watch/*" element={<Watch />} />
       <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
       <Route path="/users" element={<RequireAuth><UsersPage /></RequireAuth>} />
       <Route path="/servers" element={<RequireAuth><Servers /></RequireAuth>} />

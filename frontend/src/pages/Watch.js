@@ -231,21 +231,87 @@ function Browse() {
   );
 }
 
+// ---------- Shared filter / sort menu ----------
+function SortMenu({ options, value, onChange, testidPrefix = "sort" }) {
+  const [open, setOpen] = React.useState(false);
+  const current = options.find((o) => o.id === value)?.label || "Sort";
+  return (
+    <div className="relative">
+      <button
+        data-testid={`${testidPrefix}-button`}
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium"
+      >
+        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+        {current}
+        <svg className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 mt-2 w-56 glass rounded-2xl p-1.5 z-30 shadow-xl">
+            {options.map((opt) => (
+              <button
+                key={opt.id}
+                data-testid={`${testidPrefix}-${opt.id}`}
+                onClick={() => { onChange(opt.id); setOpen(false); }}
+                className={`w-full text-left px-4 py-2.5 rounded-xl text-sm transition-colors ${value === opt.id ? "bg-gradient-to-r from-purple-500/30 to-cyan-500/20 text-white" : "text-zinc-300 hover:bg-white/5"}`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Client-side sort helper for lists that don't go through the Plex sort param
+const COMPARERS = {
+  "addedAt:desc":     (a, b) => (b.added_at || 0) - (a.added_at || 0),
+  "addedAt:asc":      (a, b) => (a.added_at || 0) - (b.added_at || 0),
+  "year:desc":        (a, b) => (b.year || 0) - (a.year || 0),
+  "year:asc":         (a, b) => (a.year || 0) - (b.year || 0),
+  "title:asc":        (a, b) => (a.title || "").localeCompare(b.title || ""),
+  "title:desc":       (a, b) => (b.title || "").localeCompare(a.title || ""),
+  "rating:desc":      (a, b) => (b.audience_rating || 0) - (a.audience_rating || 0),
+};
+function applySort(items, key) {
+  if (!Array.isArray(items)) return items;
+  const cmp = COMPARERS[key];
+  return cmp ? [...items].sort(cmp) : items;
+}
+
 // ---------- Library grid (movies / shows) ----------
+const SORT_OPTIONS = [
+  { id: "addedAt:desc", label: "Newest added" },
+  { id: "addedAt:asc", label: "Oldest added" },
+  { id: "originallyAvailableAt:desc", label: "Newest release" },
+  { id: "originallyAvailableAt:asc", label: "Oldest release" },
+  { id: "titleSort:asc", label: "Title A → Z" },
+  { id: "titleSort:desc", label: "Title Z → A" },
+  { id: "audienceRating:desc", label: "Highest rated" },
+];
+
 function LibraryView({ type, label }) {
+  const [sort, setSort] = React.useState("addedAt:desc");
   const libs = useQuery({ queryKey: ["libs"], queryFn: async () => (await api.get("/libraries")).data });
   const lib = (libs.data?.libraries || []).find((l) => l.type === type);
   const items = useQuery({
     enabled: !!lib,
-    queryKey: ["libitems", lib?.key],
-    queryFn: async () => (await api.get(`/libraries/${lib.key}/items?limit=200`)).data,
+    queryKey: ["libitems", lib?.key, sort],
+    queryFn: async () => (await api.get(`/libraries/${lib.key}/items?limit=200&sort=${encodeURIComponent(sort)}`)).data,
   });
   return (
     <div className="fade-in">
-      <div className="mb-6">
-        <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">Library</div>
-        <h1 className="font-heading text-4xl font-extrabold mt-1">{label}</h1>
-        {lib && <div className="text-zinc-400 text-sm mt-2">{items.data?.total ?? "—"} titles in {lib.title}</div>}
+      <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">Library</div>
+          <h1 className="font-heading text-4xl font-extrabold mt-1">{label}</h1>
+          {lib && <div className="text-zinc-400 text-sm mt-2">{items.data?.total ?? "—"} titles in {lib.title}</div>}
+        </div>
+        <SortMenu options={SORT_OPTIONS} value={sort} onChange={setSort} />
       </div>
       {libs.isLoading || items.isLoading ? (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -263,27 +329,48 @@ function LibraryView({ type, label }) {
 }
 
 // ---------- Live TV ----------
+const LIVE_SORT = [
+  { id: "channel:asc", label: "Channel ↑" },
+  { id: "channel:desc", label: "Channel ↓" },
+  { id: "title:asc", label: "Name A → Z" },
+  { id: "title:desc", label: "Name Z → A" },
+];
+
 function LiveTV() {
   const nav = useNavigate();
+  const [sort, setSort] = React.useState("channel:asc");
   const { data, isLoading } = useQuery({
     queryKey: ["live"],
     queryFn: async () => (await api.get("/livetv/channels")).data,
   });
+  const channels = React.useMemo(() => {
+    const list = data?.channels || [];
+    const sorted = [...list];
+    if (sort === "channel:asc") sorted.sort((a, b) => Number(a.number || 9999) - Number(b.number || 9999));
+    else if (sort === "channel:desc") sorted.sort((a, b) => Number(b.number || 9999) - Number(a.number || 9999));
+    else if (sort === "title:asc") sorted.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+    else if (sort === "title:desc") sorted.sort((a, b) => (b.title || "").localeCompare(a.title || ""));
+    return sorted;
+  }, [data, sort]);
+
   return (
     <div className="fade-in">
-      <div className="mb-6">
-        <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">Live</div>
-        <h1 className="font-heading text-4xl font-extrabold mt-1">All Channels</h1>
+      <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">Live</div>
+          <h1 className="font-heading text-4xl font-extrabold mt-1">All Channels</h1>
+        </div>
+        <SortMenu options={LIVE_SORT} value={sort} onChange={setSort} testidPrefix="live-sort" />
       </div>
       {isLoading ? (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {[...Array(10)].map((_, i) => <div key={i} className="aspect-video rounded-xl bg-white/[0.03] animate-pulse" />)}
         </div>
-      ) : (data?.channels || []).length === 0 ? (
+      ) : channels.length === 0 ? (
         <div className="text-zinc-400">No live channels available. Plex DVR or Plex's free live TV must be set up on the connected server.</div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          {data.channels.map((ch) => (
+          {channels.map((ch) => (
             <motion.button
               key={ch.key}
               whileHover={{ scale: 1.04, y: -3 }}
@@ -311,18 +398,32 @@ function LiveTV() {
 }
 
 // ---------- Search ----------
+const SEARCH_SORT = [
+  { id: "default", label: "Relevance" },
+  { id: "title:asc", label: "Title A → Z" },
+  { id: "title:desc", label: "Title Z → A" },
+  { id: "year:desc", label: "Newest release" },
+  { id: "year:asc", label: "Oldest release" },
+  { id: "rating:desc", label: "Highest rated" },
+];
+
 function SearchPage() {
   const [q, setQ] = useState("");
+  const [sort, setSort] = useState("default");
   const { data, isFetching } = useQuery({
     enabled: q.trim().length >= 2,
     queryKey: ["search", q],
     queryFn: async () => (await api.get(`/search?q=${encodeURIComponent(q)}`)).data,
   });
+  const items = sort === "default" ? (data?.items || []) : applySort(data?.items || [], sort);
   return (
     <div className="fade-in">
-      <div className="mb-6">
-        <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">Find</div>
-        <h1 className="font-heading text-4xl font-extrabold mt-1">Search</h1>
+      <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">Find</div>
+          <h1 className="font-heading text-4xl font-extrabold mt-1">Search</h1>
+        </div>
+        {items.length > 0 && <SortMenu options={SEARCH_SORT} value={sort} onChange={setSort} testidPrefix="search-sort" />}
       </div>
       <div className="relative max-w-xl mb-8">
         <Search className="w-5 h-5 text-zinc-500 absolute left-4 top-1/2 -translate-y-1/2" />
@@ -335,9 +436,9 @@ function SearchPage() {
       </div>
       {isFetching && <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        {(data?.items || []).map((it) => <MediaCard key={it.rating_key} item={it} />)}
+        {items.map((it) => <MediaCard key={it.rating_key} item={it} />)}
       </div>
-      {q.length >= 2 && !isFetching && (data?.items || []).length === 0 && (
+      {q.length >= 2 && !isFetching && items.length === 0 && (
         <div className="text-zinc-500">No matches for "{q}"</div>
       )}
     </div>
@@ -345,8 +446,19 @@ function SearchPage() {
 }
 
 // ---------- Watchlist / Favorites ----------
+const LIST_SORT = [
+  { id: "addedAt:desc", label: "Newest added" },
+  { id: "addedAt:asc", label: "Oldest added" },
+  { id: "year:desc", label: "Newest release" },
+  { id: "year:asc", label: "Oldest release" },
+  { id: "title:asc", label: "Title A → Z" },
+  { id: "title:desc", label: "Title Z → A" },
+  { id: "rating:desc", label: "Highest rated" },
+];
+
 function ListPage({ endpoint, title, removeUrl, emptyHint }) {
   const qc = useQueryClient();
+  const [sort, setSort] = React.useState("addedAt:desc");
   const { data, isLoading } = useQuery({
     queryKey: [endpoint],
     queryFn: async () => (await api.get(endpoint)).data,
@@ -355,19 +467,23 @@ function ListPage({ endpoint, title, removeUrl, emptyHint }) {
     mutationFn: async (rk) => api.delete(removeUrl(rk)),
     onSuccess: () => qc.invalidateQueries({ queryKey: [endpoint] }),
   });
+  const items = applySort(data?.items || [], sort);
   return (
     <div className="fade-in">
-      <div className="mb-6">
-        <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">Your</div>
-        <h1 className="font-heading text-4xl font-extrabold mt-1">{title}</h1>
+      <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">Your</div>
+          <h1 className="font-heading text-4xl font-extrabold mt-1">{title}</h1>
+        </div>
+        {(data?.items || []).length > 0 && <SortMenu options={LIST_SORT} value={sort} onChange={setSort} testidPrefix={`${title.toLowerCase()}-sort`} />}
       </div>
       {isLoading ? (
         <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
-      ) : (data?.items || []).length === 0 ? (
+      ) : items.length === 0 ? (
         <div className="text-zinc-400">{emptyHint}</div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {data.items.map((it) => (
+          {items.map((it) => (
             <div key={it.rating_key} className="relative group">
               <MediaCard item={it} />
               <button

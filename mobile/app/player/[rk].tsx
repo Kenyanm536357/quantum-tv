@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { VideoView, useVideoPlayer } from "expo-video";
 import client, { colors } from "../../src/api";
+import { SAFE, SIZES, ms } from "../../src/responsive";
 
 export default function Player() {
   const { rk, title } = useLocalSearchParams<{ rk: string; title: string }>();
@@ -23,16 +24,22 @@ export default function Player() {
 
   return (
     <View style={s.root}>
-      <Pressable testID="player-back" onPress={() => router.back()} style={s.back}>
-        <Ionicons name="chevron-back" size={24} color="#fff" />
+      <Pressable
+        testID="player-back"
+        onPress={() => router.back()}
+        focusable
+        hasTVPreferredFocus
+        style={({ focused }) => [{ position: "absolute", top: SAFE.top + 10, left: SAFE.left + 6, zIndex: 10, width: ms(46), height: ms(46), borderRadius: 999, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.5)", borderWidth: 2, borderColor: focused ? colors.cyan : "transparent" }]}
+      >
+        <Ionicons name="chevron-back" size={SIZES.iconMd} color="#fff" />
       </Pressable>
-      <Text numberOfLines={1} style={s.title}>{title}</Text>
+      <Text numberOfLines={1} style={[s.title, { fontSize: SIZES.fontBody, top: SAFE.top + 16, left: ms(70) + SAFE.left, right: SAFE.right }]}>{title}</Text>
 
       {!url && !error && (
-        <View style={s.center}><ActivityIndicator color={colors.cyan} /><Text style={s.loading}>Preparing stream…</Text></View>
+        <View style={s.center}><ActivityIndicator color={colors.cyan} size="large" /><Text style={[s.loading, { fontSize: SIZES.fontSmall }]}>Preparing stream…</Text></View>
       )}
       {error && (
-        <View style={s.center}><Ionicons name="alert-circle" size={42} color="#fca5a5" /><Text style={s.err}>{error}</Text></View>
+        <View style={s.center}><Ionicons name="alert-circle" size={ms(42)} color="#fca5a5" /><Text style={[s.err, { fontSize: SIZES.fontSmall }]}>{error}</Text></View>
       )}
       {url && (
         <VideoView
@@ -50,8 +57,7 @@ export default function Player() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" },
-  back: { position: "absolute", top: 50, left: 16, zIndex: 10, width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.5)" },
-  title: { position: "absolute", top: 56, left: 70, right: 20, zIndex: 10, color: "#fff", fontFamily: "Unbounded_700Bold", fontSize: 16 },
+  title: { position: "absolute", zIndex: 10, color: "#fff", fontFamily: "Unbounded_700Bold" },
   video: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   loading: { color: colors.zinc400, marginTop: 12, fontFamily: "Outfit_400Regular" },

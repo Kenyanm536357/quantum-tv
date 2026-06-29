@@ -19,6 +19,12 @@
 - `/app/frontend/` — **React (CRA + Tailwind)** admin web console on port 3000. Pages: Dashboard, Users, Plex Servers, Activity, Settings, Login.
 - `/app/mobile/` — **Expo Router (TypeScript)** native mobile app. Pages: Login (Plex PIN), Browse (continue + recent + featured), Live TV grid, Movies, Series, Search, More (profile + server picker + disconnect), Player (`expo-video`).
 
+## Implemented (Mobile-responsive admin + watch surfaces — 2026-06-29 #2)
+- ✅ Backend `/api/auth/login` is now case-insensitive and trims whitespace (fixes Fire TV / iOS Safari autocap breaking sign-in). Same trim + case-insensitive duplicate check on `/api/admin/users` create. 18/18 backend tests pass.
+- ✅ Admin Control Panel mobile-responsive overhaul: desktop sidebar → slide-out drawer w/ hamburger, Users + Activity tables → cards on mobile, Dashboard stats 2x2 on mobile, Modal slides up from bottom. 11/11 frontend tests pass.
+- ✅ Watch / Live TV surface mobile-responsive overhaul (`/app/frontend/src/pages/Watch.js`): MediaCard gained `fluid` prop, all H1s scale text-2xl→3xl→4xl, mobile tab strip horizontal-scrolls below header, Row carousel loading skeleton now has internal overflow-x-auto (fixes 454px horizontal bleed on mobile Browse), `<main>` has defensive overflow-x-hidden, FeaturedHero scales h-[220px]→360px, Player title + action buttons stack cleanly on mobile, all grids use 3 cols on mobile / 6 on desktop with fluid posters. 10/10 retests pass.
+- ✅ Test user `test` / `12345` reseeded; verified case-insensitive login works for `test`, `Test`, `TEST`, ` test `.
+
 ## Implemented (Fire TV keyboard fix — 2026-06-29)
 - ✅ Added reusable `mobile/src/TVTextInput.tsx` — wraps any `TextInput` in a focusable `Pressable` and explicitly calls `ref.focus()` on Select-press so the on-screen keyboard opens on Fire TV / Android TV (bare `TextInput` is not D-pad-focusable on the `react-native-tvos` fork).
 - ✅ Replaced `<TextInput />` on Login (username + password) and Search screens with `TVTextInput`.

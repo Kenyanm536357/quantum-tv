@@ -1,0 +1,33 @@
+{
+  "summary": "Frontend-only regression retest of iteration_2 bug fix: Row loading-skeleton on /watch (Browse) horizontal overflow at 390px mobile. Fix verified: docW=390 during both LOADING and LOADED states. Smoke pass on all 6 other surfaces (Live TV, Movies, Series, Search, Watchlist, Favorites) + Player on mobile + Desktop /watch. 10/10 responsive checks pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_3.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix verified at Watch.js:183 — loading-skeleton flex container now has `overflow-x-auto scrollbar-thin -mx-4 sm:-mx-2 px-4 sm:px-2 pb-2`, mirroring the loaded-state container at line 209. The 6 w-32 (128px) skeleton cards now scroll INSIDE the row, not the page body.",
+    "Defensive guard verified at Watch.js:96 — <main> in WatchShell now has `overflow-x-hidden`. Computed style confirmed via getComputedStyle: overflowX='hidden'. Header (height=65px, width=1280px) still renders cleanly at top with no clipping; chevron buttons on Recently Added row remain visible on desktop.",
+    "Mobile /watch LOADING state: document.documentElement.scrollWidth = 390 (was 844 in iteration_2). 12 skeleton elements rendered, internal scroller working correctly.",
+    "Mobile /watch LOADED state: docW=390, the row container is the only overflow-x-auto descendant — clientWidth=390, scrollWidth=4622 (correctly scrolls internally, not at page level).",
+    "Desktop /watch LOADED state: docW=1280, viewW=1280 (no overflow). 1 chevron-right + 1 chevron-left buttons rendered (Recently Added carousel has data; Continue Watching is empty so chevrons hidden there — correct conditional). FeaturedHero rendered with poster art for 'Season 3'.",
+    "All 6 other mobile surfaces retain docW=390: /watch/live, /watch/movies, /watch/series, /watch/search, /watch/watchlist, /watch/favorites — no regressions.",
+    "Mobile Player at /watch/play/{id} also passes docW=390."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "skipped (frontend-only per request)",
+    "frontend": "100% (10/10 responsive checks pass: /watch loading mobile, /watch loaded mobile, /watch/live, /watch/movies, /watch/series, /watch/search, /watch/watchlist, /watch/favorites, /watch/play, /watch desktop). Zero regressions."
+  },
+  "test_credentials": "test / 12345 (working)",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration_2 bug fully resolved by adding overflow-x-auto to loading-skeleton container (Watch.js:183) plus defensive overflow-x-hidden on <main> (Watch.js:96). No further responsive issues found on /watch surface tree. All mobile docW measurements = 390. Desktop /watch chevrons render correctly when row has data and are conditionally hidden on mobile (hidden sm:flex) — verified behavior matches design intent.",
+  "rca_of_the_issue": "Bug from iteration_2 (Row loading-skeleton horizontal overflow) is resolved. Root cause was missing overflow-x-auto on the loading-state flex container in Watch.js (Row component, line 183 region). The fix mirrors the loaded-state container at line 209 by adding the same overflow-x-auto + scrollbar-thin + negative-margin/padding combo. The defensive overflow-x-hidden added to <main> in WatchShell (line 96) provides a guard against any future descendant layout slip without clipping sticky/shadowed elements (verified visually: header, hero, chevrons all render normally on desktop)."
+}

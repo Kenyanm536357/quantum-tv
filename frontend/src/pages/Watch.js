@@ -93,7 +93,7 @@ function WatchShell({ children }) {
           ))}
         </nav>
       </header>
-      <main className="max-w-[1500px] mx-auto px-4 sm:px-6 py-5 sm:py-8 pb-24">{children}</main>
+      <main className="max-w-[1500px] mx-auto px-4 sm:px-6 py-5 sm:py-8 pb-24 overflow-x-hidden">{children}</main>
     </div>
   );
 }
@@ -180,7 +180,7 @@ function Row({ title, items, size = "md", emptyText = "Nothing here yet" }) {
     return (
       <div className="mb-8 sm:mb-10">
         <h3 className="font-heading text-base sm:text-xl font-bold mb-3 sm:mb-4">{title}</h3>
-        <div className="flex gap-3">
+        <div className="flex gap-2.5 sm:gap-3 overflow-x-auto scrollbar-thin -mx-4 sm:-mx-2 px-4 sm:px-2 pb-2">
           {[...Array(6)].map((_, i) => (
             <div key={i} className="w-32 h-48 sm:w-44 sm:h-64 rounded-xl bg-white/[0.03] animate-pulse shrink-0" />
           ))}

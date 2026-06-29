@@ -5,6 +5,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import client, { BACKEND, colors } from "../../src/api";
+import TVTextInput from "../../src/TVTextInput";
+import { IS_TV } from "../../src/responsive";
 
 export default function Search() {
   const router = useRouter();
@@ -19,18 +21,19 @@ export default function Search() {
       <View style={{ paddingHorizontal: 20 }}>
         <Text style={s.kicker}>FIND</Text>
         <Text style={s.title}>Search</Text>
-        <View style={s.searchBox}>
-          <Ionicons name="search" size={18} color={colors.zinc500} />
-          <TextInput
-            testID="search-input"
-            value={q}
-            onChangeText={setQ}
-            placeholder="Search movies, shows, channels…"
-            placeholderTextColor={colors.zinc500}
-            style={s.searchInput}
-            autoCapitalize="none"
-          />
-        </View>
+        <TVTextInput
+          testID="search-input"
+          value={q}
+          onChangeText={setQ}
+          placeholder="Search movies, shows, channels…"
+          placeholderTextColor={colors.zinc500}
+          left={<Ionicons name="search" size={18} color={colors.zinc500} />}
+          wrapperStyle={s.searchBox}
+          style={s.searchInput}
+          autoCapitalize="none"
+          hasTVPreferredFocus={IS_TV}
+          returnKeyType="search"
+        />
       </View>
       {isFetching && <ActivityIndicator color={colors.cyan} style={{ marginTop: 24 }} />}
       <FlatList

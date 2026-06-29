@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { View, Text, Image, Pressable, ActivityIndicator, StyleSheet, TextInput, useWindowDimensions } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -6,6 +6,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import client, { colors } from "../src/api";
 import { s, vs, ms, SAFE, IS_TV, SIZES } from "../src/responsive";
+import TVTextInput from "../src/TVTextInput";
 
 export default function Login() {
   const router = useRouter();
@@ -15,6 +16,8 @@ export default function Login() {
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const userRef = useRef<TextInput>(null);
+  const pwRef = useRef<TextInput>(null);
 
   const isLandscape = W > H;
   const cardMaxW = IS_TV ? Math.min(W * 0.55, 720) : Math.min(W * 0.9, 520);
@@ -57,27 +60,33 @@ export default function Login() {
 
         <View style={[styles.card, { width: cardMaxW, marginTop: isLandscape && IS_TV ? 0 : vs(28), padding: s(24) }]}>
           <Text style={[styles.label, { fontSize: SIZES.fontTiny }]}>USERNAME</Text>
-          <TextInput
+          <TVTextInput
+            ref={userRef}
             testID="username-input"
             value={username}
             onChangeText={setUsername}
             placeholder="Enter your username"
             placeholderTextColor="rgba(255,255,255,0.35)"
-            style={[styles.input, { fontSize: SIZES.fontBody, paddingVertical: vs(14), paddingHorizontal: s(16), borderRadius: SIZES.radius }]}
+            wrapperStyle={[styles.input, { paddingVertical: vs(14), paddingHorizontal: s(16), borderRadius: SIZES.radius }]}
+            style={{ fontSize: SIZES.fontBody }}
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="next"
+            onSubmitEditing={() => pwRef.current?.focus()}
+            hasTVPreferredFocus={IS_TV}
           />
 
           <Text style={[styles.label, { fontSize: SIZES.fontTiny, marginTop: vs(16) }]}>PASSWORD</Text>
           <View style={styles.pwRow}>
-            <TextInput
+            <TVTextInput
+              ref={pwRef}
               testID="password-input"
               value={password}
               onChangeText={setPassword}
               placeholder="Enter your password"
               placeholderTextColor="rgba(255,255,255,0.35)"
-              style={[styles.input, { flex: 1, fontSize: SIZES.fontBody, paddingVertical: vs(14), paddingHorizontal: s(16), borderRadius: SIZES.radius }]}
+              wrapperStyle={[styles.input, { flex: 1, paddingVertical: vs(14), paddingHorizontal: s(16), borderRadius: SIZES.radius }]}
+              style={{ fontSize: SIZES.fontBody }}
               secureTextEntry={!showPw}
               returnKeyType="go"
               onSubmitEditing={signIn}
@@ -97,7 +106,6 @@ export default function Login() {
             disabled={loading}
             onPress={signIn}
             focusable
-            hasTVPreferredFocus
             style={({ focused, pressed }) => [
               { marginTop: vs(22), borderRadius: 999, borderWidth: 2, borderColor: "transparent" },
               focused && styles.focusRing,

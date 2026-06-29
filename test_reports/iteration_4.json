@@ -1,0 +1,36 @@
+{
+  "summary": "Tested Users-page UX overhaul (success screen + auto-refetch + manual refresh + empty states + duplicate guard) on mobile 390x844 AND desktop 1280x800, plus backend regression for case-insensitive login + whitespace-trim on create. Result: 100% pass on every requested behavior. All 18 pytest backend tests pass. Full mobile+desktop create→success-view→done→card-appears flow verified. Duplicate (case-insensitive) returns 409 and surfaces 'Username already exists' via [data-testid=create-error] without showing the success view.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Users page header indicator", "issues": ["Minor: 'Updated 9:35:03 PM· 2 users' — the middle-dot bullet is rendered with only the ml-2 margin on the outer span, no space between PM and ·. Cosmetic only — readable. Suggest adding a leading space or wider gap class."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_case_insensitive_login.py",
+    "/app/test_reports/pytest/iteration_4_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Users.js useQuery options verified: refetchOnWindowFocus:true, refetchOnMount:'always', refetchInterval:20000, staleTime:0 — list will stay fresh while open.",
+    "CreateUserModal correctly transitions to createdUser success view on POST success (line 22-26). onCreated callback awaits both invalidateQueries AND refetch() on the parent (Users.js:288-292) so the new card is guaranteed visible the moment 'Done' is tapped — verified in DOM: card-qauser68903b appeared <2s after Done click.",
+    "Duplicate handling: case-insensitive duplicate (qauser68900 vs QAUSER68900) returns HTTP 409 from backend; CreateUserModal.onError surfaces detail in [data-testid=create-error] and crucially does NOT set createdUser → success view stays hidden. Verified.",
+    "Empty-state rendering verified for both mobile ([data-testid=users-empty-mobile]) and desktop ([data-testid=users-empty-desktop]) when API returns 0 users.",
+    "Mobile layout (390px) verified geometrically: search.right=208 < refresh.left=220 < refresh.right=260 < newBtn.left=272. Refresh button sits BETWEEN search and New, no overlaps.",
+    "Refresh-icon animate-spin class only present while isFetching is true; in our test the fetch completed under 150ms so we did not catch it spinning, but the conditional `${isFetching ? 'animate-spin text-cyan-300' : ''}` (Users.js:151) is correctly bound. Visual spin is observable on slower networks; not a bug.",
+    "Minor: On desktop both mobile-card AND desktop-row variants of [data-testid=delete-<username>] exist in the DOM (one hidden via Tailwind responsive classes md:hidden / hidden md:block). Two elements share the same testid. Playwright `.click()` picks the first (mobile), which is display:none on desktop → 'Element is not visible' error. Not a user-facing bug — only matters for automated tests. Suggest making testids viewport-specific (e.g., `delete-<username>-mobile` vs `-desktop`) OR using `:visible` selector helpers."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (18/18 pytest cases pass: admin case variants, admin whitespace, existing-user case variants, whitespace trim, wrong password 401, unknown user 401, full create→login-variants→delete round-trip, whitespace-trim on create with login as uppercase, case-insensitive duplicate 409)",
+    "frontend": "100% on the 11 requested scenarios — mobile empty state, mobile refresh button placement, manual refresh fires, create modal opens, submit transitions to success view, success view shows BOTH credentials, 'Create another' clears form fields, 'Done' closes modal + card appears, sequence-create works, duplicate (case-insensitive) shows error + suppresses success, desktop empty state, desktop create→done→row-appears."
+  },
+  "test_credentials": "admin / Quantum2024 (working). Test users created during run: qauser68900, qauser68903b, qadesk68915 — all DELETED at end of test.",
+  "seed_data_creation": "None persisted. All created users cleaned up via UI delete + API fallback. Verified final user count = 0.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All four iterations of bug fixes for the Users / case-insensitive login saga are now verified. Backend regression suite at /app/backend/tests/test_case_insensitive_login.py covers admin variants, user variants, whitespace trim, duplicate 409, and full create→login→delete cycles — reuse this for future regressions (REACT_APP_BACKEND_URL must be exported when running pytest directly). One small testability nit: when adding data-testids to lists rendered in dual mobile/desktop variants, append a viewport suffix so Playwright can uniquely target the visible one.",
+  "rca_of_the_issue": "Original user complaint ('users created don't appear in the list, Fire TV says not registered') is fully addressed by this iteration: (1) success-confirmation screen showing the literal username/password the admin just typed makes it impossible to silently fail without noticing; (2) onCreated callback now awaits invalidateQueries + refetch so the new card is rendered before the modal closes; (3) 20s polling + window-focus refetch + manual refresh button cover any case where the list could go stale across devices. Backend already supported case-insensitive + whitespace-trim login from iteration_1."
+}

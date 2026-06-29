@@ -1,0 +1,41 @@
+{
+  "summary": "Validated case-insensitive login + whitespace-trim fix (Fire TV autocap bug) on backend and the mobile-responsive admin shell on frontend. All 18 backend pytest cases pass; all 11 frontend Playwright UI checks pass on mobile (390x844) and desktop (1280x800).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_case_insensitive_login.py",
+    "/app/test_reports/pytest/case_insensitive_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: Re-seed the canonical 'test' / '12345' user in the preview DB. /app/memory/test_credentials.md still references it, but the only user actually present in Mongo (via GET /api/admin/users) is 'user1'. My tests created the 'test' user on the fly via the seeded_test_user fixture and clean it up; everything works, but anyone manually following the doc will hit 'Account is not registered or not activated'.",
+    "OPTIONAL: Update /app/memory/test_credentials.md API base URL line — it references the old preview URL (740c242f-...). Current REACT_APP_BACKEND_URL is https://stream-plex-mobile.preview.emergentagent.com.",
+    "OPTIONAL CODE-QUALITY: /app/backend/tests/test_backend_api.py is stale — it still uses ADMIN_PASSWORD='quantum2026' and the now-legacy /api/admin/login endpoint. Consider updating it to use /api/auth/login with 'Quantum2024' (env-sourced) so the older suite stays green."
+  ],
+  "critical_code_review_comments": [
+    "server.py /auth/login (line 189) and /admin/users POST (line 462) correctly use re.escape on user input before building the case-insensitive Mongo regex, so there is no regex-injection risk. Good.",
+    "/api/admin/login (backwards-compat alias, line 227) is still strict/case-sensitive on username. That is fine for the legacy web-admin form but is inconsistent with the unified /auth/login. Either deprecate it or apply the same trim+case-insensitive treatment for consistency.",
+    "/api/admin/users response on POST returns body.status (could be None/invalid) instead of the actually-persisted value. Cosmetic, but the client sees 'status: null' when a caller omits it (server actually stored 'active'). Consider returning the normalized status.",
+    "Login error returns intentionally generic 'Account is not registered or not activated' for not-found, wrong-password, and disabled — but the disabled case returns 403 while the other two return 401. That mismatch could let an attacker enumerate disabled vs nonexistent accounts. Consider unifying to 401 if the deliberate intent was 'generic'.",
+    "frontend App.js: drawer backdrop is a <button> with onClick — good for a11y. The drawer's spring exit animation takes ~600ms; if any automated test depends on visibility immediately after click, allow >=800ms or check element-count instead. Not a bug."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_case_insensitive_login.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (18/18)",
+    "frontend": "100% (11/11 covered checks)"
+  },
+  "test_credentials": "admin / Quantum2024 (working). 'test' / '12345' NOT pre-seeded — test fixture creates it on demand.",
+  "seed_data_creation": "TestCaseInsensitiveLogin fixture seeds 'test'/'12345' if missing and cleans up. All other test users (firestick_user, ws_user, mobile_test_user, TEST-for-duplicate-check) are created and deleted in the same test run. Verified post-run DB only contains 'user1'.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend case-insensitive login is verified across admin and user paths, with whitespace trim, generic 401 errors, round-trip create→login (4 case variants)→delete, create-time trim, and 409 duplicate detection. Frontend verified: mobile login autoCapitalize='none', hamburger+drawer (open via [data-testid=open-drawer], 8 nav links, closes via backdrop / drawer-close / nav-pick), Users page card layout (data-testid=user-card-<username>) with create-user-modal slide-up (items-end class), Dashboard/Activity/FireTV/Login no horizontal scroll on 390px. Desktop verified: sidebar visible, hamburger hidden, table layout, cards hidden. Real preview backend URL is REACT_APP_BACKEND_URL=https://stream-plex-mobile.preview.emergentagent.com (NOT the URL in test_credentials.md).",
+  "rca_of_the_issue": "Original Fire-TV autocap bug RCA: the on-screen keyboard auto-capitalizes the first letter of every text input, so the user typing 'test' actually sent 'Test', which did not match the lowercased stored username and returned 401. Mitigation in /api/auth/login: strip() the username and do a $regex anchored case-insensitive match with re.escape. Mitigation in /api/admin/users POST: strip() and same case-insensitive duplicate check. Tests in /app/backend/tests/test_case_insensitive_login.py exercise both fixes end-to-end."
+}

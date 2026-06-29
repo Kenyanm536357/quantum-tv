@@ -35,32 +35,34 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-6 relative z-10">
+    <div className="min-h-screen flex items-center justify-center px-4 sm:px-6 py-8 relative z-10">
       <motion.div
         initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
         className="w-full max-w-md"
       >
-        <div className="flex flex-col items-center mb-8">
+        <div className="flex flex-col items-center mb-6 sm:mb-8">
           <motion.img
             src="/logo.png" alt="Quantum TV"
             initial={{ scale: 0.9, rotate: -5 }} animate={{ scale: 1, rotate: 0 }}
             transition={{ type: "spring", stiffness: 120 }}
-            className="w-24 h-24 rounded-3xl shadow-glow mb-4"
+            className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl shadow-glow mb-4"
           />
-          <h1 className="font-heading text-3xl font-bold tracking-tight">
+          <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight">
             <span className="gradient-text">Quantum TV</span>
           </h1>
           <p className="text-zinc-400 text-sm mt-2">Sign in to your account</p>
         </div>
 
-        <div className="glass rounded-3xl p-8">
+        <div className="glass rounded-3xl p-6 sm:p-8">
           <form onSubmit={submit} className="space-y-5">
             <div>
               <label className="text-[11px] uppercase tracking-[0.2em] text-zinc-400 font-heading">Username</label>
               <input
                 data-testid="admin-username"
                 className="qtv-input mt-2" placeholder="Enter your username"
-                value={u} onChange={(e) => setU(e.target.value)} required
+                value={u} onChange={(e) => setU(e.target.value)}
+                autoCapitalize="none" autoCorrect="off" spellCheck="false"
+                required
               />
             </div>
             <div>

@@ -21,24 +21,24 @@ export default function Servers() {
     <div data-testid="servers-page" className="space-y-6 fade-in">
       <div>
         <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">Plex</div>
-        <h1 className="font-heading text-3xl font-bold mt-1">Servers</h1>
+        <h1 className="font-heading text-2xl sm:text-3xl font-bold mt-1">Servers</h1>
         <p className="text-zinc-400 text-sm mt-2">Every Plex server reachable from your linked account. Click one to make it the active source for all users.</p>
       </div>
       {isLoading && <div className="text-zinc-500">Loading…</div>}
       {(data?.servers || []).length === 0 && !isLoading && (
-        <div className="neon-card p-10 text-center">
+        <div className="neon-card p-8 sm:p-10 text-center">
           <Server className="w-10 h-10 text-purple-400 mx-auto mb-3" />
           <div className="font-heading font-semibold">No Plex servers found</div>
           <div className="text-sm text-zinc-400 mt-2">Link a Plex account in Dashboard → Plex Connection to populate this list.</div>
         </div>
       )}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
         {(data?.servers || []).map((s) => (
           <button
             key={s.client_identifier}
             data-testid={`server-${s.client_identifier}`}
             onClick={() => select.mutate(s.client_identifier)}
-            className={`neon-card p-6 text-left transition-all ${s.active ? "ring-2 ring-cyan-400/40 bg-cyan-500/5" : "hover:bg-white/[0.03]"}`}
+            className={`neon-card p-5 sm:p-6 text-left transition-all ${s.active ? "ring-2 ring-cyan-400/40 bg-cyan-500/5" : "hover:bg-white/[0.03]"}`}
           >
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">

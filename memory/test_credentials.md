@@ -11,6 +11,8 @@ Sourced from `/app/backend/.env` (`ADMIN_USERNAME` / `ADMIN_PASSWORD`).
 - Created by the admin inside the admin panel → Users → "New user".
 - Each user has username + password + active/disabled status.
 - Disabled users cannot sign in.
+- **Existing test user**: `test` / `12345` (status: active)
+- Login is **case-insensitive** and trims surrounding whitespace.
 
 ## Plex
 - Linked once by the admin via Dashboard → "Connect Plex" (PIN OAuth, no manual token).

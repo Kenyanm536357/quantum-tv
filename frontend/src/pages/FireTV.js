@@ -84,17 +84,17 @@ export default function FireTV() {
   };
 
   return (
-    <div data-testid="firetv-page" className="space-y-7 fade-in">
+    <div data-testid="firetv-page" className="space-y-6 sm:space-y-7 fade-in">
       <div>
         <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">Install</div>
-        <h1 className="font-heading text-3xl font-bold mt-1">Fire TV / Android</h1>
+        <h1 className="font-heading text-2xl sm:text-3xl font-bold mt-1">Fire TV / Android</h1>
         <p className="text-zinc-400 text-sm mt-2">Host your Quantum TV APK on this server and install it on any Fire Stick via the Downloader app.</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
         {/* Upload */}
-        <div className="neon-card p-6">
-          <h3 className="font-heading font-semibold text-lg mb-4 flex items-center gap-2">
+        <div className="neon-card p-5 sm:p-6">
+          <h3 className="font-heading font-semibold text-base sm:text-lg mb-4 flex items-center gap-2">
             <Upload className="w-4 h-4 text-purple-400" /> APK File
           </h3>
 
@@ -150,8 +150,8 @@ export default function FireTV() {
         </div>
 
         {/* Downloader code */}
-        <div className="neon-card p-6">
-          <h3 className="font-heading font-semibold text-lg mb-4 flex items-center gap-2">
+        <div className="neon-card p-5 sm:p-6">
+          <h3 className="font-heading font-semibold text-base sm:text-lg mb-4 flex items-center gap-2">
             <Tv className="w-4 h-4 text-cyan-400" /> Downloader Code
           </h3>
           <p className="text-sm text-zinc-400 mb-4">In the <b className="text-white">Downloader</b> app on Fire TV, type one of these short URLs:</p>
@@ -159,25 +159,25 @@ export default function FireTV() {
           {(info.data?.short_production || info.data?.short_preview) ? (
             <div className="space-y-3">
               {info.data?.short_production && (
-                <div className="bg-[#0b0c1f] border border-cyan-500/40 rounded-xl p-5">
+                <div className="bg-[#0b0c1f] border border-cyan-500/40 rounded-xl p-4 sm:p-5">
                   <div className="text-[10px] uppercase tracking-[0.25em] text-cyan-300 mb-2 font-heading">Production (recommended)</div>
-                  <div className="font-mono text-3xl gradient-text break-all text-center" data-testid="short-prod">
+                  <div className="font-mono text-xl sm:text-3xl gradient-text break-all text-center" data-testid="short-prod">
                     {info.data.short_production.replace(/^https?:\/\//, "")}
                   </div>
                 </div>
               )}
               {info.data?.short_preview && (
-                <div className="bg-[#0b0c1f] border border-white/10 rounded-xl p-4">
+                <div className="bg-[#0b0c1f] border border-white/10 rounded-xl p-3 sm:p-4">
                   <div className="text-[10px] uppercase tracking-[0.25em] text-zinc-400 mb-2 font-heading">Preview (testing)</div>
-                  <div className="font-mono text-2xl text-zinc-200 break-all text-center" data-testid="short-prev">
+                  <div className="font-mono text-lg sm:text-2xl text-zinc-200 break-all text-center" data-testid="short-prev">
                     {info.data.short_preview.replace(/^https?:\/\//, "")}
                   </div>
                 </div>
               )}
             </div>
           ) : (
-            <div className="bg-[#0b0c1f] border border-cyan-500/30 rounded-xl p-5 text-center">
-              <div className="font-mono text-xl gradient-text break-all" data-testid="downloader-code">{DOWNLOADER_CODE}</div>
+            <div className="bg-[#0b0c1f] border border-cyan-500/30 rounded-xl p-4 sm:p-5 text-center">
+              <div className="font-mono text-base sm:text-xl gradient-text break-all" data-testid="downloader-code">{DOWNLOADER_CODE}</div>
               <div className="text-xs text-zinc-500 mt-3">Long URL — click "Shorten" below for an is.gd version.</div>
             </div>
           )}
@@ -207,9 +207,9 @@ export default function FireTV() {
       </div>
 
       {/* Install steps */}
-      <div className="neon-card p-7">
-        <h3 className="font-heading font-semibold text-lg mb-5">Install on Fire Stick / Fire TV</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="neon-card p-5 sm:p-7">
+        <h3 className="font-heading font-semibold text-base sm:text-lg mb-5">Install on Fire Stick / Fire TV</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
           <Step n={1} title="Allow apps from unknown sources">
             On your Fire TV: <b className="text-white">Settings → My Fire TV → Developer Options → Install Unknown Apps</b>, then toggle <b className="text-white">ON</b> for the Downloader app.
           </Step>

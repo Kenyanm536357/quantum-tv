@@ -23,9 +23,9 @@ function CreateUserModal({ open, onClose, onCreated }) {
   });
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" data-testid="create-user-modal">
-      <div className="glass rounded-3xl p-7 w-full max-w-md relative">
-        <button onClick={onClose} className="absolute top-4 right-4 text-zinc-400 hover:text-white" data-testid="close-create-modal">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm" data-testid="create-user-modal">
+      <div className="glass rounded-t-3xl sm:rounded-3xl p-6 sm:p-7 w-full sm:max-w-md relative">
+        <button onClick={onClose} className="absolute top-4 right-4 text-zinc-400 hover:text-white p-1" data-testid="close-create-modal">
           <X className="w-5 h-5" />
         </button>
         <h3 className="font-heading text-xl font-bold mb-2">Create User</h3>
@@ -33,11 +33,11 @@ function CreateUserModal({ open, onClose, onCreated }) {
         <div className="space-y-4">
           <div>
             <label className="text-[11px] uppercase tracking-[0.2em] text-zinc-400 font-heading">Username</label>
-            <input data-testid="new-username" className="qtv-input mt-2" value={u} onChange={(e) => setU(e.target.value)} placeholder="e.g. ben" autoCapitalize="none" />
+            <input data-testid="new-username" className="qtv-input mt-2" value={u} onChange={(e) => setU(e.target.value)} placeholder="e.g. ben" autoCapitalize="none" autoCorrect="off" spellCheck="false" />
           </div>
           <div>
             <label className="text-[11px] uppercase tracking-[0.2em] text-zinc-400 font-heading">Password</label>
-            <input data-testid="new-password" className="qtv-input mt-2" type="text" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="At least 6 characters" />
+            <input data-testid="new-password" className="qtv-input mt-2" type="text" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="At least 6 characters" autoCapitalize="none" autoCorrect="off" spellCheck="false" />
           </div>
           <div>
             <label className="text-[11px] uppercase tracking-[0.2em] text-zinc-400 font-heading">Display Name (optional)</label>
@@ -61,11 +61,12 @@ function ResetPasswordPrompt({ userId, onDone }) {
     onSuccess: () => { setPw(""); onDone(); },
   });
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 w-full">
       <input data-testid={`pw-${userId}`} value={pw} onChange={(e) => setPw(e.target.value)} placeholder="new password"
-        className="qtv-input !py-2 !px-3 !text-sm w-44" />
+        className="qtv-input !py-2 !px-3 !text-sm flex-1 sm:w-44 sm:flex-none" />
       <button data-testid={`save-pw-${userId}`} disabled={!pw} onClick={() => reset.mutate()}
-        className="btn-gradient px-4 py-2 text-sm disabled:opacity-50">Save</button>
+        className="btn-gradient px-4 py-2 text-sm disabled:opacity-50 shrink-0">Save</button>
+      <button onClick={onDone} className="text-zinc-400 hover:text-white text-sm px-2">Cancel</button>
     </div>
   );
 }
@@ -93,22 +94,72 @@ export default function UsersPage() {
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">Members</div>
-          <h1 className="font-heading text-3xl font-bold mt-1">Users</h1>
+          <h1 className="font-heading text-2xl sm:text-3xl font-bold mt-1">Users</h1>
           <p className="text-zinc-400 text-sm mt-2">Create login accounts for the mobile app. Disabled users cannot sign in.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="relative w-72">
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-72">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
             <input data-testid="users-search" className="qtv-input pl-10" placeholder="Search username"
               value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
-          <button data-testid="open-create-user" onClick={() => setCreating(true)} className="btn-gradient px-5 py-3 flex items-center gap-2">
-            <UserPlus className="w-4 h-4" /> New user
+          <button data-testid="open-create-user" onClick={() => setCreating(true)} className="btn-gradient px-4 sm:px-5 py-3 flex items-center gap-2 shrink-0">
+            <UserPlus className="w-4 h-4" /> <span className="hidden sm:inline">New user</span><span className="sm:hidden">New</span>
           </button>
         </div>
       </div>
 
-      <div className="neon-card overflow-hidden">
+      {/* Mobile card list */}
+      <div className="md:hidden space-y-3">
+        {isLoading && <div className="neon-card p-6 text-center text-zinc-500">Loading…</div>}
+        {(data?.users || []).length === 0 && !isLoading && (
+          <div className="neon-card p-6 text-center text-zinc-500 text-sm">No users yet — tap "New" to create one.</div>
+        )}
+        {(data?.users || []).map((u) => (
+          <div key={u.id} className="neon-card p-4" data-testid={`user-card-${u.username}`}>
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-full bg-gradient-to-br from-purple-500 to-cyan-500 flex items-center justify-center font-heading font-bold shrink-0">
+                {(u.display_name || u.username).slice(0, 1).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">{u.display_name || u.username}</div>
+                <div className="text-xs text-zinc-500 font-mono truncate">@{u.username}</div>
+              </div>
+              <StatusPill status={u.status} />
+            </div>
+            <div className="mt-3 flex items-center gap-4 text-xs text-zinc-400 font-mono">
+              <span className="inline-flex items-center gap-1"><Bookmark className="w-3 h-3 text-cyan-400" /> {u.watchlist_count}</span>
+              <span className="inline-flex items-center gap-1"><Heart className="w-3 h-3 text-pink-400" /> {u.favorites_count}</span>
+              <span className="ml-auto text-zinc-500">{u.last_login ? new Date(u.last_login).toLocaleDateString() : "Never"}</span>
+            </div>
+            <div className="mt-3 pt-3 border-t border-white/5">
+              {resetting === u.id ? (
+                <ResetPasswordPrompt userId={u.id} onDone={() => setResetting(null)} />
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  <button data-testid={`reset-${u.username}`} onClick={() => setResetting(u.id)}
+                    className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-white/5 hover:bg-cyan-500/20 text-cyan-300 text-xs">
+                    <KeyRound className="w-3.5 h-3.5" /> Password
+                  </button>
+                  <button
+                    data-testid={u.status === "active" ? `disable-${u.username}` : `enable-${u.username}`}
+                    onClick={() => setStatus.mutate({ id: u.id, status: u.status === "active" ? "disabled" : "active" })}
+                    className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-white/5 text-xs ${u.status === "active" ? "hover:bg-yellow-500/20 text-yellow-300" : "hover:bg-emerald-500/20 text-emerald-300"}`}>
+                    <Power className="w-3.5 h-3.5" /> {u.status === "active" ? "Disable" : "Enable"}
+                  </button>
+                  <button data-testid={`delete-${u.username}`} onClick={() => { if (window.confirm(`Delete ${u.username}?`)) del.mutate(u.id); }}
+                    className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-white/5 hover:bg-red-500/20 text-red-400 text-xs">
+                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden md:block neon-card overflow-hidden">
         <table className="w-full">
           <thead>
             <tr className="bg-white/5 text-xs uppercase tracking-[0.2em] text-zinc-400">

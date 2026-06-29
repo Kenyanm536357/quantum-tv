@@ -36,9 +36,9 @@ export default function SettingsPage() {
     <div data-testid="settings-page" className="max-w-2xl space-y-6 fade-in">
       <div>
         <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">Configuration</div>
-        <h1 className="font-heading text-3xl font-bold mt-1">Settings</h1>
+        <h1 className="font-heading text-2xl sm:text-3xl font-bold mt-1">Settings</h1>
       </div>
-      <div className="neon-card p-6 space-y-5">
+      <div className="neon-card p-5 sm:p-6 space-y-5">
         <div>
           <label className="text-[11px] uppercase tracking-[0.2em] text-zinc-400 font-heading">Service Name</label>
           <input

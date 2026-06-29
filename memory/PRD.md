@@ -19,6 +19,12 @@
 - `/app/frontend/` — **React (CRA + Tailwind)** admin web console on port 3000. Pages: Dashboard, Users, Plex Servers, Activity, Settings, Login.
 - `/app/mobile/` — **Expo Router (TypeScript)** native mobile app. Pages: Login (Plex PIN), Browse (continue + recent + featured), Live TV grid, Movies, Series, Search, More (profile + server picker + disconnect), Player (`expo-video`).
 
+## Implemented (Fire TV keyboard fix — 2026-06-29)
+- ✅ Added reusable `mobile/src/TVTextInput.tsx` — wraps any `TextInput` in a focusable `Pressable` and explicitly calls `ref.focus()` on Select-press so the on-screen keyboard opens on Fire TV / Android TV (bare `TextInput` is not D-pad-focusable on the `react-native-tvos` fork).
+- ✅ Replaced `<TextInput />` on Login (username + password) and Search screens with `TVTextInput`.
+- ✅ Username field is now the TV preferred-focus target on the Login screen.
+- ✅ EAS build #7 produced APK **v1.0.3 (versionCode 4)** and was uploaded to the Fire TV downloader at `/api/q` (sha256: `acb2b3776451`). Short URL: https://is.gd/uorYZt (preview) / https://quantumtv.app/api/q (production).
+
 ## Implemented (MVP — 2026-06-26)
 - ✅ Backend with 25+ endpoints (Plex PIN, resources, libraries, items, recently-added, continue-watching, search, livetv, stream, image proxy, admin login/stats/users/servers/settings/activity).
 - ✅ Fernet-encrypted token storage in MongoDB.

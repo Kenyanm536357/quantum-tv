@@ -189,14 +189,23 @@ class LoginBody(BaseModel):
 @api.post("/auth/login")
 async def login(body: LoginBody):
     """Unified login. If credentials match admin in env -> admin token.
-    Otherwise looks up user in DB. Inactive / not-found returns generic error."""
-    # Admin path
-    if body.username == ADMIN_USERNAME and body.password == ADMIN_PASSWORD:
+    Otherwise looks up user in DB. Inactive / not-found returns generic error.
+
+    Username matching is case-insensitive and trims surrounding whitespace,
+    which is important on Fire TV / Android TV where the on-screen keyboard
+    autocapitalizes the first letter of every text field.
+    """
+    raw_username = (body.username or "").strip()
+    # Admin path (also case-insensitive on the username)
+    if raw_username.lower() == ADMIN_USERNAME.lower() and body.password == ADMIN_PASSWORD:
         token = create_jwt({"sub": "admin", "role": "admin"}, expires_hours=24 * 7)
         return {"token": token, "role": "admin", "username": ADMIN_USERNAME}
 
-    # User path
-    user = await db.users.find_one({"username": body.username})
+    # User path — case-insensitive exact match
+    import re as _re
+    user = await db.users.find_one({
+        "username": {"$regex": f"^{_re.escape(raw_username)}$", "$options": "i"}
+    })
     if not user or not user.get("password_hash"):
         raise HTTPException(401, "Account is not registered or not activated")
     if user.get("status") != "active":
@@ -454,15 +463,21 @@ class CreateUserBody(BaseModel):
 async def admin_create_user(body: CreateUserBody, admin: dict = Depends(get_current_admin)):
     if not body.username or not body.password:
         raise HTTPException(400, "username and password required")
-    existing = await db.users.find_one({"username": body.username})
+    import re as _re
+    username = body.username.strip()
+    if not username:
+        raise HTTPException(400, "username and password required")
+    existing = await db.users.find_one({
+        "username": {"$regex": f"^{_re.escape(username)}$", "$options": "i"}
+    })
     if existing:
         raise HTTPException(409, "Username already exists")
     user_id = str(uuid.uuid4())
     await db.users.insert_one({
         "id": user_id,
-        "username": body.username,
+        "username": username,
         "password_hash": hash_password(body.password),
-        "display_name": body.display_name or body.username,
+        "display_name": body.display_name or username,
         "status": body.status if body.status in {"active", "disabled"} else "active",
         "watchlist": [],
         "favorites": [],
@@ -470,7 +485,7 @@ async def admin_create_user(body: CreateUserBody, admin: dict = Depends(get_curr
         "updated_at": now_iso(),
         "last_login": None,
     })
-    return {"id": user_id, "username": body.username, "status": body.status}
+    return {"id": user_id, "username": username, "status": body.status}
 
 
 class UpdateUserBody(BaseModel):

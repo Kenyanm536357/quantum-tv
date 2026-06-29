@@ -40,10 +40,10 @@ function WatchShell({ children }) {
   return (
     <div className="min-h-screen relative z-10">
       <header className="sticky top-0 z-40 backdrop-blur-md bg-[#060714]/85 border-b border-white/5">
-        <div className="max-w-[1500px] mx-auto px-6 py-3 flex items-center gap-6">
-          <Link to="/watch" className="flex items-center gap-3">
-            <img src="/logo.png" alt="" className="w-10 h-10 rounded-xl shadow-glow" />
-            <div className="font-heading font-bold gradient-text">QUANTUM TV</div>
+        <div className="max-w-[1500px] mx-auto px-4 sm:px-6 py-2.5 sm:py-3 flex items-center gap-3 sm:gap-6">
+          <Link to="/watch" className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <img src="/logo.png" alt="" className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl shadow-glow" />
+            <div className="font-heading font-bold gradient-text text-sm sm:text-base hidden xs:block">QUANTUM TV</div>
           </Link>
           <nav className="hidden md:flex items-center gap-1 ml-4 flex-1">
             {tabs.map(({ to, label, icon: Icon, end }) => (
@@ -65,12 +65,12 @@ function WatchShell({ children }) {
               </NavLink>
             ))}
           </nav>
-          <div className="flex items-center gap-3 ml-auto">
+          <div className="flex items-center gap-2 sm:gap-3 ml-auto">
             <div className="hidden sm:flex flex-col items-end">
               <div className="text-xs text-zinc-500">Signed in as</div>
-              <div className="text-sm font-medium">{u?.display_name || u?.username}</div>
+              <div className="text-sm font-medium truncate max-w-[140px]">{u?.display_name || u?.username}</div>
             </div>
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-cyan-500 flex items-center justify-center font-heading font-bold">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br from-purple-500 to-cyan-500 flex items-center justify-center font-heading font-bold text-sm shrink-0">
               {(u?.display_name || u?.username || "?").slice(0, 1).toUpperCase()}
             </div>
             <button data-testid="watch-logout" onClick={logout} className="p-2 rounded-lg text-zinc-400 hover:text-red-300 hover:bg-red-500/10" title="Sign out">
@@ -79,12 +79,13 @@ function WatchShell({ children }) {
           </div>
         </div>
         {/* Mobile tabs */}
-        <nav className="md:hidden flex overflow-x-auto px-4 py-2 gap-1 border-t border-white/5">
+        <nav className="md:hidden flex overflow-x-auto px-3 py-2 gap-1.5 border-t border-white/5 scrollbar-thin">
           {tabs.map(({ to, label, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end}
+              data-testid={`watch-nav-mobile-${label.toLowerCase().replace(" ", "-")}`}
               className={({ isActive }) =>
-                `flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs whitespace-nowrap ${
-                  isActive ? "bg-cyan-500/20 text-cyan-300" : "text-zinc-400"
+                `flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs whitespace-nowrap shrink-0 ${
+                  isActive ? "bg-cyan-500/20 text-cyan-300 border border-cyan-400/30" : "text-zinc-400 hover:bg-white/5"
                 }`
               }>
               <Icon className="w-3.5 h-3.5" /> {label}
@@ -92,26 +93,31 @@ function WatchShell({ children }) {
           ))}
         </nav>
       </header>
-      <main className="max-w-[1500px] mx-auto px-6 py-8 pb-24">{children}</main>
+      <main className="max-w-[1500px] mx-auto px-4 sm:px-6 py-5 sm:py-8 pb-24">{children}</main>
     </div>
   );
 }
 
 // ---------- Shared media card ----------
-function MediaCard({ item, size = "md", testid }) {
+function MediaCard({ item, size = "md", fluid = false, testid }) {
   const nav = useNavigate();
   const w = size === "lg" ? 220 : size === "sm" ? 130 : 170;
   const h = Math.round(w * 1.5);
+  const wrapperStyle = fluid ? undefined : { width: w };
+  const posterStyle = fluid ? undefined : { height: h };
   return (
     <motion.button
       data-testid={testid || `card-${item.rating_key}`}
       onClick={() => nav(`/watch/play/${item.rating_key}`, { state: { item } })}
       whileHover={{ scale: 1.04, y: -3 }}
       transition={{ duration: 0.18 }}
-      style={{ width: w }}
-      className="text-left shrink-0 group"
+      style={wrapperStyle}
+      className={`text-left group ${fluid ? "w-full" : "shrink-0"}`}
     >
-      <div style={{ height: h }} className="rounded-xl overflow-hidden bg-white/[0.04] border border-white/5 relative">
+      <div
+        style={posterStyle}
+        className={`rounded-xl overflow-hidden bg-white/[0.04] border border-white/5 relative ${fluid ? "aspect-[2/3]" : ""}`}
+      >
         {item.thumb ? (
           <img src={`${ASSET_BASE}${item.thumb}`} alt={item.title} className="w-full h-full object-cover" />
         ) : (
@@ -119,15 +125,15 @@ function MediaCard({ item, size = "md", testid }) {
             <Film className="w-8 h-8 text-zinc-500" />
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent opacity-90" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
-          <div className="w-14 h-14 rounded-full bg-cyan-500/90 flex items-center justify-center shadow-cyan">
-            <Play className="w-6 h-6 text-white fill-white" />
+          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-cyan-500/90 flex items-center justify-center shadow-cyan">
+            <Play className="w-5 h-5 sm:w-6 sm:h-6 text-white fill-white" />
           </div>
         </div>
-        <div className="absolute bottom-2 left-2 right-2">
-          <div className="text-white text-sm font-medium truncate">{item.title}</div>
-          {item.year && <div className="text-zinc-400 text-xs">{item.year}</div>}
+        <div className="absolute bottom-1.5 left-1.5 right-1.5 sm:bottom-2 sm:left-2 sm:right-2">
+          <div className="text-white text-xs sm:text-sm font-medium truncate">{item.title}</div>
+          {item.year && <div className="text-zinc-400 text-[10px] sm:text-xs">{item.year}</div>}
         </div>
       </div>
     </motion.button>
@@ -141,7 +147,7 @@ function FeaturedHero({ item }) {
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5 }}
-      className="relative h-[360px] rounded-3xl overflow-hidden border border-white/5 mb-10"
+      className="relative h-[220px] sm:h-[300px] lg:h-[360px] rounded-2xl sm:rounded-3xl overflow-hidden border border-white/5 mb-6 sm:mb-10"
     >
       {item.art ? (
         <img src={`${ASSET_BASE}${item.art}`} alt="" className="absolute inset-0 w-full h-full object-cover" />
@@ -150,17 +156,17 @@ function FeaturedHero({ item }) {
       )}
       <div className="absolute inset-0 bg-gradient-to-t from-[#060714] via-[#060714]/70 to-transparent" />
       <div className="absolute inset-0 bg-gradient-to-r from-[#060714] via-[#060714]/40 to-transparent" />
-      <div className="relative h-full flex flex-col justify-end p-10 max-w-3xl">
-        <div className="inline-flex items-center gap-2 self-start bg-red-500 px-3 py-1 rounded-full text-xs font-heading font-bold mb-4 tracking-widest">● FEATURED</div>
-        <h2 className="font-heading text-5xl font-extrabold">{item.title}</h2>
-        {item.year && <div className="text-zinc-400 mt-2">{item.year}</div>}
-        {item.summary && <p className="text-zinc-300 mt-4 line-clamp-3 max-w-xl">{item.summary}</p>}
+      <div className="relative h-full flex flex-col justify-end p-5 sm:p-8 lg:p-10 max-w-3xl">
+        <div className="inline-flex items-center gap-2 self-start bg-red-500 px-2.5 py-1 sm:px-3 rounded-full text-[10px] sm:text-xs font-heading font-bold mb-2 sm:mb-4 tracking-widest">● FEATURED</div>
+        <h2 className="font-heading text-2xl sm:text-4xl lg:text-5xl font-extrabold leading-tight">{item.title}</h2>
+        {item.year && <div className="text-zinc-400 text-xs sm:text-sm mt-1 sm:mt-2">{item.year}</div>}
+        {item.summary && <p className="text-zinc-300 text-xs sm:text-sm mt-2 sm:mt-4 line-clamp-2 sm:line-clamp-3 max-w-xl">{item.summary}</p>}
         <button
           data-testid="hero-play"
           onClick={() => nav(`/watch/play/${item.rating_key}`, { state: { item } })}
-          className="btn-gradient mt-6 px-7 py-3.5 flex items-center gap-2 self-start text-sm"
+          className="btn-gradient mt-4 sm:mt-6 px-5 py-2.5 sm:px-7 sm:py-3.5 flex items-center gap-2 self-start text-xs sm:text-sm"
         >
-          <Play className="w-4 h-4 fill-white" /> Watch Now
+          <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-white" /> Watch Now
         </button>
       </div>
     </motion.div>
@@ -172,11 +178,11 @@ function Row({ title, items, size = "md", emptyText = "Nothing here yet" }) {
   const ref = useRef();
   if (!items) {
     return (
-      <div className="mb-10">
-        <h3 className="font-heading text-xl font-bold mb-4">{title}</h3>
+      <div className="mb-8 sm:mb-10">
+        <h3 className="font-heading text-base sm:text-xl font-bold mb-3 sm:mb-4">{title}</h3>
         <div className="flex gap-3">
           {[...Array(6)].map((_, i) => (
-            <div key={i} className="w-44 h-64 rounded-xl bg-white/[0.03] animate-pulse" />
+            <div key={i} className="w-32 h-48 sm:w-44 sm:h-64 rounded-xl bg-white/[0.03] animate-pulse shrink-0" />
           ))}
         </div>
       </div>
@@ -184,23 +190,23 @@ function Row({ title, items, size = "md", emptyText = "Nothing here yet" }) {
   }
   if (items.length === 0) {
     return (
-      <div className="mb-10">
-        <h3 className="font-heading text-xl font-bold mb-2">{title}</h3>
-        <div className="text-sm text-zinc-500">{emptyText}</div>
+      <div className="mb-8 sm:mb-10">
+        <h3 className="font-heading text-base sm:text-xl font-bold mb-2">{title}</h3>
+        <div className="text-xs sm:text-sm text-zinc-500">{emptyText}</div>
       </div>
     );
   }
   const scroll = (d) => ref.current?.scrollBy({ left: d, behavior: "smooth" });
   return (
-    <div className="mb-10">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-heading text-xl font-bold">{title}</h3>
-        <div className="flex gap-2">
+    <div className="mb-8 sm:mb-10">
+      <div className="flex items-center justify-between mb-3 sm:mb-4">
+        <h3 className="font-heading text-base sm:text-xl font-bold">{title}</h3>
+        <div className="hidden sm:flex gap-2">
           <button onClick={() => scroll(-400)} className="p-2 rounded-full bg-white/5 hover:bg-white/10"><ChevronLeft className="w-4 h-4" /></button>
           <button onClick={() => scroll(400)} className="p-2 rounded-full bg-white/5 hover:bg-white/10"><ChevronRight className="w-4 h-4" /></button>
         </div>
       </div>
-      <div ref={ref} className="flex gap-3 overflow-x-auto scrollbar-thin -mx-2 px-2 pb-2 snap-x">
+      <div ref={ref} className="flex gap-2.5 sm:gap-3 overflow-x-auto scrollbar-thin -mx-4 sm:-mx-2 px-4 sm:px-2 pb-2 snap-x">
         {items.map((it) => <div key={it.rating_key} className="snap-start"><MediaCard item={it} size={size} /></div>)}
       </div>
     </div>
@@ -305,23 +311,23 @@ function LibraryView({ type, label }) {
   });
   return (
     <div className="fade-in">
-      <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">Library</div>
-          <h1 className="font-heading text-4xl font-extrabold mt-1">{label}</h1>
-          {lib && <div className="text-zinc-400 text-sm mt-2">{items.data?.total ?? "—"} titles in {lib.title}</div>}
+      <div className="mb-5 sm:mb-6 flex items-end justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] sm:tracking-[0.25em] text-zinc-500 font-heading">Library</div>
+          <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-extrabold mt-1">{label}</h1>
+          {lib && <div className="text-zinc-400 text-xs sm:text-sm mt-2">{items.data?.total ?? "—"} titles in {lib.title}</div>}
         </div>
         <SortMenu options={SORT_OPTIONS} value={sort} onChange={setSort} />
       </div>
       {libs.isLoading || items.isLoading ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 sm:gap-4">
           {[...Array(12)].map((_, i) => <div key={i} className="aspect-[2/3] rounded-xl bg-white/[0.03] animate-pulse" />)}
         </div>
       ) : !lib ? (
-        <div className="text-zinc-400">No {label.toLowerCase()} library found on the connected Plex server.</div>
+        <div className="text-zinc-400 text-sm sm:text-base">No {label.toLowerCase()} library found on the connected Plex server.</div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {(items.data?.items || []).map((it) => <MediaCard key={it.rating_key} item={it} size="md" />)}
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 sm:gap-4">
+          {(items.data?.items || []).map((it) => <MediaCard key={it.rating_key} item={it} fluid />)}
         </div>
       )}
     </div>
@@ -355,21 +361,21 @@ function LiveTV() {
 
   return (
     <div className="fade-in">
-      <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">Live</div>
-          <h1 className="font-heading text-4xl font-extrabold mt-1">All Channels</h1>
+      <div className="mb-5 sm:mb-6 flex items-end justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] sm:tracking-[0.25em] text-zinc-500 font-heading">Live</div>
+          <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-extrabold mt-1">All Channels</h1>
         </div>
         <SortMenu options={LIVE_SORT} value={sort} onChange={setSort} testidPrefix="live-sort" />
       </div>
       {isLoading ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 sm:gap-4">
           {[...Array(10)].map((_, i) => <div key={i} className="aspect-video rounded-xl bg-white/[0.03] animate-pulse" />)}
         </div>
       ) : channels.length === 0 ? (
-        <div className="text-zinc-400">No live channels available. Plex DVR or Plex's free live TV must be set up on the connected server.</div>
+        <div className="text-zinc-400 text-sm sm:text-base">No live channels available. Plex DVR or Plex's free live TV must be set up on the connected server.</div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 sm:gap-4">
           {channels.map((ch) => (
             <motion.button
               key={ch.key}
@@ -383,11 +389,11 @@ function LiveTV() {
               ) : (
                 <div className="w-full h-full bg-gradient-to-br from-purple-700/40 to-cyan-700/40" />
               )}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent" />
-              <div className="absolute top-2 left-2 bg-red-500 px-2 py-0.5 rounded text-[10px] font-heading font-extrabold tracking-widest">● LIVE</div>
-              <div className="absolute bottom-2 left-2 right-2">
-                <div className="text-white font-medium truncate">{ch.title}</div>
-                {ch.number && <div className="text-zinc-300 text-xs">Channel {ch.number}</div>}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+              <div className="absolute top-1.5 left-1.5 sm:top-2 sm:left-2 bg-red-500 px-1.5 sm:px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-heading font-extrabold tracking-widest">● LIVE</div>
+              <div className="absolute bottom-1.5 left-1.5 right-1.5 sm:bottom-2 sm:left-2 sm:right-2">
+                <div className="text-white font-medium text-xs sm:text-sm truncate">{ch.title}</div>
+                {ch.number && <div className="text-zinc-300 text-[10px] sm:text-xs">Ch {ch.number}</div>}
               </div>
             </motion.button>
           ))}
@@ -418,28 +424,29 @@ function SearchPage() {
   const items = sort === "default" ? (data?.items || []) : applySort(data?.items || [], sort);
   return (
     <div className="fade-in">
-      <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">Find</div>
-          <h1 className="font-heading text-4xl font-extrabold mt-1">Search</h1>
+      <div className="mb-5 sm:mb-6 flex items-end justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] sm:tracking-[0.25em] text-zinc-500 font-heading">Find</div>
+          <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-extrabold mt-1">Search</h1>
         </div>
         {items.length > 0 && <SortMenu options={SEARCH_SORT} value={sort} onChange={setSort} testidPrefix="search-sort" />}
       </div>
-      <div className="relative max-w-xl mb-8">
+      <div className="relative w-full sm:max-w-xl mb-6 sm:mb-8">
         <Search className="w-5 h-5 text-zinc-500 absolute left-4 top-1/2 -translate-y-1/2" />
         <input
           data-testid="search-input"
           value={q} onChange={(e) => setQ(e.target.value)}
           autoFocus placeholder="Search movies, shows, channels…"
+          autoCapitalize="none" autoCorrect="off" spellCheck="false"
           className="qtv-input pl-12"
         />
       </div>
       {isFetching && <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        {items.map((it) => <MediaCard key={it.rating_key} item={it} />)}
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 sm:gap-4">
+        {items.map((it) => <MediaCard key={it.rating_key} item={it} fluid />)}
       </div>
       {q.length >= 2 && !isFetching && items.length === 0 && (
-        <div className="text-zinc-500">No matches for "{q}"</div>
+        <div className="text-zinc-500 text-sm sm:text-base">No matches for "{q}"</div>
       )}
     </div>
   );
@@ -470,29 +477,29 @@ function ListPage({ endpoint, title, removeUrl, emptyHint }) {
   const items = applySort(data?.items || [], sort);
   return (
     <div className="fade-in">
-      <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">Your</div>
-          <h1 className="font-heading text-4xl font-extrabold mt-1">{title}</h1>
+      <div className="mb-5 sm:mb-6 flex items-end justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] sm:tracking-[0.25em] text-zinc-500 font-heading">Your</div>
+          <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-extrabold mt-1">{title}</h1>
         </div>
         {(data?.items || []).length > 0 && <SortMenu options={LIST_SORT} value={sort} onChange={setSort} testidPrefix={`${title.toLowerCase()}-sort`} />}
       </div>
       {isLoading ? (
         <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
       ) : items.length === 0 ? (
-        <div className="text-zinc-400">{emptyHint}</div>
+        <div className="text-zinc-400 text-sm sm:text-base">{emptyHint}</div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 sm:gap-4">
           {items.map((it) => (
             <div key={it.rating_key} className="relative group">
-              <MediaCard item={it} />
+              <MediaCard item={it} fluid />
               <button
                 onClick={() => remove.mutate(it.rating_key)}
-                className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/70 hover:bg-red-500 backdrop-blur opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center"
+                className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-black/70 hover:bg-red-500 backdrop-blur opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all flex items-center justify-center"
                 title="Remove"
                 data-testid={`remove-${it.rating_key}`}
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
             </div>
           ))}
@@ -529,11 +536,11 @@ function Player() {
   });
 
   return (
-    <div className="fade-in -mt-8 -mx-6">
+    <div className="fade-in -mt-5 sm:-mt-8 -mx-4 sm:-mx-6">
       <div className="relative aspect-video bg-black max-h-[80vh] w-full">
         <button onClick={() => nav(-1)}
           data-testid="player-back"
-          className="absolute top-4 left-4 z-10 w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur flex items-center justify-center">
+          className="absolute top-3 left-3 sm:top-4 sm:left-4 z-10 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur flex items-center justify-center">
           <ChevronLeft className="w-5 h-5" />
         </button>
         {stream.isLoading ? (
@@ -541,7 +548,7 @@ function Player() {
             <Loader2 className="w-10 h-10 animate-spin text-cyan-400" />
           </div>
         ) : stream.error ? (
-          <div className="absolute inset-0 flex items-center justify-center text-red-300 px-6 text-center">
+          <div className="absolute inset-0 flex items-center justify-center text-red-300 px-6 text-center text-sm sm:text-base">
             {stream.error?.response?.data?.detail || "Could not start stream"}
           </div>
         ) : (
@@ -556,27 +563,27 @@ function Player() {
           />
         )}
       </div>
-      <div className="max-w-[1500px] mx-auto px-6 pt-8 pb-10">
-        <div className="flex items-start justify-between gap-6 flex-wrap">
-          <div>
-            <h1 className="font-heading text-3xl font-extrabold">{meta.data?.title || "—"}</h1>
-            <div className="text-zinc-500 text-sm mt-1 flex items-center gap-3">
+      <div className="max-w-[1500px] mx-auto px-4 sm:px-6 pt-5 sm:pt-8 pb-10">
+        <div className="flex items-start justify-between gap-4 sm:gap-6 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <h1 className="font-heading text-xl sm:text-2xl lg:text-3xl font-extrabold leading-tight">{meta.data?.title || "—"}</h1>
+            <div className="text-zinc-500 text-xs sm:text-sm mt-1 flex items-center flex-wrap gap-x-2 gap-y-1">
               {meta.data?.year && <span>{meta.data.year}</span>}
               {meta.data?.type && <span className="capitalize">· {meta.data.type}</span>}
               {meta.data?.audience_rating && <span>· ★ {meta.data.audience_rating}</span>}
             </div>
-            {meta.data?.summary && <p className="text-zinc-300 mt-5 max-w-3xl leading-relaxed">{meta.data.summary}</p>}
+            {meta.data?.summary && <p className="text-zinc-300 text-sm sm:text-base mt-3 sm:mt-5 max-w-3xl leading-relaxed">{meta.data.summary}</p>}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 w-full sm:w-auto">
             <button data-testid="toggle-watchlist" onClick={() => toggleWl.mutate()}
-              className={`px-4 py-2 rounded-full border flex items-center gap-2 text-sm transition-colors ${inWl ? "bg-cyan-500/20 border-cyan-400/40 text-cyan-200" : "bg-white/5 border-white/10 hover:bg-white/10"}`}>
+              className={`px-3 sm:px-4 py-2 rounded-full border flex-1 sm:flex-none flex items-center justify-center gap-2 text-xs sm:text-sm transition-colors ${inWl ? "bg-cyan-500/20 border-cyan-400/40 text-cyan-200" : "bg-white/5 border-white/10 hover:bg-white/10"}`}>
               {inWl ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-              {inWl ? "In Watchlist" : "Add to Watchlist"}
+              <span className="truncate">{inWl ? "In Watchlist" : "Add to Watchlist"}</span>
             </button>
             <button data-testid="toggle-favorite" onClick={() => toggleFav.mutate()}
-              className={`px-4 py-2 rounded-full border flex items-center gap-2 text-sm transition-colors ${inFav ? "bg-pink-500/20 border-pink-400/40 text-pink-200" : "bg-white/5 border-white/10 hover:bg-white/10"}`}>
+              className={`px-3 sm:px-4 py-2 rounded-full border flex-1 sm:flex-none flex items-center justify-center gap-2 text-xs sm:text-sm transition-colors ${inFav ? "bg-pink-500/20 border-pink-400/40 text-pink-200" : "bg-white/5 border-white/10 hover:bg-white/10"}`}>
               <Heart className={`w-4 h-4 ${inFav ? "fill-pink-300" : ""}`} />
-              {inFav ? "Favorited" : "Favorite"}
+              <span className="truncate">{inFav ? "Favorited" : "Favorite"}</span>
             </button>
           </div>
         </div>

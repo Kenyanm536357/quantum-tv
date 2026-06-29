@@ -1,0 +1,51 @@
+{
+  "summary": "Frontend-only mobile-responsive pass on the /watch end-user surface (Browse, Live TV, Movies, Series, Search, Watchlist, Favorites, Player) at 390x844 and 1280x800. Case-insensitive USER login (TEST/12345) regression also re-verified. 24 of 26 UI checks pass; one real responsive bug found on /watch Browse during data loading.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Row (loading skeleton) on /watch Browse",
+        "issue": "Horizontal page scroll on mobile 390px. document.documentElement.scrollWidth=844 (body scrolls right ~454px). Root cause: the Row component's LOADING state (Watch.js lines 183-187) renders <div className='flex gap-3'> with 6 shrink-0 cards (w-32 = 128px each ≈ 768px+ total) and is MISSING overflow-x-auto. The loaded state (line 209) correctly has overflow-x-auto. So while data is loading (or any time the queries are pending), /watch overflows horizontally. Confirmed by probe: navMobile is contained (clientW=390, scrollW=657 inside), Live TV/Movies/Series/Search/Watchlist/Favorites all have docW=390 (no overflow). Only /watch Browse is affected.",
+        "selector": "Row loading state: flex gap-3 children w-32 h-48 sm:w-44 sm:h-64 shrink-0 (Watch.js:183-187)",
+        "priority": "HIGH",
+        "fix_suggestion": "Add `overflow-x-auto scrollbar-thin -mx-4 sm:-mx-2 px-4 sm:px-2` to the loading skeleton's inner flex div so the loading state matches the loaded state's containment. OR add `overflow-x-hidden` to the <main> in WatchShell (Watch.js:96) as a defensive guard."
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_2.json"
+  ],
+  "action_items": [
+    "Fix Row loading-skeleton horizontal overflow on /watch Browse mobile (Watch.js:183-187). Easiest fix: add `overflow-x-auto -mx-4 sm:-mx-2 px-4 sm:px-2 scrollbar-thin` to the loading-state flex container so it matches the loaded state. Defensive alternative: add `overflow-x-hidden` to <main> in WatchShell (Watch.js:96)."
+  ],
+  "critical_code_review_comments": [
+    "Watch.js Row loading skeleton (lines 183-187) is missing overflow-x-auto that the loaded state (line 209) has. This is the source of the only responsive bug.",
+    "MediaCard size='lg' fixed width = 192px combined with size='md' = 160px is intentional for Row carousels and works correctly inside overflow-x-auto. fluid={true} usage in LibraryView/SearchPage/ListPage grids is correct — verified Movies/Series/Search/Watchlist/Favorites all have docW <= 390 on mobile.",
+    "Mobile nav strip (Watch.js:82-94) correctly uses md:hidden + overflow-x-auto + shrink-0 + whitespace-nowrap. Self-contained — nav.scrollWidth=657 but nav.clientWidth=390 (correctly clipped). All 7 testids resolve and are visible on mobile.",
+    "Desktop nav (line 48: <nav className='hidden md:flex'>) correctly hidden on <768px and visible on >=768px. Mirror behaviour for mobile nav (md:hidden). No conflicts.",
+    "Player flex-1 buttons on mobile work (toggle-watchlist width=175px on 390 viewport, paired with toggle-favorite). On desktop the same buttons sit inline at top-right correctly (h1 text-3xl=30px confirmed).",
+    "Live TV empty state (`No live channels available. Plex DVR or Plex's free live TV...`) renders cleanly on mobile — no weird shapes, no overflow, no broken layout. ✓",
+    "Sort dropdown on Live TV opens with 5 options (4 sort modes + reset/clear) — works on both mobile and desktop.",
+    "H1 font scaling correctly: Live TV mobile=24px, desktop=36px. Movies mobile=24px. Player mobile=20px, desktop=30px. All match the text-2xl sm:text-3xl lg:text-4xl spec.",
+    "Grid columns verified: Live TV mobile=2 cols (visible by 'No channels' empty state on this server, but grid class is grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 — correct); Movies desktop=6 cols (192px each, 200 children rendered); Movies mobile=3 cols (~112px each, fluid card width).",
+    "Search input on mobile = 358px wide (full container width, NOT max-w-xl), autoCapitalize='none', autoCorrect='off'. ✓",
+    "Case-insensitive login regression: POST /api/auth/login {username:'TEST', password:'12345'} returns role=user and frontend redirects to /watch. No regression from iteration_1.",
+    "/app/memory/test_credentials.md API base URL still shows the OLD preview URL (740c242f-...). Real current URL is https://stream-plex-mobile.preview.emergentagent.com. Same minor doc issue flagged in iteration_1 — still not corrected."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "skipped (frontend-only per request)",
+    "frontend": "92% (24/26 UI checks). 1 real bug (Row loading-skeleton mobile overflow on /watch). 1 false-positive (desktop Browse hero h-[360px] check returned null only because the test user had no Recently Added / Continue Watching items, so FeaturedHero didn't render — not a layout bug)."
+  },
+  "test_credentials": "admin / Quantum2024 (working). test / 12345 NOW SEEDED and verified working (case-insensitive: 'test', 'TEST', 'Test' all log in as role=user).",
+  "seed_data_creation": "None new. The 'test' user is already in the DB (verified by direct curl POST /api/auth/login). No fixture cleanup needed.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The only real UI bug is the Row loading-skeleton on /watch Browse causing horizontal overflow on 390px mobile (scrollWidth=844 vs clientWidth=390). After the main agent adds overflow-x-auto to the skeleton flex div at Watch.js:183 (or overflow-x-hidden to <main> at Watch.js:96), re-verify: page.evaluate(() => document.documentElement.scrollWidth) <= 390 on /watch mobile. Everything else (Live TV / Movies / Series / Search / Watchlist / Favorites / Player) already passes the no-horizontal-scroll check. Mobile nav strip is correctly contained — don't break it. Movies and Search grids correctly use fluid MediaCards (no fixed-px-width regression).",
+  "rca_of_the_issue": "RCA: Watch.js Row component has two render paths — loaded state (line 200-213) which correctly uses `overflow-x-auto scrollbar-thin -mx-4 sm:-mx-2 px-4 sm:px-2`, and a loading-skeleton state (line 180-189) which uses only `flex gap-3` with `shrink-0` children of fixed width w-32 (128px). With 6 skeleton items, the flex container's intrinsic width becomes ~768px on the smallest viewport, but there is NO overflow-x-auto wrapping it, so the parent <main> (which has only horizontal padding, no horizontal overflow control) inherits the wide content and pushes <body> scrollWidth to 844. Reproduction: open /watch on a 390px viewport with slow network (or fresh load before recently-added/continue-watching queries resolve) and try to scroll the page horizontally — it scrolls ~454px to the right. Mitigation 1 (preferred): add `overflow-x-auto scrollbar-thin -mx-4 sm:-mx-2 px-4 sm:px-2 pb-2` to the loading-state flex div so it matches the loaded state. Mitigation 2 (defensive): add `overflow-x-hidden` to the <main> in WatchShell so no descendant layout slip can ever leak horizontally."
+}

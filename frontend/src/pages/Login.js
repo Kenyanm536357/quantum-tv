@@ -30,7 +30,7 @@ export default function Login() {
         nav("/watch");
       }
     } catch (e) {
-      setErr(e?.response?.data?.detail || "Account is not registered or not activated");
+      setErr(e?.response?.data?.detail || "Incorrect username or password. Please try again.");
     } finally { setLoading(false); }
   };
 

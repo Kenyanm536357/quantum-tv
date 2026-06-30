@@ -1,0 +1,54 @@
+{
+  "summary": "Validated new /api/auth/login error messages (6/6 backend tests pass). Confirmed login UI now shows new error string. CRITICAL: web /watch/play/:rk route crashes at runtime with 'ReferenceError: VideoPlayer is not defined' — Watch.js renders <VideoPlayer /> but never imports the component. The new VideoPlayer.jsx file is correct; only the import line is missing in pages/Watch.js.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "pages/Watch.js -> Player route",
+        "issue": "Missing import: file uses <VideoPlayer src=... /> at line 555 but has no `import VideoPlayer from '../components/VideoPlayer'`. Runtime throws 'ReferenceError: VideoPlayer is not defined' the moment the stream API returns a URL. The CRA dev error overlay shows three Uncaught runtime errors. ESLint also reports 'VideoPlayer is not defined' (react/jsx-no-undef) on /app/frontend/src/pages/Watch.js:555. This breaks the entire /watch/play/<rk> feature for every user/title.",
+        "selector": "/watch/play/:rk",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "User watch → play title",
+        "issue": "Because Watch.js does not import VideoPlayer, as soon as GET /api/stream/{rk} resolves (it does — Plex is connected on preview, returns a valid direct .mkv URL), React crashes the Player component before any <video> tag is created. data-testid='video-player', data-testid='player-error', data-testid='player-retry' are all unreachable in the live app until the import is added.",
+        "affected_selectors": ["[data-testid='video-player']", "[data-testid='player-error']", "[data-testid='player-retry']"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_login_messages.py",
+    "/app/test_reports/pytest/iteration_6_results.xml"
+  ],
+  "action_items": [
+    "Add `import VideoPlayer from \"../components/VideoPlayer\";` near the top of /app/frontend/src/pages/Watch.js (around line 10, after the existing api import). One-line fix. Without this, the /watch/play/<rk> route is 100% broken at runtime — the CRA dev overlay is triggered and no <video> element is ever rendered.",
+    "After the fix, retest by logging in as a non-admin user and navigating to /watch/play/<any-valid-rk>. Expect: <video data-testid='video-player'> in DOM, no 'VideoPlayer is not defined' errors. For HLS fallback verification, use a Plex item whose /api/stream/<rk> returns a .m3u8 URL on a non-Safari Chrome — readyState should advance past 1 with hls.js attached.",
+    "Optional cleanup (minor): /app/frontend/src/pages/Watch.js has 4 react/no-unescaped-entities lint errors at lines 229/376/449 (apostrophes / double quotes inside JSX text); not blocking runtime but should be cleaned."
+  ],
+  "critical_code_review_comments": [
+    "Watch.js missing VideoPlayer import — the new feature was shipped without ever rendering the new component on this preview. Suggest adding an ESLint pre-commit / CI step so jsx-no-undef errors block merges; this exact failure mode would have been caught.",
+    "VideoPlayer.jsx looks good: properly handles iOS native HLS via canPlayType, Chrome/Android via hls.js, MP4 native; cleans up hls instance on unmount; surfaces media error codes; has data-testid on both the video element and the retry button. No changes recommended once the import is added.",
+    "Backend /api/auth/login: the 3 new strings are exactly as spec'd; confirmed 401 for bad username, 401 for wrong password, 403 for status=disabled.",
+    "Backend regression: admin login (lower + UPPER case) and TEST_ user create/login/delete all pass on the public preview URL.",
+    "Watch.js is 618 lines and contains Layout, multiple list pages, Player, Routes — exceeds the 700-line warning threshold soon; consider splitting Player into its own file (would also have prevented the missing import by making it explicit in a new module)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_login_messages.py (new — 6 pytest cases for new login error messages + regressions)"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "50% (login error message OK + preview banner OK; player route CRASHES)"
+  },
+  "test_credentials": "admin / Quantum2024 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Tests create and DELETE TEST_-prefixed users in-place; verified clean after run. Manually deleted leftover TEST_play, TEST_wrongpw_user via /api/admin/users after the UI test session.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend message strings verified — keep using /app/backend/tests/test_login_messages.py for regression. For Player route retest after main agent adds the VideoPlayer import: create a user, login as that user via UI, navigate to /watch/play/<rk> for any movie returned by GET /api/v2/resources, then GET /api/library/<sectionKey>/all. Watch for absence of 'VideoPlayer is not defined' in page errors and presence of [data-testid='video-player']. Plex IS connected on this preview (stream URLs resolve), so the bug WILL reproduce — do not skip this retest. Mobile (Fire TV) is explicitly out of scope this iteration.",
+  "rca of the issue": "ROOT CAUSE: /app/frontend/src/pages/Watch.js line 555 uses <VideoPlayer .../> but the file's import block (lines 1-9) never imports VideoPlayer from '../components/VideoPlayer'. REPRODUCE: (1) log in as a non-admin user, (2) navigate to /watch/play/1 (or any rk that returns a 200 from /api/stream/<rk>), (3) wait ~1s for stream query to resolve — React throws ReferenceError: VideoPlayer is not defined; CRA dev error overlay shows 3 'Uncaught runtime errors' (stack starts at Player → renderWithHooks → updateFunctionComponent). MITIGATION: add `import VideoPlayer from \"../components/VideoPlayer\";` after the existing `import api, { ASSET_BASE } from \"../api\";` line in Watch.js. ESLint already flags this with rule react/jsx-no-undef — running `yarn lint` or CRA's build step (yarn build) would have surfaced the bug before this iteration shipped."
+}

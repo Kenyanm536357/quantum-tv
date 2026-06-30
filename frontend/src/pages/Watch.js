@@ -552,13 +552,8 @@ function Player() {
             {stream.error?.response?.data?.detail || "Could not start stream"}
           </div>
         ) : (
-          <video
-            data-testid="video-player"
+          <VideoPlayer
             src={stream.data?.url}
-            controls
-            autoPlay
-            playsInline
-            className="w-full h-full"
             poster={meta.data?.art ? `${ASSET_BASE}${meta.data.art}` : undefined}
           />
         )}

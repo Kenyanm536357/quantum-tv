@@ -207,11 +207,11 @@ async def login(body: LoginBody):
         "username": {"$regex": f"^{_re.escape(raw_username)}$", "$options": "i"}
     })
     if not user or not user.get("password_hash"):
-        raise HTTPException(401, "Account is not registered or not activated")
+        raise HTTPException(401, "Incorrect username or password. Please try again.")
     if user.get("status") != "active":
-        raise HTTPException(403, "Account is not registered or not activated")
+        raise HTTPException(403, "This account has been disabled. Contact the admin.")
     if not verify_password(body.password, user["password_hash"]):
-        raise HTTPException(401, "Account is not registered or not activated")
+        raise HTTPException(401, "Incorrect username or password. Please try again.")
     await db.users.update_one({"id": user["id"]}, {"$set": {"last_login": now_iso()}})
     token = create_jwt({"sub": user["id"], "role": "user", "username": user["username"]})
     return {

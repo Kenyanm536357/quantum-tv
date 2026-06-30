@@ -23,13 +23,14 @@ export default function Login() {
   const cardMaxW = IS_TV ? Math.min(W * 0.55, 720) : Math.min(W * 0.9, 520);
 
   const signIn = async () => {
-    if (!username.trim() || !password) {
+    const u = username.trim();
+    if (!u || !password) {
       setError("Please enter username and password");
       return;
     }
     setError(null); setLoading(true);
     try {
-      const { data } = await client.post("/auth/login", { username: username.trim(), password });
+      const { data } = await client.post("/auth/login", { username: u, password });
       if (data.role === "admin") {
         setError("Admin accounts must use the web Control Panel.");
         setLoading(false);
@@ -41,7 +42,8 @@ export default function Login() {
       }));
       router.replace("/(tabs)/browse");
     } catch (e: any) {
-      setError(e?.response?.data?.detail || "Account is not registered or not activated");
+      const reason = e?.response?.data?.detail || "Incorrect username or password. Please try again.";
+      setError(reason);
     } finally { setLoading(false); }
   };
 

@@ -19,6 +19,13 @@
 - `/app/frontend/` — **React (CRA + Tailwind)** admin web console on port 3000. Pages: Dashboard, Users, Plex Servers, Activity, Settings, Login.
 - `/app/mobile/` — **Expo Router (TypeScript)** native mobile app. Pages: Login (Plex PIN), Browse (continue + recent + featured), Live TV grid, Movies, Series, Search, More (profile + server picker + disconnect), Player (`expo-video`).
 
+## Implemented (Preview/Production environment banner + auto-refresh — 2026-06-29 #3)
+- ✅ Added `IS_PRODUCTION_BACKEND` detection in `/app/frontend/src/api.js` (regex match on quantumtv.app / emergent.host).
+- ✅ Amber warning banner with `AlertTriangle` icon now renders on the admin login page AND on every admin shell page when on PREVIEW. Banner explains that users created here won't appear on the Fire Stick and links to https://quantumtv.app/login. Banner is hidden on production. (Solves root-cause of "users not syncing": preview and production have separate MongoDBs; banner makes the mismatch unmissable.)
+- ✅ Users page now refreshes every 20s + on window focus + has a manual refresh button. Modal shows a big success screen with the literal credentials so admin can't be unsure whether the user was created.
+- ✅ `/app/mobile/.env` `EXPO_PUBLIC_BACKEND_URL` now canonically points at https://quantumtv.app (was emergent.host — same DB but less obvious). Existing v1.0.3 APK still works because emergent.host still serves the production DB; only future EAS builds use the new value.
+- ✅ Verified: 22/22 frontend tests pass (iteration_5).
+
 ## Implemented (Mobile-responsive admin + watch surfaces — 2026-06-29 #2)
 - ✅ Backend `/api/auth/login` is now case-insensitive and trims whitespace (fixes Fire TV / iOS Safari autocap breaking sign-in). Same trim + case-insensitive duplicate check on `/api/admin/users` create. 18/18 backend tests pass.
 - ✅ Admin Control Panel mobile-responsive overhaul: desktop sidebar → slide-out drawer w/ hamburger, Users + Activity tables → cards on mobile, Dashboard stats 2x2 on mobile, Modal slides up from bottom. 11/11 frontend tests pass.

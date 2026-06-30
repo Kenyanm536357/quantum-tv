@@ -1,0 +1,36 @@
+{
+  "summary": "Frontend-only verification of PREVIEW environment warning banners (login + admin shell) at desktop (1280x800) and mobile (390x844) viewports, plus regression spot-check of iteration_4 create-user flow. 22/22 assertions passed. Both banners render correctly only on preview (IS_PRODUCTION_BACKEND=false), link href is exactly https://quantumtv.app/login on both banners, banner sits ABOVE the sticky header on every admin page, does not overlap the mobile hamburger, does not cause horizontal scroll, and persists while modals are open. Create-user regression flow (open modal -> fill form -> submit -> success view -> Done -> card appears) still works end-to-end. Test user was created and cleaned up via /api/admin/users.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "tests_executed": [
+    "[login] data-testid='login-preview-banner' visible at 1280x800 and 390x844",
+    "[login] banner text contains 'Preview environment' and 'Fire Stick'",
+    "[login] banner link href === 'https://quantumtv.app/login'",
+    "[login] no horizontal scroll on 390x844",
+    "[admin shell] data-testid='preview-banner' visible on Dashboard, Users, Servers, Activity, Settings, Fire TV Install (6 pages)",
+    "[admin shell] data-testid='goto-production' href === 'https://quantumtv.app/login'",
+    "[admin shell] banner.getBoundingClientRect().top (0) < header.getBoundingClientRect().top (61) -> banner is ABOVE header",
+    "[admin shell mobile 390x844] banner visible, no horizontal scroll (scrollW=390 == clientW=390), banner.bottom (70.5) <= hamburger.top (80) -> no overlap",
+    "[mobile] hamburger opens mobile-drawer, drawer-close hides it",
+    "[regression] open-create-user modal opens with banner still visible, fields new-username/new-password fillable, submit-create-user triggers POST /api/admin/users, create-success view appears, done-create closes modal, new user-row appears in list",
+    "[a11y] banner has computed amber bg (rgba ~ amber-500/15) and amber-100 text -> sufficient contrast against dark shell"
+  ],
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "PreviewBanner is duplicated between App.js (admin shell) and Login.js. Acceptable for now (small component, different layout/spacing) but if a 3rd location ever needs it, extract to /app/frontend/src/components/PreviewBanner.jsx.",
+    "IS_PRODUCTION_BACKEND regex /quantumtv\\.app|emergent\\.host/i correctly excludes preview.emergentagent.com (substring 'emergent.host' is NOT contained in 'emergentagent.com'). Verified by reading regex; banner appears as expected on preview. No change needed.",
+    "Mobile .env now points EXPO_PUBLIC_BACKEND_URL=https://quantumtv.app (confirmed via cat). As main agent noted, this only affects FUTURE EAS builds; existing v1.0.3 APK still points at emergent.host. No regression on web frontend."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (not tested per request)", "frontend": "100% (22/22 assertions passed)" },
+  "test_credentials": "admin / Quantum2024 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Created and DELETED 1 test user 'TESTbnr123512' via UI (create) and DELETE /api/admin/users/{id} (cleanup). Final DB state matches pre-test: only 'test' user remains.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "PREVIEW banner work (iteration_5) fully verified. data-testids: 'login-preview-banner' (login page), 'preview-banner' (admin shell, every page), 'goto-production' (link in admin shell banner). Both banner links point to https://quantumtv.app/login. Banner is conditioned on !IS_PRODUCTION_BACKEND from /app/frontend/src/api.js. Iteration_4 create-user regression also re-verified end-to-end."
+}

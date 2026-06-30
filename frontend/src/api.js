@@ -4,6 +4,15 @@ const BACKEND = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BACKEND}/api`;
 export const ASSET_BASE = BACKEND;
 
+/**
+ * Detect whether this build is talking to the production backend
+ * (quantumtv.app / *.emergent.host) or the preview backend
+ * (*.preview.emergentagent.com). The admin panel shows a warning banner
+ * when on preview so the operator doesn't create users in the wrong DB.
+ */
+export const IS_PRODUCTION_BACKEND = /quantumtv\.app|emergent\.host/i.test(BACKEND || "");
+export const PRODUCTION_URL = "https://quantumtv.app";
+
 const client = axios.create({ baseURL: API });
 
 client.interceptors.request.use((config) => {

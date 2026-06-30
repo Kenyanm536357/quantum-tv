@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
-import api from "../api";
+import { Eye, EyeOff, Loader2, AlertTriangle } from "lucide-react";
+import api, { IS_PRODUCTION_BACKEND, PRODUCTION_URL } from "../api";
 
 export default function Login() {
   const nav = useNavigate();
@@ -52,6 +52,19 @@ export default function Login() {
           </h1>
           <p className="text-zinc-400 text-sm mt-2">Sign in to your account</p>
         </div>
+
+        {!IS_PRODUCTION_BACKEND && (
+          <div data-testid="login-preview-banner" className="mb-5 rounded-2xl border border-amber-400/30 bg-amber-500/15 px-4 py-3 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-300 shrink-0 mt-0.5" />
+            <div className="text-xs sm:text-sm leading-snug text-amber-100">
+              <div className="font-semibold text-amber-200 mb-0.5">Preview environment</div>
+              Users created here will NOT show up on your Fire Stick. To manage real users, sign in at{" "}
+              <a href={PRODUCTION_URL + "/login"} className="underline font-medium text-amber-200 break-all">
+                {PRODUCTION_URL.replace(/^https?:\/\//, "")}/login
+              </a>.
+            </div>
+          </div>
+        )}
 
         <div className="glass rounded-3xl p-6 sm:p-8">
           <form onSubmit={submit} className="space-y-5">

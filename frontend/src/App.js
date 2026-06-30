@@ -3,8 +3,9 @@ import { Routes, Route, Navigate, useLocation, useNavigate, Link } from "react-r
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Users, Server, Settings, Activity, LogOut, Tv,
-  Smartphone, Download, MonitorPlay, Menu, X,
+  Smartphone, Download, MonitorPlay, Menu, X, AlertTriangle,
 } from "lucide-react";
+import { IS_PRODUCTION_BACKEND, PRODUCTION_URL } from "./api";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import UsersPage from "./pages/Users";
@@ -61,6 +62,20 @@ const BrandHeader = () => (
     <div>
       <div className="font-heading font-bold tracking-wide text-sm gradient-text">QUANTUM TV</div>
       <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Admin Console</div>
+    </div>
+  </div>
+);
+
+const PreviewBanner = () => (
+  <div data-testid="preview-banner" className="bg-amber-500/15 border-b border-amber-400/30 text-amber-100 px-4 sm:px-6 md:px-8 py-2.5 flex items-start sm:items-center gap-3">
+    <AlertTriangle className="w-5 h-5 text-amber-300 shrink-0 mt-0.5 sm:mt-0" />
+    <div className="text-xs sm:text-sm leading-snug flex-1 min-w-0">
+      <span className="font-semibold text-amber-200">Preview environment.</span>{" "}
+      Users you create here will NOT appear in the Fire Stick app. Open the production admin at{" "}
+      <a href={PRODUCTION_URL + "/login"} className="underline font-medium text-amber-200 break-all" data-testid="goto-production">
+        {PRODUCTION_URL.replace(/^https?:\/\//, "")}/login
+      </a>
+      {" "}to manage real users.
     </div>
   </div>
 );
@@ -146,6 +161,7 @@ const Shell = ({ children }) => {
       </AnimatePresence>
 
       <main className="flex-1 min-w-0 w-full">
+        {!IS_PRODUCTION_BACKEND && <PreviewBanner />}
         <header className="h-14 sm:h-16 border-b border-white/5 px-4 sm:px-6 md:px-8 flex items-center justify-between sticky top-0 bg-[#060714]/80 backdrop-blur-md z-30">
           <div className="flex items-center gap-3 min-w-0">
             <button

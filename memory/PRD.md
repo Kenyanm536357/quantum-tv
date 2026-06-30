@@ -19,6 +19,17 @@
 - `/app/frontend/` — **React (CRA + Tailwind)** admin web console on port 3000. Pages: Dashboard, Users, Plex Servers, Activity, Settings, Login.
 - `/app/mobile/` — **Expo Router (TypeScript)** native mobile app. Pages: Login (Plex PIN), Browse (continue + recent + featured), Live TV grid, Movies, Series, Search, More (profile + server picker + disconnect), Player (`expo-video`).
 
+## Implemented (Subscriptions + Seasons/Episodes — 2026-06-30)
+- ✅ **Subscription system (Setplex/Nora-style)**: 1–12 month plans, auto-expiration, KS-XXX-XXX account numbers, `subscription_status` pill (active/expiring/expired) with `days_left`, manual extend +N months from admin.
+- ✅ **Device slots**: admin sets `max_devices` (default 3). On login the mobile app sends `device_id` (cached in AsyncStorage), `device_model`, `device_name` — backend auto-registers into the first open slot. Device limit hit → 403 with clear message. Admin can set-primary / remove devices.
+- ✅ **Notes tab** per subscriber (admin can add timestamped notes; delete on demand).
+- ✅ **Expired-subscription login**: 403 with detail "Your subscription has expired. Contact the admin to renew."
+- ✅ **Manage Drawer** (Subscription / Devices / Notes tabs) accessible from each user row.
+- ✅ **Search-bar overlap fix**: `.qtv-input` padding split into `padding-block` + `:where()`-wrapped `padding-inline` so Tailwind `pl-10` always wins.
+- ✅ **TV Show seasons + episodes**: New `/watch/show/:rk` page. Backend exposes `index`, `parent_index`, `parent_rating_key`, `grandparent_rating_key`, `parent_thumb`, `grandparent_thumb` for proper season/episode shapes. MediaCard auto-routes shows to /watch/show, movies/episodes to /watch/play.
+- ✅ **APK v1.0.5** queued on EAS with device-id + expired-state UX.
+- ✅ Verified: iteration_8 — 100% backend + frontend tests pass.
+
 ## Implemented (Preview/Production environment banner + auto-refresh — 2026-06-29 #3)
 - ✅ Added `IS_PRODUCTION_BACKEND` detection in `/app/frontend/src/api.js` (regex match on quantumtv.app / emergent.host).
 - ✅ Amber warning banner with `AlertTriangle` icon now renders on the admin login page AND on every admin shell page when on PREVIEW. Banner explains that users created here won't appear on the Fire Stick and links to https://quantumtv.app/login. Banner is hidden on production. (Solves root-cause of "users not syncing": preview and production have separate MongoDBs; banner makes the mismatch unmissable.)

@@ -404,18 +404,18 @@ export default function UsersPage() {
                 <ResetPasswordPrompt userId={u.id} onDone={() => setResetting(null)} />
               ) : (
                 <div className="grid grid-cols-4 gap-1.5">
-                  <button data-testid={`manage-${u.username}`} onClick={() => setManaging(u.id)} className="flex items-center justify-center gap-1 py-2 rounded-lg bg-white/5 hover:bg-purple-500/20 text-purple-200 text-[10px]">
+                  <button data-testid={`manage-${u.username}-mobile`} onClick={() => setManaging(u.id)} className="flex items-center justify-center gap-1 py-2 rounded-lg bg-white/5 hover:bg-purple-500/20 text-purple-200 text-[10px]">
                     <Settings2 className="w-3 h-3" /> Manage
                   </button>
-                  <button data-testid={`reset-${u.username}`} onClick={() => setResetting(u.id)} className="flex items-center justify-center gap-1 py-2 rounded-lg bg-white/5 hover:bg-cyan-500/20 text-cyan-300 text-[10px]">
+                  <button data-testid={`reset-${u.username}-mobile`} onClick={() => setResetting(u.id)} className="flex items-center justify-center gap-1 py-2 rounded-lg bg-white/5 hover:bg-cyan-500/20 text-cyan-300 text-[10px]">
                     <KeyRound className="w-3 h-3" /> PW
                   </button>
-                  <button data-testid={u.status === "active" ? `disable-${u.username}` : `enable-${u.username}`}
+                  <button data-testid={(u.status === "active" ? `disable-${u.username}` : `enable-${u.username}`) + "-mobile"}
                     onClick={() => setStatus.mutate({ id: u.id, status: u.status === "active" ? "disabled" : "active" })}
                     className={`flex items-center justify-center gap-1 py-2 rounded-lg bg-white/5 text-[10px] ${u.status === "active" ? "hover:bg-yellow-500/20 text-yellow-300" : "hover:bg-emerald-500/20 text-emerald-300"}`}>
                     <Power className="w-3 h-3" /> {u.status === "active" ? "Off" : "On"}
                   </button>
-                  <button data-testid={`delete-${u.username}`} onClick={() => { if (window.confirm(`Delete ${u.username}?`)) del.mutate(u.id); }} className="flex items-center justify-center gap-1 py-2 rounded-lg bg-white/5 hover:bg-red-500/20 text-red-400 text-[10px]">
+                  <button data-testid={`delete-${u.username}-mobile`} onClick={() => { if (window.confirm(`Delete ${u.username}?`)) del.mutate(u.id); }} className="flex items-center justify-center gap-1 py-2 rounded-lg bg-white/5 hover:bg-red-500/20 text-red-400 text-[10px]">
                     <Trash2 className="w-3 h-3" /> Del
                   </button>
                 </div>

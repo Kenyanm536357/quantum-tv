@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 8 - verified both backend regression fixes (POST /admin/users returns account_number+expires_at; GET /me/subscription now works for fresh user) and the new ShowDetail feature (seasons pills + episodes list with S#·E# badge). All 4 backend pytest tests pass. Frontend ShowDetail confirmed on desktop & mobile: backdrop scales to 180px on mobile, no horizontal page scroll, season pill + 6 episode rows rendered, clicking an episode navigates to /watch/play/<ep_rk>. Create-success now shows KS-XXX-XXX (KS-835-773 verified). Mobile-suffixed Users page testids disambiguate cleanly (desktop view: 8/8 unsuffixed visible, 0/8 -mobile visible; mobile view: opposite). Search bar padding-left = 40px on both viewports.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter8.py",
+    "/app/test_reports/pytest/iteration_8_results.xml"
+  ],
+  "action_items": [
+    "Optional cleanup: a stale subscriber `flow_test_1782792650` (KS-260-127) is still present in MongoDB from a previous Playwright run; delete via admin UI if no longer needed."
+  ],
+  "critical_code_review_comments": [
+    "_normalize_item exposes index/parent_index/parent_rating_key/grandparent_rating_key/grandparent_thumb/parent_thumb cleanly — consistent shape across movies/seasons/episodes. Good.",
+    "ShowDetail's seasons picker assumes the first season auto-selects; when leaf_count is null for a season, the episodes section may show 0 — verified the connected Plex only had 1 season with 6 episodes, so multi-season UX (active pill state, scroll into view) was not exercised. Consider seeding a multi-season show or testing manually before claiming complete.",
+    "recently-added returns 'season' items rather than 'show' items on this Plex; MediaCard correctly routes type='season' to /watch/show/<parent_rating_key>. Good handling.",
+    "POST /admin/users now returns expires_at as a stringified ISO datetime; aligns with subscription view. No issue.",
+    "Mobile-suffixed testids cleanly resolve duplicate-selector issue from iter_7; both halves remain in DOM but only one is visible at a time. Robust for Playwright."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter8.py"
+  ],
+  "success_rate": {"backend": "100% (4/4 passed)", "frontend": "100% (ShowDetail desktop+mobile, MediaCard routing for episodes, create-success Account #, disambiguated testids, search padding all verified)"},
+  "test_credentials": "admin / Quantum2024 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Created and deleted three test users: TEST_iter8_<ts> (backend pytest), test_ui_1782793993 (UI create-success flow), test_watch2_<ts> (Watch UI). All cleaned up. Leftover from a prior iteration: flow_test_1782792650 (still present, not created by this iteration).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All iter_7 backend bugs resolved. ShowDetail route /watch/show/:rk works end-to-end. The connected Plex has only one TV show with one season + 6 episodes available via recently-added/libraries; if you need to test multi-season scroll behavior or active-pill state, seed a multi-season show. Use test_iter8.py as regression for backend; it auto-discovers a show rating_key via /libraries.",
+  "rca of the issue": "Iter_7 bug #1 (/me/subscription 404): fixed by reading current['account_number'] etc. directly from the user dict returned by get_current_user dependency (no extra DB query, no 'sub' key lookup). Iter_7 bug #2 (UUID in create-success): fixed by adding account_number + expires_at to POST /admin/users response. New feature: GET /api/metadata/{rk}/children passes through Plex children endpoint and _normalize_item now exposes index/parent_index/parent_rating_key/grandparent_rating_key for proper season/episode display. Both verified via UI and pytest."
+}

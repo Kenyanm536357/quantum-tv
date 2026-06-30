@@ -120,7 +120,9 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
     user = await db.users.find_one(
         {"id": user_id},
         {"id": 1, "username": 1, "display_name": 1, "status": 1, "avatar": 1,
-         "watchlist": 1, "favorites": 1, "password_hash": 1},
+         "watchlist": 1, "favorites": 1, "password_hash": 1,
+         "account_number": 1, "subscription_months": 1, "expires_at": 1,
+         "max_devices": 1, "devices": 1},
     )
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
@@ -269,14 +271,11 @@ async def login(body: LoginBody):
 # Quick endpoint for the mobile app to check its subscription state
 @api.get("/me/subscription")
 async def me_subscription(current: dict = Depends(get_current_user)):
-    user = await db.users.find_one({"id": current.get("sub")})
-    if not user:
-        raise HTTPException(404, "Not found")
     return {
-        "account_number": user.get("account_number"),
-        "subscription": _subscription_view(user),
-        "max_devices": user.get("max_devices", 3),
-        "devices_count": len(user.get("devices") or []),
+        "account_number": current.get("account_number"),
+        "subscription": _subscription_view(current),
+        "max_devices": current.get("max_devices", 3),
+        "devices_count": len(current.get("devices") or []),
     }
 
 
@@ -573,10 +572,12 @@ async def admin_create_user(body: CreateUserBody, admin: dict = Depends(get_curr
     sub_months = max(1, min(12, int(body.subscription_months or 1)))
     max_devices = max(1, min(20, int(body.max_devices or 3)))
     user_id = str(uuid.uuid4())
+    account_number = _generate_account_number()
     now = now_iso()
+    expires_at = _add_months(now, sub_months)
     await db.users.insert_one({
         "id": user_id,
-        "account_number": _generate_account_number(),
+        "account_number": account_number,
         "username": username,
         "password_hash": hash_password(body.password),
         "display_name": body.display_name or username,
@@ -584,7 +585,7 @@ async def admin_create_user(body: CreateUserBody, admin: dict = Depends(get_curr
         # Subscription
         "subscription_months": sub_months,
         "activated_at": now,
-        "expires_at": _add_months(now, sub_months),
+        "expires_at": expires_at,
         # Devices
         "max_devices": max_devices,
         "devices": [],            # list of {id, model, name, primary, registered_at, last_seen}
@@ -596,8 +597,15 @@ async def admin_create_user(body: CreateUserBody, admin: dict = Depends(get_curr
         "updated_at": now,
         "last_login": None,
     })
-    return {"id": user_id, "username": username, "status": body.status,
-            "subscription_months": sub_months, "max_devices": max_devices}
+    return {
+        "id": user_id,
+        "account_number": account_number,
+        "username": username,
+        "status": body.status,
+        "subscription_months": sub_months,
+        "expires_at": expires_at,
+        "max_devices": max_devices,
+    }
 
 
 class UpdateUserBody(BaseModel):
@@ -945,6 +953,12 @@ def _normalize_item(uri: str, token: str, m: dict) -> dict:
         "art": _proxy_image(uri, token, m.get("art")) if m.get("art") else None,
         "grandparent_title": m.get("grandparentTitle"),
         "parent_title": m.get("parentTitle"),
+        "grandparent_thumb": _proxy_image(uri, token, m.get("grandparentThumb")) if m.get("grandparentThumb") else None,
+        "parent_thumb": _proxy_image(uri, token, m.get("parentThumb")) if m.get("parentThumb") else None,
+        "index": m.get("index"),                  # season # for season, episode # for episode
+        "parent_index": m.get("parentIndex"),     # season # for an episode
+        "parent_rating_key": m.get("parentRatingKey"),
+        "grandparent_rating_key": m.get("grandparentRatingKey"),
         "leaf_count": m.get("leafCount"),
         "viewed_leaf_count": m.get("viewedLeafCount"),
         "view_offset": m.get("viewOffset"),

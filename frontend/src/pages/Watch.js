@@ -106,10 +106,20 @@ function MediaCard({ item, size = "md", fluid = false, testid }) {
   const h = Math.round(w * 1.5);
   const wrapperStyle = fluid ? undefined : { width: w };
   const posterStyle = fluid ? undefined : { height: h };
+  // Shows + Seasons land on the show-detail page; everything else streams directly.
+  const goTo = () => {
+    if (item.type === "show") {
+      nav(`/watch/show/${item.rating_key}`, { state: { item } });
+    } else if (item.type === "season") {
+      nav(`/watch/show/${item.parent_rating_key || item.rating_key}`, { state: { item } });
+    } else {
+      nav(`/watch/play/${item.rating_key}`, { state: { item } });
+    }
+  };
   return (
     <motion.button
       data-testid={testid || `card-${item.rating_key}`}
-      onClick={() => nav(`/watch/play/${item.rating_key}`, { state: { item } })}
+      onClick={goTo}
       whileHover={{ scale: 1.04, y: -3 }}
       transition={{ duration: 0.18 }}
       style={wrapperStyle}
@@ -164,7 +174,10 @@ function FeaturedHero({ item }) {
         {item.summary && <p className="text-zinc-300 text-xs sm:text-sm mt-2 sm:mt-4 line-clamp-2 sm:line-clamp-3 max-w-xl">{item.summary}</p>}
         <button
           data-testid="hero-play"
-          onClick={() => nav(`/watch/play/${item.rating_key}`, { state: { item } })}
+          onClick={() => {
+            if (item.type === "show") nav(`/watch/show/${item.rating_key}`, { state: { item } });
+            else nav(`/watch/play/${item.rating_key}`, { state: { item } });
+          }}
           className="btn-gradient mt-4 sm:mt-6 px-5 py-2.5 sm:px-7 sm:py-3.5 flex items-center gap-2 self-start text-xs sm:text-sm"
         >
           <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-white" /> Watch Now
@@ -588,6 +601,138 @@ function Player() {
   );
 }
 
+// ---------- Show Detail (Seasons → Episodes) ----------
+function ShowDetail() {
+  const { rk } = useParams();
+  const nav = useNavigate();
+  const [seasonKey, setSeasonKey] = useState(null);
+
+  const show = useQuery({
+    queryKey: ["meta", rk],
+    queryFn: async () => (await api.get(`/metadata/${rk}`)).data,
+  });
+  const seasons = useQuery({
+    queryKey: ["children", rk],
+    queryFn: async () => (await api.get(`/metadata/${rk}/children`)).data,
+    select: (d) => (d?.items || []).filter((s) => s.type === "season"),
+  });
+
+  // Pick the first season by default once seasons load
+  React.useEffect(() => {
+    if (!seasonKey && seasons.data && seasons.data.length > 0) {
+      setSeasonKey(String(seasons.data[0].rating_key));
+    }
+  }, [seasons.data, seasonKey]);
+
+  const episodes = useQuery({
+    queryKey: ["children", seasonKey],
+    queryFn: async () => (await api.get(`/metadata/${seasonKey}/children`)).data,
+    enabled: !!seasonKey,
+    select: (d) => d?.items || [],
+  });
+
+  const m = show.data;
+
+  return (
+    <div className="fade-in" data-testid="show-detail">
+      {/* Backdrop */}
+      <div className="relative -mx-4 sm:-mx-6 -mt-5 sm:-mt-8 mb-6 sm:mb-8 h-[180px] sm:h-[280px] lg:h-[340px] overflow-hidden">
+        {m?.art ? (
+          <img src={`${ASSET_BASE}${m.art}`} alt="" className="absolute inset-0 w-full h-full object-cover" />
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-br from-purple-700 to-cyan-700" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#060714] via-[#060714]/70 to-transparent" />
+        <button onClick={() => nav(-1)} data-testid="show-back"
+          className="absolute top-3 left-3 sm:top-4 sm:left-4 z-10 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur flex items-center justify-center">
+          <ChevronLeft className="w-5 h-5" />
+        </button>
+        <div className="absolute bottom-4 left-4 right-4 sm:bottom-6 sm:left-8 sm:right-8 max-w-3xl">
+          <h1 className="font-heading text-2xl sm:text-4xl font-extrabold">{m?.title || "—"}</h1>
+          <div className="text-zinc-400 text-xs sm:text-sm mt-1 flex flex-wrap gap-x-3 gap-y-1">
+            {m?.year && <span>{m.year}</span>}
+            {m?.leaf_count && <span>· {m.leaf_count} episodes</span>}
+            {m?.audience_rating && <span>· ★ {m.audience_rating}</span>}
+          </div>
+          {m?.summary && <p className="text-zinc-300 text-xs sm:text-sm mt-2 sm:mt-3 line-clamp-2 sm:line-clamp-3">{m.summary}</p>}
+        </div>
+      </div>
+
+      {/* Season picker */}
+      <div className="mb-5 sm:mb-6">
+        <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] text-zinc-500 font-heading mb-2">Seasons</div>
+        {seasons.isLoading ? (
+          <div className="flex gap-2">{[...Array(4)].map((_, i) => <div key={i} className="h-9 w-20 rounded-full bg-white/[0.03] animate-pulse" />)}</div>
+        ) : (seasons.data || []).length === 0 ? (
+          <div className="text-zinc-500 text-sm">No seasons available for this show.</div>
+        ) : (
+          <div className="flex gap-2 overflow-x-auto scrollbar-thin -mx-4 sm:-mx-2 px-4 sm:px-2 pb-2">
+            {seasons.data.map((s) => {
+              const active = String(s.rating_key) === seasonKey;
+              return (
+                <button
+                  key={s.rating_key}
+                  data-testid={`season-${s.rating_key}`}
+                  onClick={() => setSeasonKey(String(s.rating_key))}
+                  className={`shrink-0 px-4 py-2 rounded-full border text-sm font-medium ${active ? "bg-cyan-500/20 border-cyan-400/50 text-cyan-100" : "bg-white/5 border-white/10 text-zinc-300 hover:bg-white/10"}`}
+                >
+                  {s.title || `Season ${s.index ?? "?"}`}{s.leaf_count ? ` · ${s.leaf_count}` : ""}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Episodes list */}
+      <div>
+        <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] text-zinc-500 font-heading mb-3">Episodes</div>
+        {!seasonKey ? null : episodes.isLoading ? (
+          <div className="space-y-3">{[...Array(4)].map((_, i) => <div key={i} className="h-20 rounded-xl bg-white/[0.03] animate-pulse" />)}</div>
+        ) : (episodes.data || []).length === 0 ? (
+          <div className="text-zinc-500 text-sm">No episodes in this season.</div>
+        ) : (
+          <div className="space-y-2 sm:space-y-3">
+            {episodes.data.map((ep) => (
+              <button
+                key={ep.rating_key}
+                data-testid={`episode-${ep.rating_key}`}
+                onClick={() => nav(`/watch/play/${ep.rating_key}`, { state: { item: ep } })}
+                className="w-full flex gap-3 sm:gap-4 p-2 sm:p-3 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 text-left transition-colors group"
+              >
+                <div className="w-28 sm:w-40 aspect-video rounded-lg overflow-hidden bg-black shrink-0 relative">
+                  {ep.thumb ? (
+                    <img src={`${ASSET_BASE}${ep.thumb}`} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-purple-900/40 to-cyan-900/40" />
+                  )}
+                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-cyan-500/90 flex items-center justify-center">
+                      <Play className="w-4 h-4 sm:w-5 sm:h-5 text-white fill-white" />
+                    </div>
+                  </div>
+                  {ep.duration && (
+                    <div className="absolute bottom-1 right-1 bg-black/70 px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-mono">
+                      {Math.round(ep.duration / 60000)}m
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1 py-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[10px] sm:text-xs text-cyan-300 shrink-0">S{ep.parent_index ?? "?"}·E{ep.index ?? "?"}</span>
+                    <span className="font-medium text-sm sm:text-base truncate">{ep.title}</span>
+                  </div>
+                  {ep.summary && <p className="text-zinc-400 text-xs sm:text-sm mt-1 line-clamp-2 sm:line-clamp-3">{ep.summary}</p>}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---------- Root ----------
 export default function Watch() {
   return (
@@ -610,6 +755,7 @@ export default function Watch() {
               emptyHint='No favorites yet. Tap the heart on any title to add it.' />
           } />
           <Route path="play/:rk" element={<Player />} />
+          <Route path="show/:rk" element={<ShowDetail />} />
           <Route path="*" element={<Navigate to="/watch" replace />} />
         </Routes>
       </WatchShell>

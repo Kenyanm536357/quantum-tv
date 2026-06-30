@@ -1,0 +1,62 @@
+{
+  "summary": "Iteration 7 — full backend + frontend test of Setplex/Nora-style subscription management (subscription length, auto-expiration, account number, device slots, notes), plus regression of the qtv-input padding fix on the /users search bar. Backend: 11/12 tests passed; 1 critical bug found (GET /api/me/subscription returns 404). Frontend: search bar padding fix verified at both viewports; full Manage drawer flow (Subscription/Devices/Notes) works end-to-end. One UI bug: the create-success screen shows the user's UUID instead of the KS-XXX-XXX account number because POST /api/admin/users doesn't return account_number.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/me/subscription",
+        "issue": "Always returns 404 'Not found'. In server.py line 272, the dependency get_current_user already returns the full user document, but the handler does `db.users.find_one({'id': current.get('sub')})` — `current` has no 'sub' key (it has 'id'). Fix: use `current['id']` (or simply `return {'account_number': current.get('account_number'), 'subscription': _subscription_view(current), 'max_devices': current.get('max_devices', 3), 'devices_count': len(current.get('devices') or [])}` without the extra DB call).",
+        "priority": "CRITICAL"
+      },
+      {
+        "endpoint": "POST /api/admin/users",
+        "issue": "Response is missing account_number. Returns only {id, username, status, subscription_months, max_devices}. Frontend onSuccess in Users.js line 51 does `resp.account_number || resp.id` and falls back to the UUID, so the create-success screen displays the user's UUID under 'Account #' instead of KS-XXX-XXX. Fix: include `account_number` (and ideally the full subscription view) in the response.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "CreateUserModal create-success",
+        "issue": "Account # row shows the user UUID instead of KS-XXX-XXX (caused by backend POST response missing account_number — see backend issue above). Repro: New user → fill form → Create → success screen Account # is a UUID, not KS-260-127.",
+        "selector": "[data-testid='create-success']",
+        "priority": "HIGH"
+      },
+      {
+        "component": "Users action buttons (Manage / PW / On-Off / Del)",
+        "issue": "The same data-testid is rendered twice (once for the mobile card and once for the desktop table row). Playwright finds 2 matches; on desktop the mobile card is hidden, so `locator(testid).first` clicks a non-visible element. Recommend disambiguating with a suffix (e.g., `manage-<u>-mobile` vs `manage-<u>-desktop`) or wrapping the desktop row buttons inside a uniquely-id'd container.",
+        "selector": "[data-testid='manage-<username>'], [data-testid='delete-<username>'], etc.",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_subscription_features.py",
+    "/app/test_reports/pytest/iteration_7_results.xml"
+  ],
+  "action_items": [
+    "Fix /api/me/subscription: use `current['id']` (not `current.get('sub')`) in server.py line 272. Get current user already returns the user dict, not a JWT payload.",
+    "Make POST /api/admin/users return `account_number` (and ideally expires_at + subscription view) so the create-success screen can display the KS-XXX-XXX account number correctly.",
+    "Disambiguate duplicated data-testid between mobile cards and desktop rows (manage-/reset-/disable-|enable-/delete-) — either use a suffix or only render one set at a time.",
+    "Optional: when the Manage drawer first opens, render tabs immediately (query for [data-testid='tab-sub'] right after open returned null in our test — works after a small delay; lazy mount may be the cause)."
+  ],
+  "critical_code_review_comments": [
+    "server.py: `get_current_user` returns a Mongo user document but is treated like a JWT payload by `/api/me/subscription` (current.get('sub')). Two different contracts under the same dependency. Pick one: have the dependency return both the user and the payload, or only ever use the user dict and look up by `current['id']`.",
+    "server.py: extend_months clamps to 1..24 while CreateUserBody clamps subscription_months to 1..12 and the dropdown is 1..12. The extra range on extend is fine but inconsistent — document it.",
+    "Users.js: duplicating action buttons with identical data-testid for mobile cards and desktop rows breaks Playwright selectors. Use distinct suffixes.",
+    "server.py: `/admin/users/{user_id}/notes` POST response is the note object directly, while devices PATCH returns {ok:true}. Consistent {ok:true, note:{...}} would be cleaner."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_subscription_features.py"
+  ],
+  "success_rate": {"backend": "92% (11/12 passed)", "frontend": "85% (search padding, create modal, manage drawer tabs/notes/extend/delete all work; create-success Account # bug)"},
+  "test_credentials": "admin / Quantum2024 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Tests create TEST_iter7_* users and delete them via the cleanup_users fixture. The earlier-seeded `test`/`12345` user is still present (used for case-insensitive login test). One leftover `flow_test_1782792650` was created in an aborted Playwright run and then deleted at the end of the second Playwright run — verified via 'User deleted: True'.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Two backend fixes needed: (1) /api/me/subscription handler uses wrong key, (2) POST /admin/users response missing account_number. Re-run /app/backend/tests/test_subscription_features.py after the fix — only TestMeSubscription::test_me_subscription_endpoint should newly pass. For frontend, verify the create-success screen shows KS-XXX-XXX. Frontend search bar padding fix is confirmed working (40px on both 1280x800 and 390x844). 11/12 backend tests pass; preview env banner regression intact on /login and admin shell.",
+  "rca of the issue": "Bug 1 (me/subscription 404): `get_current_user` dependency was refactored to return the full Mongo user doc, but `/api/me/subscription` was written assuming the JWT payload shape (with 'sub'). `current.get('sub')` is therefore None and `db.users.find_one({'id': None})` returns None → 404. Bug 2 (Account # UUID): backend POST /admin/users handler builds and stores account_number but returns only {id, username, status, subscription_months, max_devices}. Frontend falls back to `resp.id` when account_number is absent, displaying the UUID."
+}

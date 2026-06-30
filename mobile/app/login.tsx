@@ -1,12 +1,42 @@
 import { useRef, useState } from "react";
-import { View, Text, Image, Pressable, ActivityIndicator, StyleSheet, TextInput, useWindowDimensions } from "react-native";
+import { View, Text, Image, Pressable, ActivityIndicator, StyleSheet, TextInput, useWindowDimensions, Platform } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import * as Device from "expo-device";
+import * as Application from "expo-application";
 import client, { colors } from "../src/api";
 import { s, vs, ms, SAFE, IS_TV, SIZES } from "../src/responsive";
 import TVTextInput from "../src/TVTextInput";
+
+/**
+ * Produce a stable per-install device id. We persist a UUID-style string in
+ * AsyncStorage on first launch so that even if Expo's underlying id changes
+ * across reinstalls / OS upgrades, the user's "slot" with us stays consistent
+ * for the duration of a single install.
+ */
+async function getDeviceId(): Promise<string> {
+  try {
+    const cached = await AsyncStorage.getItem("qtv_device_id");
+    if (cached) return cached;
+    // Expo gives us:
+    //   - Application.getAndroidId() on Android (ANDROID_ID, stable per app+device)
+    //   - Application.applicationId / installationTimeAsync() otherwise
+    let id: string | null = null;
+    if (Platform.OS === "android" && (Application as any).getAndroidId) {
+      try { id = (Application as any).getAndroidId(); } catch { /* fallthrough */ }
+    }
+    if (!id) {
+      const t = await (Application as any).getInstallationTimeAsync?.();
+      id = `${Device.osName || Platform.OS}-${Device.modelName || "device"}-${t?.getTime?.() || Date.now()}`;
+    }
+    await AsyncStorage.setItem("qtv_device_id", id);
+    return id;
+  } catch {
+    return `${Platform.OS}-${Date.now()}`;
+  }
+}
 
 export default function Login() {
   const router = useRouter();
@@ -30,7 +60,10 @@ export default function Login() {
     }
     setError(null); setLoading(true);
     try {
-      const { data } = await client.post("/auth/login", { username: u, password });
+      const device_id = await getDeviceId();
+      const device_model = Device.modelName || Device.deviceName || Platform.OS;
+      const device_name = Device.deviceName || Device.modelName || "Device";
+      const { data } = await client.post("/auth/login", { username: u, password, device_id, device_model, device_name });
       if (data.role === "admin") {
         setError("Admin accounts must use the web Control Panel.");
         setLoading(false);
@@ -38,7 +71,11 @@ export default function Login() {
       }
       await AsyncStorage.setItem("qtv_token", data.token);
       await AsyncStorage.setItem("qtv_user", JSON.stringify({
-        username: data.username, display_name: data.display_name, avatar: data.avatar,
+        username: data.username,
+        display_name: data.display_name,
+        avatar: data.avatar,
+        account_number: data.account_number,
+        subscription: data.subscription,
       }));
       router.replace("/(tabs)/browse");
     } catch (e: any) {

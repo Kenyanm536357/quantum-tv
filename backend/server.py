@@ -184,16 +184,20 @@ async def root():
 class LoginBody(BaseModel):
     username: str
     password: str
+    device_id: Optional[str] = None     # stable per-install ID from the mobile app
+    device_model: Optional[str] = None  # e.g. "AFTKA" (Fire TV Stick) / "iPhone15,2"
+    device_name: Optional[str] = None   # friendly name
 
 
 @api.post("/auth/login")
 async def login(body: LoginBody):
     """Unified login. If credentials match admin in env -> admin token.
-    Otherwise looks up user in DB. Inactive / not-found returns generic error.
+    Otherwise looks up user in DB.
 
-    Username matching is case-insensitive and trims surrounding whitespace,
-    which is important on Fire TV / Android TV where the on-screen keyboard
-    autocapitalizes the first letter of every text field.
+    - Case-insensitive username matching (Fire TV keyboard autocaps the first letter).
+    - Enforces subscription expiration with a specific message.
+    - Auto-registers the calling device into the user's device slots (up to max_devices).
+    - Returns 403 with a clear message when slots are exhausted.
     """
     raw_username = (body.username or "").strip()
     # Admin path (also case-insensitive on the username)
@@ -212,7 +216,44 @@ async def login(body: LoginBody):
         raise HTTPException(403, "This account has been disabled. Contact the admin.")
     if not verify_password(body.password, user["password_hash"]):
         raise HTTPException(401, "Incorrect username or password. Please try again.")
-    await db.users.update_one({"id": user["id"]}, {"$set": {"last_login": now_iso()}})
+
+    # --- Subscription expiry check ---
+    sub = _subscription_view(user)
+    if sub["status"] == "expired":
+        raise HTTPException(403, "Your subscription has expired. Contact the admin to renew.")
+
+    # --- Device slot management (auto-register on first login) ---
+    devices = list(user.get("devices") or [])
+    max_devices = int(user.get("max_devices", 3))
+    dev_id = (body.device_id or "").strip()
+    now = now_iso()
+    if dev_id:
+        existing = next((d for d in devices if d.get("id") == dev_id), None)
+        if existing:
+            existing["last_seen"] = now
+            if body.device_model:
+                existing["model"] = body.device_model
+            if body.device_name:
+                existing["name"] = body.device_name
+        else:
+            if len(devices) >= max_devices:
+                raise HTTPException(
+                    403,
+                    f"Device limit reached ({max_devices}). Ask the admin to remove an old device first.",
+                )
+            devices.append({
+                "id": dev_id,
+                "model": body.device_model or "Unknown",
+                "name": body.device_name or "Device",
+                "primary": len(devices) == 0,  # first device becomes primary
+                "registered_at": now,
+                "last_seen": now,
+            })
+
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"last_login": now, "devices": devices}},
+    )
     token = create_jwt({"sub": user["id"], "role": "user", "username": user["username"]})
     return {
         "token": token,
@@ -220,6 +261,22 @@ async def login(body: LoginBody):
         "username": user["username"],
         "display_name": user.get("display_name") or user["username"],
         "avatar": user.get("avatar"),
+        "subscription": sub,
+        "account_number": user.get("account_number"),
+    }
+
+
+# Quick endpoint for the mobile app to check its subscription state
+@api.get("/me/subscription")
+async def me_subscription(current: dict = Depends(get_current_user)):
+    user = await db.users.find_one({"id": current.get("sub")})
+    if not user:
+        raise HTTPException(404, "Not found")
+    return {
+        "account_number": user.get("account_number"),
+        "subscription": _subscription_view(user),
+        "max_devices": user.get("max_devices", 3),
+        "devices_count": len(user.get("devices") or []),
     }
 
 
@@ -452,11 +509,52 @@ async def admin_select_server(body: SelectServerBody, admin: dict = Depends(get_
 # ============================================================
 # Admin: user management with password
 # ============================================================
+import random as _random
+import string as _string
+
+
+def _generate_account_number() -> str:
+    """KS-XXX-XXX (matches the Setplex/Nora-style account numbers)."""
+    p1 = "".join(_random.choices(_string.digits, k=3))
+    p2 = "".join(_random.choices(_string.digits, k=3))
+    return f"KS-{p1}-{p2}"
+
+
+def _add_months(iso_dt: str, months: int) -> str:
+    """Add N calendar months to an ISO datetime, returning ISO."""
+    from dateutil.relativedelta import relativedelta
+    dt = datetime.fromisoformat(iso_dt.replace("Z", "+00:00"))
+    return (dt + relativedelta(months=months)).isoformat()
+
+
+def _subscription_view(user: dict) -> dict:
+    """Compute live subscription view (status, days_left) from stored fields."""
+    now = datetime.now(timezone.utc)
+    expires = user.get("expires_at")
+    if not expires:
+        return {"status": "inactive", "days_left": 0, "expires_at": None}
+    try:
+        exp_dt = datetime.fromisoformat(expires.replace("Z", "+00:00"))
+    except Exception:
+        return {"status": "inactive", "days_left": 0, "expires_at": expires}
+    delta = exp_dt - now
+    days_left = int(delta.total_seconds() // 86400) + (1 if delta.total_seconds() % 86400 > 0 else 0)
+    if delta.total_seconds() <= 0:
+        status = "expired"
+    elif days_left <= 7:
+        status = "expiring"
+    else:
+        status = "active"
+    return {"status": status, "days_left": max(0, days_left), "expires_at": expires}
+
+
 class CreateUserBody(BaseModel):
     username: str
     password: str
     display_name: Optional[str] = None
     status: Optional[str] = "active"
+    subscription_months: Optional[int] = 1   # 1..12
+    max_devices: Optional[int] = 3           # number of simultaneous devices
 
 
 @api.post("/admin/users")
@@ -472,26 +570,45 @@ async def admin_create_user(body: CreateUserBody, admin: dict = Depends(get_curr
     })
     if existing:
         raise HTTPException(409, "Username already exists")
+    sub_months = max(1, min(12, int(body.subscription_months or 1)))
+    max_devices = max(1, min(20, int(body.max_devices or 3)))
     user_id = str(uuid.uuid4())
+    now = now_iso()
     await db.users.insert_one({
         "id": user_id,
+        "account_number": _generate_account_number(),
         "username": username,
         "password_hash": hash_password(body.password),
         "display_name": body.display_name or username,
         "status": body.status if body.status in {"active", "disabled"} else "active",
+        # Subscription
+        "subscription_months": sub_months,
+        "activated_at": now,
+        "expires_at": _add_months(now, sub_months),
+        # Devices
+        "max_devices": max_devices,
+        "devices": [],            # list of {id, model, name, primary, registered_at, last_seen}
+        # Misc
+        "notes": [],              # list of {id, text, created_at, author}
         "watchlist": [],
         "favorites": [],
-        "created_at": now_iso(),
-        "updated_at": now_iso(),
+        "created_at": now,
+        "updated_at": now,
         "last_login": None,
     })
-    return {"id": user_id, "username": username, "status": body.status}
+    return {"id": user_id, "username": username, "status": body.status,
+            "subscription_months": sub_months, "max_devices": max_devices}
 
 
 class UpdateUserBody(BaseModel):
     password: Optional[str] = None
     display_name: Optional[str] = None
     status: Optional[str] = None  # active | disabled
+    # subscription
+    extend_months: Optional[int] = None      # add N months to expires_at (1..12)
+    set_subscription_months: Optional[int] = None  # set the "current plan" length
+    set_expires_at: Optional[str] = None     # ISO datetime override
+    max_devices: Optional[int] = None
 
 
 @api.patch("/admin/users/{user_id}")
@@ -505,6 +622,26 @@ async def admin_update_user(user_id: str, body: UpdateUserBody, admin: dict = De
         if body.status not in {"active", "disabled"}:
             raise HTTPException(400, "Invalid status")
         update["status"] = body.status
+    if body.set_subscription_months is not None:
+        update["subscription_months"] = max(1, min(12, int(body.set_subscription_months)))
+    if body.max_devices is not None:
+        update["max_devices"] = max(1, min(20, int(body.max_devices)))
+    if body.extend_months is not None:
+        n = max(1, min(24, int(body.extend_months)))
+        user = await db.users.find_one({"id": user_id})
+        if not user:
+            raise HTTPException(404, "User not found")
+        # Extend from current expires_at if still in the future, else from now.
+        base = user.get("expires_at") or now_iso()
+        try:
+            base_dt = datetime.fromisoformat(base.replace("Z", "+00:00"))
+            if base_dt < datetime.now(timezone.utc):
+                base = now_iso()
+        except Exception:
+            base = now_iso()
+        update["expires_at"] = _add_months(base, n)
+    if body.set_expires_at is not None:
+        update["expires_at"] = body.set_expires_at
     if not update:
         return {"ok": True}
     update["updated_at"] = now_iso()
@@ -529,25 +666,131 @@ async def admin_list_users(admin: dict = Depends(get_current_admin), q: Optional
         query["$or"] = [
             {"username": {"$regex": q, "$options": "i"}},
             {"display_name": {"$regex": q, "$options": "i"}},
+            {"account_number": {"$regex": q, "$options": "i"}},
         ]
-    cursor = db.users.find(
-        query,
-        {"id": 1, "username": 1, "display_name": 1, "status": 1,
-         "created_at": 1, "last_login": 1, "watchlist": 1, "favorites": 1},
-    ).sort("created_at", -1).limit(500)
+    cursor = db.users.find(query).sort("created_at", -1).limit(500)
     out = []
     async for u in cursor:
+        sub = _subscription_view(u)
+        devices = u.get("devices") or []
         out.append({
             "id": u.get("id"),
+            "account_number": u.get("account_number"),
             "username": u.get("username"),
             "display_name": u.get("display_name") or u.get("username"),
             "status": u.get("status", "active"),
+            "subscription_months": u.get("subscription_months"),
+            "activated_at": u.get("activated_at"),
+            "expires_at": sub["expires_at"],
+            "subscription_status": sub["status"],
+            "days_left": sub["days_left"],
+            "max_devices": u.get("max_devices", 3),
+            "devices_count": len(devices),
             "created_at": u.get("created_at"),
             "last_login": u.get("last_login"),
             "watchlist_count": len(u.get("watchlist") or []),
             "favorites_count": len(u.get("favorites") or []),
+            "notes_count": len(u.get("notes") or []),
         })
     return {"users": out}
+
+
+@api.get("/admin/users/{user_id}")
+async def admin_get_user(user_id: str, admin: dict = Depends(get_current_admin)):
+    u = await db.users.find_one({"id": user_id})
+    if not u:
+        raise HTTPException(404, "User not found")
+    sub = _subscription_view(u)
+    return {
+        "id": u.get("id"),
+        "account_number": u.get("account_number"),
+        "username": u.get("username"),
+        "display_name": u.get("display_name") or u.get("username"),
+        "status": u.get("status", "active"),
+        "subscription_months": u.get("subscription_months"),
+        "activated_at": u.get("activated_at"),
+        "expires_at": sub["expires_at"],
+        "subscription_status": sub["status"],
+        "days_left": sub["days_left"],
+        "max_devices": u.get("max_devices", 3),
+        "devices": u.get("devices") or [],
+        "notes": u.get("notes") or [],
+        "created_at": u.get("created_at"),
+        "last_login": u.get("last_login"),
+    }
+
+
+# ----- Devices -----
+class DeviceUpdateBody(BaseModel):
+    primary: Optional[bool] = None
+    name: Optional[str] = None
+
+
+@api.patch("/admin/users/{user_id}/devices/{device_id}")
+async def admin_update_device(user_id: str, device_id: str, body: DeviceUpdateBody,
+                              admin: dict = Depends(get_current_admin)):
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(404, "User not found")
+    devices = user.get("devices") or []
+    found = False
+    if body.primary is True:
+        # only one device can be primary
+        for d in devices:
+            d["primary"] = d.get("id") == device_id
+            if d.get("id") == device_id:
+                found = True
+    else:
+        for d in devices:
+            if d.get("id") == device_id:
+                found = True
+                if body.name is not None:
+                    d["name"] = body.name
+                if body.primary is False:
+                    d["primary"] = False
+    if not found:
+        raise HTTPException(404, "Device not found")
+    await db.users.update_one({"id": user_id}, {"$set": {"devices": devices, "updated_at": now_iso()}})
+    return {"ok": True}
+
+
+@api.delete("/admin/users/{user_id}/devices/{device_id}")
+async def admin_delete_device(user_id: str, device_id: str, admin: dict = Depends(get_current_admin)):
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(404, "User not found")
+    devices = [d for d in (user.get("devices") or []) if d.get("id") != device_id]
+    await db.users.update_one({"id": user_id}, {"$set": {"devices": devices, "updated_at": now_iso()}})
+    return {"ok": True, "remaining": len(devices)}
+
+
+# ----- Notes -----
+class CreateNoteBody(BaseModel):
+    text: str
+
+
+@api.post("/admin/users/{user_id}/notes")
+async def admin_add_note(user_id: str, body: CreateNoteBody, admin: dict = Depends(get_current_admin)):
+    if not (body.text or "").strip():
+        raise HTTPException(400, "Note text required")
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(404, "User not found")
+    note = {"id": str(uuid.uuid4()), "text": body.text.strip(),
+            "created_at": now_iso(), "author": "admin"}
+    notes = (user.get("notes") or []) + [note]
+    await db.users.update_one({"id": user_id}, {"$set": {"notes": notes, "updated_at": now_iso()}})
+    return note
+
+
+@api.delete("/admin/users/{user_id}/notes/{note_id}")
+async def admin_delete_note(user_id: str, note_id: str, admin: dict = Depends(get_current_admin)):
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(404, "User not found")
+    notes = [n for n in (user.get("notes") or []) if n.get("id") != note_id]
+    await db.users.update_one({"id": user_id}, {"$set": {"notes": notes, "updated_at": now_iso()}})
+    return {"ok": True}
 
 
 # ============================================================

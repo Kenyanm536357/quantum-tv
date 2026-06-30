@@ -86,9 +86,16 @@ input.qtv-input, textarea.qtv-input {
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.10);
   border-radius: 12px;
-  padding: 14px 16px;
+  padding-block: 14px;
   color: white;
   font-family: 'Outfit', sans-serif;
+}
+
+/* Horizontal padding is set via :where() so its specificity is 0,
+   letting Tailwind utility classes (e.g. `pl-10` for icon adornments)
+   always win without needing `!important`. */
+:where(input.qtv-input, textarea.qtv-input) {
+  padding-inline: 16px;
   width: 100%;
   outline: none;
   transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;

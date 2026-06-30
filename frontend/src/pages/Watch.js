@@ -7,6 +7,7 @@ import {
   ChevronLeft, ChevronRight, X, Plus, Check, Loader2,
 } from "lucide-react";
 import api, { ASSET_BASE } from "../api";
+import VideoPlayer from "../components/VideoPlayer";
 
 // ---------- Helpers ----------
 function userInfo() {

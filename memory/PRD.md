@@ -19,6 +19,17 @@
 - `/app/frontend/` — **React (CRA + Tailwind)** admin web console on port 3000. Pages: Dashboard, Users, Plex Servers, Activity, Settings, Login.
 - `/app/mobile/` — **Expo Router (TypeScript)** native mobile app. Pages: Login (Plex PIN), Browse (continue + recent + featured), Live TV grid, Movies, Series, Search, More (profile + server picker + disconnect), Player (`expo-video`).
 
+## Implemented (IPTV Live TV merge into user players — 2026-07-01)
+- ✅ **IPTV proxy stack** (server.py): three new endpoints — `/api/iptv/p/{kind}/{id}.{ext}` (manifest rewrite), `/api/iptv/pass?k=` (Fernet-encrypted upstream segment passthrough), `/api/iptv/logo?u=` (HTTPS logo proxy). Users never see the IPTV origin or credentials.
+- ✅ **Live TV merge**: `/api/livetv/channels` now returns Plex + IPTV channels in one array, each item tagged `source: "plex" | "iptv"`. IPTV keys use `iptv-live-<streamId>`.
+- ✅ **Stream URL minting**: `/api/stream/{rk}` recognises `iptv-*` keys, mints a 6-hour scoped JWT, returns an absolute HTTPS URL for `<video>`/expo-video.
+- ✅ **Metadata stub**: `/api/metadata/{rk}` synthesises a minimal doc for `iptv-*` keys so the player title/thumb render correctly.
+- ✅ **Web UI** (`Watch.js` LiveTV): source-filter chips (All / Plex / IPTV), search box, 300-item display cap with overflow hint, LIVE badges, contain-fit logos, sort dropdown intact.
+- ✅ **Mobile UI** (`app/(tabs)/livetv.tsx`): matching chips + search, FlatList perf (initialNumToRender=20, removeClippedSubviews). Focusable / D-Pad friendly.
+- ✅ **Hardening**: `ext` whitelist on `iptv_proxy` (m3u8/ts/mp4/mkv only); segment URLs Fernet-encrypted so proxy can't be pointed at arbitrary hosts.
+- ✅ **v1.0.6 APK** rebuilding on EAS with all these mobile changes plus the TV Pairing flow from prior session.
+- ✅ Verified: iteration_9 — 15/15 pytest, 100% frontend Playwright, end-to-end network trace (livetv → metadata → stream → m3u8 → segments) all 200.
+
 ## Implemented (Subscriptions + Seasons/Episodes — 2026-06-30)
 - ✅ **Subscription system (Setplex/Nora-style)**: 1–12 month plans, auto-expiration, KS-XXX-XXX account numbers, `subscription_status` pill (active/expiring/expired) with `days_left`, manual extend +N months from admin.
 - ✅ **Device slots**: admin sets `max_devices` (default 3). On login the mobile app sends `device_id` (cached in AsyncStorage), `device_model`, `device_name` — backend auto-registers into the first open slot. Device limit hit → 403 with clear message. Admin can set-primary / remove devices.

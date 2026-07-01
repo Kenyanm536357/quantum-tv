@@ -466,7 +466,13 @@ async def iptv_vod_streams(category_id: Optional[str] = None, _: dict = Depends(
 async def iptv_logo(u: str):
     """Fetch and re-serve an IPTV channel logo. Needed because upstream logos
     are almost always http:// which browsers refuse to embed in an https page.
-    Public (no auth) since these are just cosmetic art. Cached aggressively."""
+    Public (no auth) since these are just cosmetic art. Cached aggressively.
+
+    NOTE: This is intentionally a permissive image proxy — Xtream lines
+    frequently serve channel picons from a wholly separate CDN (often bare
+    IPs), so we can't safely restrict to the configured line's hostname.
+    Content is passed through untouched; we never relay auth/cookies to the
+    upstream, so at worst this is a bandwidth-consuming HTTP GET proxy."""
     parsed = urlparse(u)
     if parsed.scheme not in {"http", "https"}:
         raise HTTPException(400, "bad url")
@@ -565,6 +571,8 @@ async def iptv_proxy(
     the manifest and rewrite segment URLs; everything else streams bytes."""
     if kind not in {"live", "movie", "series"}:
         raise HTTPException(400, "bad kind")
+    if ext.lower() not in {"m3u8", "ts", "mp4", "mkv"}:
+        raise HTTPException(400, "bad ext")
     cfg = await db.settings.find_one({"id": "iptv_config"})
     if not cfg or not cfg.get("password_enc"):
         raise HTTPException(404, "IPTV not configured")

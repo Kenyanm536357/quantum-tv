@@ -1,29 +1,20 @@
 # Quantum TV — Test Credentials
 
-## Admin Web Panel (only you)
-- URL: `${REACT_APP_BACKEND_URL}/login`
+## Admin
 - Username: `admin`
 - Password: `Quantum2024`
 
-Sourced from `/app/backend/.env` (`ADMIN_USERNAME` / `ADMIN_PASSWORD`).
+## User (regular)
+- Username: `test`
+- Password: `Test12345`
 
-## User accounts (mobile app)
-- Created by the admin inside the admin panel → Users → "New user".
-- Each user has username + password + active/disabled status.
-- Disabled users cannot sign in.
-- **Existing test user**: `test` / `12345` (status: active)
-- Login is **case-insensitive** and trims surrounding whitespace.
-
-## Plex
-- Linked once by the admin via Dashboard → "Connect Plex" (PIN OAuth, no manual token).
-- All users stream from the admin's Plex server.
-
-## API base
-Backend external URL: `https://740c242f-4923-4028-ac71-f7cfb28f51cc.preview.emergentagent.com`. All endpoints under `/api/*`.
-
-## Quick admin login curl
-```
-curl -s -X POST $URL/api/auth/login \
-  -H "Content-Type: application/json" \
+## curl
+```bash
+API_URL=$(grep REACT_APP_BACKEND_URL /app/frontend/.env | cut -d '=' -f2)
+# User login
+curl -s -X POST "$API_URL/api/auth/login" -H "Content-Type: application/json" \
+  -d '{"username":"test","password":"Test12345","device_id":"dev-1"}'
+# Admin login
+curl -s -X POST "$API_URL/api/admin/login" -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"Quantum2024"}'
 ```

@@ -359,19 +359,41 @@ const LIVE_SORT = [
 function LiveTV() {
   const nav = useNavigate();
   const [sort, setSort] = React.useState("channel:asc");
+  const [source, setSource] = React.useState("all"); // all | plex | iptv
+  const [q, setQ] = React.useState("");
   const { data, isLoading } = useQuery({
     queryKey: ["live"],
     queryFn: async () => (await api.get("/livetv/channels")).data,
   });
   const channels = React.useMemo(() => {
-    const list = data?.channels || [];
+    let list = data?.channels || [];
+    if (source !== "all") list = list.filter((c) => c.source === source);
+    if (q.trim()) {
+      const needle = q.trim().toLowerCase();
+      list = list.filter((c) => (c.title || "").toLowerCase().includes(needle));
+    }
     const sorted = [...list];
     if (sort === "channel:asc") sorted.sort((a, b) => Number(a.number || 9999) - Number(b.number || 9999));
     else if (sort === "channel:desc") sorted.sort((a, b) => Number(b.number || 9999) - Number(a.number || 9999));
     else if (sort === "title:asc") sorted.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
     else if (sort === "title:desc") sorted.sort((a, b) => (b.title || "").localeCompare(a.title || ""));
     return sorted;
-  }, [data, sort]);
+  }, [data, sort, source, q]);
+
+  const counts = React.useMemo(() => {
+    const list = data?.channels || [];
+    return {
+      all: list.length,
+      plex: list.filter((c) => c.source === "plex").length,
+      iptv: list.filter((c) => c.source === "iptv").length,
+    };
+  }, [data]);
+
+  // Only show the first 300 channels in the grid — anything more is
+  // basically unusable without search. Users can narrow via the search box.
+  const MAX_SHOW = 300;
+  const shown = channels.slice(0, MAX_SHOW);
+  const overflow = Math.max(0, channels.length - MAX_SHOW);
 
   return (
     <div className="fade-in">
@@ -379,39 +401,89 @@ function LiveTV() {
         <div className="min-w-0">
           <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] sm:tracking-[0.25em] text-zinc-500 font-heading">Live</div>
           <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-extrabold mt-1">All Channels</h1>
+          <div className="text-zinc-400 text-xs sm:text-sm mt-2">
+            {channels.length.toLocaleString()} channel{channels.length === 1 ? "" : "s"}
+            {counts.iptv > 0 && counts.plex > 0 && ` · ${counts.plex.toLocaleString()} Plex + ${counts.iptv.toLocaleString()} IPTV`}
+          </div>
         </div>
         <SortMenu options={LIVE_SORT} value={sort} onChange={setSort} testidPrefix="live-sort" />
       </div>
+
+      {/* Source filter chips + search */}
+      {(counts.plex > 0 || counts.iptv > 0) && (
+        <div className="mb-4 sm:mb-5 flex items-center gap-2 flex-wrap">
+          {[
+            { id: "all", label: `All (${counts.all.toLocaleString()})` },
+            counts.plex > 0 && { id: "plex", label: `Plex (${counts.plex.toLocaleString()})` },
+            counts.iptv > 0 && { id: "iptv", label: `IPTV (${counts.iptv.toLocaleString()})` },
+          ].filter(Boolean).map((opt) => {
+            const active = source === opt.id;
+            return (
+              <button
+                key={opt.id}
+                data-testid={`live-source-${opt.id}`}
+                onClick={() => setSource(opt.id)}
+                className={`px-3 py-1.5 rounded-full text-xs sm:text-sm border transition-colors ${
+                  active
+                    ? "bg-gradient-to-r from-purple-500/30 to-cyan-500/20 border-cyan-400/40 text-white"
+                    : "bg-white/5 border-white/10 text-zinc-300 hover:bg-white/10"
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <div className="relative w-full sm:max-w-md mb-5 sm:mb-6">
+        <Search className="w-4 h-4 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+        <input
+          data-testid="live-search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search channels…"
+          autoCapitalize="none" autoCorrect="off" spellCheck="false"
+          className="qtv-input pl-10 py-2.5 text-sm"
+        />
+      </div>
+
       {isLoading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 sm:gap-4">
           {[...Array(10)].map((_, i) => <div key={i} className="aspect-video rounded-xl bg-white/[0.03] animate-pulse" />)}
         </div>
       ) : channels.length === 0 ? (
-        <div className="text-zinc-400 text-sm sm:text-base">No live channels available. Plex DVR or Plex's free live TV must be set up on the connected server.</div>
+        <div className="text-zinc-400 text-sm sm:text-base">No live channels match your filters.</div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 sm:gap-4">
-          {channels.map((ch) => (
-            <motion.button
-              key={ch.key}
-              whileHover={{ scale: 1.04, y: -3 }}
-              onClick={() => nav(`/watch/play/${ch.key}`, { state: { item: { title: ch.title, rating_key: ch.key, thumb: ch.logo, type: "live" } } })}
-              className="aspect-video rounded-xl overflow-hidden bg-white/[0.04] border border-white/5 relative group text-left"
-              data-testid={`live-${ch.key}`}
-            >
-              {ch.logo ? (
-                <img src={ch.logo.startsWith("http") ? ch.logo : `${ASSET_BASE}${ch.logo}`} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full bg-gradient-to-br from-purple-700/40 to-cyan-700/40" />
-              )}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-              <div className="absolute top-1.5 left-1.5 sm:top-2 sm:left-2 bg-red-500 px-1.5 sm:px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-heading font-extrabold tracking-widest">● LIVE</div>
-              <div className="absolute bottom-1.5 left-1.5 right-1.5 sm:bottom-2 sm:left-2 sm:right-2">
-                <div className="text-white font-medium text-xs sm:text-sm truncate">{ch.title}</div>
-                {ch.number && <div className="text-zinc-300 text-[10px] sm:text-xs">Ch {ch.number}</div>}
-              </div>
-            </motion.button>
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 sm:gap-4">
+            {shown.map((ch) => (
+              <motion.button
+                key={ch.key}
+                whileHover={{ scale: 1.04, y: -3 }}
+                onClick={() => nav(`/watch/play/${ch.key}`, { state: { item: { title: ch.title, rating_key: ch.key, thumb: ch.logo, type: "live" } } })}
+                className="aspect-video rounded-xl overflow-hidden bg-white/[0.04] border border-white/5 relative group text-left"
+                data-testid={`live-${ch.key}`}
+              >
+                {ch.logo ? (
+                  <img src={ch.logo.startsWith("http") ? ch.logo : `${ASSET_BASE}${ch.logo}`} alt="" className="w-full h-full object-contain p-4 bg-black/40" loading="lazy" />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-purple-700/40 to-cyan-700/40" />
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+                <div className="absolute top-1.5 left-1.5 sm:top-2 sm:left-2 bg-red-500 px-1.5 sm:px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-heading font-extrabold tracking-widest">● LIVE</div>
+                <div className="absolute bottom-1.5 left-1.5 right-1.5 sm:bottom-2 sm:left-2 sm:right-2">
+                  <div className="text-white font-medium text-xs sm:text-sm truncate">{ch.title}</div>
+                  {ch.number && <div className="text-zinc-300 text-[10px] sm:text-xs">Ch {ch.number}</div>}
+                </div>
+              </motion.button>
+            ))}
+          </div>
+          {overflow > 0 && (
+            <div className="mt-5 sm:mt-6 text-center text-xs sm:text-sm text-zinc-500">
+              Showing {MAX_SHOW.toLocaleString()} of {channels.length.toLocaleString()} channels — use search to find more.
+            </div>
+          )}
+        </>
       )}
     </div>
   );

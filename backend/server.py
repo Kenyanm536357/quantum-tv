@@ -17,13 +17,13 @@ import hashlib
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional, Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urljoin, urlparse, quote
 
 import httpx
 import xmltodict
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Response, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorClient
 from cryptography.fernet import Fernet
@@ -128,6 +128,29 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
         raise HTTPException(status_code=401, detail="User not found")
     if user.get("status") != "active":
         raise HTTPException(status_code=403, detail="Account not activated")
+    return user
+
+
+async def get_user_flex(
+    authorization: Optional[str] = Header(None),
+    t: Optional[str] = None,
+) -> dict:
+    """Variant of get_current_user that ALSO accepts a JWT via the `?t=` query
+    string. Required for <video>/<img> element URLs (which can't carry an
+    Authorization header)."""
+    tok: Optional[str] = None
+    if authorization and authorization.lower().startswith("bearer "):
+        tok = authorization.split(None, 1)[1]
+    elif t:
+        tok = t
+    if not tok:
+        raise HTTPException(401, "Missing token")
+    payload = decode_jwt(tok)
+    if payload.get("role") != "user":
+        raise HTTPException(401, "Invalid token")
+    user = await db.users.find_one({"id": payload.get("sub")}, {"id": 1, "status": 1})
+    if not user or user.get("status") != "active":
+        raise HTTPException(403, "Account inactive")
     return user
 
 
@@ -286,6 +309,477 @@ async def admin_login_compat(body: LoginBody):
         raise HTTPException(401, "Invalid admin credentials")
     token = create_jwt({"sub": "admin", "role": "admin"}, expires_hours=24 * 7)
     return {"token": token, "username": ADMIN_USERNAME, "role": "admin"}
+
+
+# ============================================================
+# IPTV / Xtream Codes integration
+# ============================================================
+class IptvConnectBody(BaseModel):
+    url: str            # e.g. http://line.2tvusa.xyz
+    username: str
+    password: str
+
+
+async def _iptv_get(action: Optional[str] = None, params: Optional[dict] = None) -> Any:
+    """Call the configured Xtream Codes provider. Returns parsed JSON.
+    Raises HTTPException if no provider is configured."""
+    cfg = await db.settings.find_one({"id": "iptv_config"})
+    if not cfg or not cfg.get("password_enc"):
+        raise HTTPException(404, "No IPTV provider configured. Add one in Admin → IPTV.")
+    base = cfg["url"].rstrip("/")
+    qp = {"username": cfg["username"], "password": decrypt_token(cfg["password_enc"])}
+    if action:
+        qp["action"] = action
+    if params:
+        qp.update(params)
+    async with httpx.AsyncClient(timeout=20.0) as c:
+        r = await c.get(f"{base}/player_api.php", params=qp)
+        r.raise_for_status()
+        return r.json()
+
+
+def _iptv_stream_url(cfg: dict, kind: str, stream_id: int, ext: str = "ts") -> str:
+    """Build the direct stream URL. For live we use /live/<u>/<p>/<id>.ts (most
+    compatible); for VOD/series we use the container extension provided by the
+    API (e.g. mp4, mkv)."""
+    base = cfg["url"].rstrip("/")
+    pw = decrypt_token(cfg["password_enc"])
+    if kind == "live":
+        return f"{base}/live/{cfg['username']}/{pw}/{stream_id}.{ext}"
+    if kind == "movie":
+        return f"{base}/movie/{cfg['username']}/{pw}/{stream_id}.{ext}"
+    if kind == "series":
+        return f"{base}/series/{cfg['username']}/{pw}/{stream_id}.{ext}"
+    raise HTTPException(400, "Invalid stream kind")
+
+
+@api.post("/admin/iptv/connect")
+async def admin_iptv_connect(body: IptvConnectBody, admin: dict = Depends(get_current_admin)):
+    """Validate Xtream credentials and persist them (password encrypted)."""
+    url = (body.url or "").strip().rstrip("/")
+    if not url.startswith("http"):
+        url = "http://" + url
+    user = (body.username or "").strip()
+    pw = (body.password or "").strip()
+    if not (url and user and pw):
+        raise HTTPException(400, "url, username, password required")
+    # Probe the provider
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as c:
+            r = await c.get(f"{url}/player_api.php", params={"username": user, "password": pw})
+            r.raise_for_status()
+            d = r.json()
+    except Exception as e:
+        raise HTTPException(502, f"Could not reach IPTV provider: {e}")
+    ui = (d or {}).get("user_info") or {}
+    if str(ui.get("auth", 1)) == "0" or ui.get("status") not in {"Active", "active"}:
+        raise HTTPException(401, f"IPTV provider rejected credentials (status={ui.get('status')!r})")
+    await db.settings.update_one(
+        {"id": "iptv_config"},
+        {"$set": {
+            "id": "iptv_config",
+            "url": url,
+            "username": user,
+            "password_enc": encrypt_token(pw),
+            "user_info": ui,
+            "server_info": (d or {}).get("server_info") or {},
+            "connected_at": now_iso(),
+        }},
+        upsert=True,
+    )
+    return {"ok": True, "status": ui.get("status"), "exp_date": ui.get("exp_date"),
+            "max_connections": ui.get("max_connections"), "active_cons": ui.get("active_cons")}
+
+
+@api.get("/admin/iptv/status")
+async def admin_iptv_status(admin: dict = Depends(get_current_admin)):
+    cfg = await db.settings.find_one({"id": "iptv_config"})
+    if not cfg:
+        return {"configured": False}
+    return {
+        "configured": True,
+        "url": cfg.get("url"),
+        "username": cfg.get("username"),
+        "user_info": cfg.get("user_info") or {},
+        "server_info": cfg.get("server_info") or {},
+        "connected_at": cfg.get("connected_at"),
+    }
+
+
+@api.delete("/admin/iptv")
+async def admin_iptv_delete(admin: dict = Depends(get_current_admin)):
+    await db.settings.delete_one({"id": "iptv_config"})
+    return {"ok": True}
+
+
+@api.get("/iptv/live/categories")
+async def iptv_live_categories(_: dict = Depends(get_current_user)):
+    return await _iptv_get("get_live_categories")
+
+
+@api.get("/iptv/live/streams")
+async def iptv_live_streams(category_id: Optional[str] = None, _: dict = Depends(get_current_user)):
+    params = {"category_id": category_id} if category_id else None
+    raw = await _iptv_get("get_live_streams", params)
+    cfg = await db.settings.find_one({"id": "iptv_config"})
+    out = []
+    for s in (raw or []):
+        out.append({
+            "rating_key": f"iptv-live-{s.get('stream_id')}",
+            "stream_id": s.get("stream_id"),
+            "title": s.get("name"),
+            "type": "live",
+            "thumb": s.get("stream_icon") or None,
+            "category_id": s.get("category_id"),
+            "epg_channel_id": s.get("epg_channel_id"),
+            "number": s.get("num"),
+            "source": "iptv",
+            "stream_url": _iptv_stream_url(cfg, "live", s.get("stream_id")),
+        })
+    return {"items": out, "total": len(out)}
+
+
+@api.get("/iptv/vod/streams")
+async def iptv_vod_streams(category_id: Optional[str] = None, _: dict = Depends(get_current_user)):
+    params = {"category_id": category_id} if category_id else None
+    raw = await _iptv_get("get_vod_streams", params)
+    cfg = await db.settings.find_one({"id": "iptv_config"})
+    out = []
+    for s in (raw or [])[:500]:  # cap for first page
+        ext = s.get("container_extension") or "mp4"
+        out.append({
+            "rating_key": f"iptv-movie-{s.get('stream_id')}",
+            "stream_id": s.get("stream_id"),
+            "title": s.get("name"),
+            "type": "movie",
+            "thumb": s.get("stream_icon") or None,
+            "year": s.get("year"),
+            "rating": s.get("rating"),
+            "category_id": s.get("category_id"),
+            "source": "iptv",
+            "stream_url": _iptv_stream_url(cfg, "movie", s.get("stream_id"), ext),
+        })
+    return {"items": out, "total": len(out)}
+
+
+@api.get("/iptv/logo")
+async def iptv_logo(u: str):
+    """Fetch and re-serve an IPTV channel logo. Needed because upstream logos
+    are almost always http:// which browsers refuse to embed in an https page.
+    Public (no auth) since these are just cosmetic art. Cached aggressively."""
+    parsed = urlparse(u)
+    if parsed.scheme not in {"http", "https"}:
+        raise HTTPException(400, "bad url")
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as c:
+            r = await c.get(u, headers={"User-Agent": IPTV_UA})
+            r.raise_for_status()
+    except Exception:
+        raise HTTPException(404, "logo unreachable")
+    return Response(
+        r.content,
+        media_type=r.headers.get("content-type") or "image/png",
+        headers={"Cache-Control": "public, max-age=86400, immutable"},
+    )
+
+
+# ----- Stream proxy --------------------------------------------------------
+# We proxy IPTV bytes through our backend for three reasons:
+#  1. Browsers refuse to embed http:// streams inside an https:// page
+#     (mixed-content). Our backend is https, so the <video> tag sees an https
+#     origin and is happy.
+#  2. Subscriber credentials never leave the server.
+#  3. The IPTV server's CORS headers (often missing) become irrelevant.
+#
+# We accept the user's JWT either as `Authorization: Bearer` (regular API
+# calls) or as `?t=` query param (for <video> element src URLs).
+
+IPTV_UA = "Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 QuantumTV/1.0"
+
+
+async def _stream_upstream(upstream: str, request: Request) -> StreamingResponse:
+    """Open a streaming GET to `upstream` and pipe bytes back to the client.
+    Forwards Range so the player can seek (VOD). Lifecycle of the upstream
+    httpx client/response is tied to the StreamingResponse via aclose()."""
+    headers = {"User-Agent": IPTV_UA}
+    if "range" in request.headers:
+        headers["Range"] = request.headers["range"]
+
+    client = httpx.AsyncClient(timeout=None)
+    try:
+        req = client.build_request("GET", upstream, headers=headers)
+        upstream_resp = await client.send(req, stream=True, follow_redirects=True)
+    except Exception as e:
+        await client.aclose()
+        raise HTTPException(502, f"IPTV upstream error: {e}")
+
+    async def body_iter():
+        try:
+            async for chunk in upstream_resp.aiter_raw():
+                yield chunk
+        finally:
+            await upstream_resp.aclose()
+            await client.aclose()
+
+    forward = {}
+    for k in ("content-length", "content-range", "accept-ranges"):
+        v = upstream_resp.headers.get(k)
+        if v:
+            forward[k] = v
+    media_type = upstream_resp.headers.get("content-type") or "video/MP2T"
+    return StreamingResponse(
+        body_iter(),
+        status_code=upstream_resp.status_code,
+        headers=forward,
+        media_type=media_type,
+    )
+
+
+def _rewrite_m3u8(text: str, upstream_url: str, token: str) -> str:
+    """Rewrite segment URLs inside an HLS manifest so the browser pulls them
+    back through our proxy (preserving HTTPS + auth). We wrap each upstream
+    URL in a Fernet ciphertext so the pass-through endpoint doesn't need a
+    host allow-list (upstream may 302 to a different CDN host)."""
+    out: list[str] = []
+    for line in text.splitlines():
+        if not line or line.startswith("#"):
+            out.append(line)
+            continue
+        # Segment / sub-playlist URI
+        abs_url = line if line.startswith(("http://", "https://")) else urljoin(upstream_url, line)
+        k = fernet.encrypt(abs_url.encode()).decode()
+        out.append(f"/api/iptv/pass?k={quote(k)}&t={quote(token)}")
+    return "\n".join(out)
+
+
+@api.get("/iptv/p/{kind}/{stream_id}.{ext}")
+async def iptv_proxy(
+    kind: str,
+    stream_id: int,
+    ext: str,
+    request: Request,
+    t: Optional[str] = None,
+    _: dict = Depends(get_user_flex),
+):
+    """Primary stream proxy. `kind` is live|movie|series. For .m3u8 we fetch
+    the manifest and rewrite segment URLs; everything else streams bytes."""
+    if kind not in {"live", "movie", "series"}:
+        raise HTTPException(400, "bad kind")
+    cfg = await db.settings.find_one({"id": "iptv_config"})
+    if not cfg or not cfg.get("password_enc"):
+        raise HTTPException(404, "IPTV not configured")
+    pw = decrypt_token(cfg["password_enc"])
+    base = cfg["url"].rstrip("/")
+    upstream = f"{base}/{kind}/{cfg['username']}/{pw}/{stream_id}.{ext}"
+
+    if ext.lower() == "m3u8":
+        try:
+            async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as c:
+                r = await c.get(upstream, headers={"User-Agent": IPTV_UA})
+                r.raise_for_status()
+                # Use the FINAL URL (after any 302 redirects) as the base for
+                # resolving relative segment paths — Xtream lines commonly
+                # redirect from lb → edge, and the segments live on the edge.
+                final_url = str(r.url)
+                text = r.text
+        except Exception as e:
+            raise HTTPException(502, f"IPTV manifest error: {e}")
+        return Response(
+            _rewrite_m3u8(text, final_url, t or ""),
+            media_type="application/vnd.apple.mpegurl",
+        )
+    return await _stream_upstream(upstream, request)
+
+
+@api.get("/iptv/pass")
+async def iptv_passthrough(
+    k: str,
+    request: Request,
+    t: Optional[str] = None,
+    _: dict = Depends(get_user_flex),
+):
+    """Generic byte-passthrough for media segments / sub-manifests referenced
+    inside an HLS manifest. `k` is a Fernet-encrypted upstream URL — this
+    makes it impossible for a client to point us at an arbitrary host."""
+    try:
+        upstream_url = fernet.decrypt(k.encode()).decode()
+    except Exception:
+        raise HTTPException(400, "bad segment token")
+    # Sub-manifest: rewrite child segment URLs so they keep flowing through us.
+    path_lower = urlparse(upstream_url).path.lower()
+    if path_lower.endswith(".m3u8"):
+        try:
+            async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as c:
+                r = await c.get(upstream_url, headers={"User-Agent": IPTV_UA})
+                r.raise_for_status()
+                return Response(
+                    _rewrite_m3u8(r.text, str(r.url), t or ""),
+                    media_type="application/vnd.apple.mpegurl",
+                )
+        except Exception as e:
+            raise HTTPException(502, f"IPTV sub-manifest error: {e}")
+    return await _stream_upstream(upstream_url, request)
+
+
+# ============================================================
+# Device pairing (Fire TV "type a code on your phone" flow)
+# ============================================================
+PAIR_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no I/O/0/1
+PAIR_CODE_LEN = 6
+PAIR_EXPIRY_SEC = 600  # 10 minutes
+
+
+def _gen_pair_code() -> str:
+    return "".join(_random.choices(PAIR_CODE_CHARS, k=PAIR_CODE_LEN))
+
+
+class PairStartBody(BaseModel):
+    device_id: Optional[str] = None
+    device_model: Optional[str] = None
+    device_name: Optional[str] = None
+
+
+@api.post("/auth/pair/start")
+async def auth_pair_start(body: PairStartBody):
+    """Fire TV calls this. Returns a short user_code to display on TV +
+    a long device_code that the TV polls with. The user types user_code on
+    their phone at /activate while signed in; that links this record."""
+    device_code = uuid.uuid4().hex + uuid.uuid4().hex  # 64 chars
+    # Generate a code that doesn't collide with any live pending record.
+    for _ in range(8):
+        code = _gen_pair_code()
+        existing = await db.pair_codes.find_one({"user_code": code, "user_id": None})
+        if not existing:
+            break
+    expires_at = (datetime.now(timezone.utc) + timedelta(seconds=PAIR_EXPIRY_SEC)).isoformat()
+    await db.pair_codes.insert_one({
+        "user_code": code,
+        "device_code": device_code,
+        "user_id": None,
+        "created_at": now_iso(),
+        "expires_at": expires_at,
+        "device_id": (body.device_id or "").strip() or None,
+        "device_model": body.device_model or "Unknown",
+        "device_name": body.device_name or "Device",
+    })
+    return {
+        "user_code": code,
+        "device_code": device_code,
+        "expires_in": PAIR_EXPIRY_SEC,
+        "interval": 5,
+        "activate_url": "https://quantumtv.app/activate",
+    }
+
+
+class PairVerifyBody(BaseModel):
+    user_code: str
+
+
+@api.post("/auth/pair/verify")
+async def auth_pair_verify(body: PairVerifyBody, current: dict = Depends(get_current_user)):
+    """The signed-in phone/web user enters the user_code shown on the TV.
+    We attach this user to the pending pair record."""
+    code = (body.user_code or "").strip().upper()
+    if not code:
+        raise HTTPException(400, "Code required")
+    rec = await db.pair_codes.find_one({"user_code": code, "user_id": None})
+    if not rec:
+        raise HTTPException(404, "Invalid or already-used code. Generate a fresh one on the Fire Stick.")
+    # Check expiry
+    try:
+        exp_dt = datetime.fromisoformat(rec["expires_at"].replace("Z", "+00:00"))
+        if exp_dt < datetime.now(timezone.utc):
+            raise HTTPException(410, "Code has expired. Generate a fresh one on the Fire Stick.")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+    # Check subscription is OK for the verifying user
+    sub = _subscription_view(current)
+    if sub["status"] == "expired":
+        raise HTTPException(403, "Your subscription has expired. Contact the admin to renew.")
+    # Attach
+    await db.pair_codes.update_one(
+        {"_id": rec["_id"]},
+        {"$set": {"user_id": current["id"], "verified_at": now_iso()}},
+    )
+    return {"ok": True, "username": current.get("username")}
+
+
+class PairPollBody(BaseModel):
+    device_code: str
+
+
+@api.post("/auth/pair/poll")
+async def auth_pair_poll(body: PairPollBody):
+    """Fire TV polls this every ~5s with its device_code. Returns either
+    pending, expired, or {token, user info} once the phone has linked it."""
+    rec = await db.pair_codes.find_one({"device_code": body.device_code})
+    if not rec:
+        raise HTTPException(404, "Unknown device code. Restart the activation on Fire Stick.")
+    # Expired?
+    try:
+        exp_dt = datetime.fromisoformat(rec["expires_at"].replace("Z", "+00:00"))
+        if exp_dt < datetime.now(timezone.utc) and not rec.get("user_id"):
+            return {"status": "expired"}
+    except Exception:
+        pass
+    if not rec.get("user_id"):
+        return {"status": "pending"}
+    # Done — load the user, run the same device-registration flow as /auth/login
+    user = await db.users.find_one({"id": rec["user_id"]})
+    if not user or user.get("status") != "active":
+        return {"status": "expired"}
+    sub = _subscription_view(user)
+    if sub["status"] == "expired":
+        await db.pair_codes.delete_one({"_id": rec["_id"]})
+        raise HTTPException(403, "Your subscription has expired. Contact the admin to renew.")
+
+    # Auto-register the device into a slot (same as normal /auth/login)
+    devices = list(user.get("devices") or [])
+    max_devices = int(user.get("max_devices", 3))
+    dev_id = (rec.get("device_id") or "").strip()
+    now = now_iso()
+    if dev_id:
+        existing = next((d for d in devices if d.get("id") == dev_id), None)
+        if existing:
+            existing["last_seen"] = now
+            if rec.get("device_model"):
+                existing["model"] = rec["device_model"]
+            if rec.get("device_name"):
+                existing["name"] = rec["device_name"]
+        else:
+            if len(devices) >= max_devices:
+                await db.pair_codes.delete_one({"_id": rec["_id"]})
+                raise HTTPException(
+                    403,
+                    f"Device limit reached ({max_devices}). Ask the admin to remove an old device first.",
+                )
+            devices.append({
+                "id": dev_id,
+                "model": rec.get("device_model") or "Unknown",
+                "name": rec.get("device_name") or "Device",
+                "primary": len(devices) == 0,
+                "registered_at": now,
+                "last_seen": now,
+            })
+
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"last_login": now, "devices": devices}},
+    )
+    await db.pair_codes.delete_one({"_id": rec["_id"]})  # one-shot
+    token = create_jwt({"sub": user["id"], "role": "user", "username": user["username"]})
+    return {
+        "status": "verified",
+        "token": token,
+        "role": "user",
+        "username": user["username"],
+        "display_name": user.get("display_name") or user["username"],
+        "avatar": user.get("avatar"),
+        "subscription": sub,
+        "account_number": user.get("account_number"),
+    }
 
 
 # ============================================================
@@ -993,6 +1487,36 @@ async def library_items(key: str, user: dict = Depends(get_current_user),
 
 @api.get("/metadata/{rating_key}")
 async def metadata_detail(rating_key: str, user: dict = Depends(get_current_user)):
+    # IPTV stub: front-end queries metadata for every playable item; we
+    # synthesise just enough so the player UI shows a title instead of "—".
+    if str(rating_key).startswith("iptv-"):
+        try:
+            _, kind, sid = rating_key.split("-", 2)
+            sid_int = int(sid)
+        except (ValueError, TypeError):
+            raise HTTPException(404, "Not found")
+        try:
+            action = "get_live_streams" if kind == "live" else "get_vod_streams"
+            raw = await _iptv_get(action)
+            hit = next((s for s in (raw or []) if int(s.get("stream_id", -1)) == sid_int), None)
+        except Exception:
+            hit = None
+        title = (hit or {}).get("name") or ("Live Channel" if kind == "live" else "Movie")
+        thumb_raw = (hit or {}).get("stream_icon")
+        thumb = f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None
+        return {
+            "rating_key": rating_key,
+            "title": title,
+            "type": "live" if kind == "live" else "movie",
+            "thumb": thumb,
+            "art": None,
+            "year": (hit or {}).get("year"),
+            "summary": None,
+            "audience_rating": (hit or {}).get("rating"),
+            "in_watchlist": str(rating_key) in [str(x) for x in (user.get("watchlist") or [])],
+            "in_favorites": str(rating_key) in [str(x) for x in (user.get("favorites") or [])],
+        }
+
     uri, token = await _server_ctx()
     data = await plex_get(f"{uri}/library/metadata/{rating_key}", token=token)
     items = data.get("MediaContainer", {}).get("Metadata", []) or []
@@ -1055,43 +1579,98 @@ async def search(q: str, user: dict = Depends(get_current_user), limit: int = 30
 
 @api.get("/livetv/channels")
 async def live_channels(user: dict = Depends(get_current_user)):
-    uri, token = await _server_ctx()
+    uri, token = None, None
+    try:
+        uri, token = await _server_ctx()
+    except Exception as e:
+        log.info("Plex not connected for live: %s", e)
     out: list[dict] = []
-    try:
-        dvrs = await plex_get(f"{uri}/livetv/dvrs", token=token)
-        for d in dvrs.get("MediaContainer", {}).get("Dvr", []) or []:
-            for ch in d.get("ChannelMapping", []) or []:
-                out.append({
-                    "title": ch.get("channelTitle") or ch.get("name"),
-                    "number": ch.get("channelNumber"),
-                    "logo": ch.get("channelThumb"),
-                    "key": ch.get("channelKey"),
-                    "source": "dvr",
-                })
-    except Exception as e:
-        log.info("No DVR: %s", e)
-    try:
-        secs = await plex_get(f"{uri}/library/sections", token=token)
-        for d in secs.get("MediaContainer", {}).get("Directory", []) or []:
-            if d.get("type") == "livetv":
-                items = await plex_get(f"{uri}/library/sections/{d.get('key')}/all", token=token,
-                                       params={"X-Plex-Container-Size": 500})
-                for it in items.get("MediaContainer", {}).get("Metadata", []) or []:
+    if uri and token:
+        try:
+            dvrs = await plex_get(f"{uri}/livetv/dvrs", token=token)
+            for d in dvrs.get("MediaContainer", {}).get("Dvr", []) or []:
+                for ch in d.get("ChannelMapping", []) or []:
                     out.append({
-                        "title": it.get("title"),
-                        "number": it.get("index"),
-                        "logo": _proxy_image(uri, token, it.get("thumb")) if it.get("thumb") else None,
-                        "key": it.get("ratingKey"),
-                        "source": "section",
+                        "title": ch.get("channelTitle") or ch.get("name"),
+                        "number": ch.get("channelNumber"),
+                        "logo": ch.get("channelThumb"),
+                        "key": ch.get("channelKey"),
+                        "source": "plex",
                     })
-    except Exception as e:
-        log.info("Live section fetch failed: %s", e)
+        except Exception as e:
+            log.info("No DVR: %s", e)
+        try:
+            secs = await plex_get(f"{uri}/library/sections", token=token)
+            for d in secs.get("MediaContainer", {}).get("Directory", []) or []:
+                if d.get("type") == "livetv":
+                    items = await plex_get(f"{uri}/library/sections/{d.get('key')}/all", token=token,
+                                           params={"X-Plex-Container-Size": 500})
+                    for it in items.get("MediaContainer", {}).get("Metadata", []) or []:
+                        out.append({
+                            "title": it.get("title"),
+                            "number": it.get("index"),
+                            "logo": _proxy_image(uri, token, it.get("thumb")) if it.get("thumb") else None,
+                            "key": it.get("ratingKey"),
+                            "source": "plex",
+                        })
+        except Exception as e:
+            log.info("Live section fetch failed: %s", e)
+
+    # Merge IPTV live channels (if configured). Keyed as iptv-live-<id> so the
+    # /stream/{rk} endpoint can route playback through the proxy.
+    cfg = await db.settings.find_one({"id": "iptv_config"})
+    if cfg and cfg.get("password_enc"):
+        try:
+            raw = await _iptv_get("get_live_streams")
+            for s in raw or []:
+                sid = s.get("stream_id")
+                if not sid:
+                    continue
+                logo_raw = s.get("stream_icon") or None
+                # Route http logos through our logo proxy so browsers on
+                # https pages actually render them.
+                logo = f"/api/iptv/logo?u={quote(logo_raw, safe='')}" if logo_raw else None
+                out.append({
+                    "title": s.get("name"),
+                    "number": s.get("num"),
+                    "logo": logo,
+                    "key": f"iptv-live-{sid}",
+                    "source": "iptv",
+                })
+        except Exception as e:
+            log.warning("IPTV live channels merge failed: %s", e)
+
     return {"channels": out}
 
 
 @api.get("/stream/{rating_key}")
-async def stream_url(rating_key: str, user: dict = Depends(get_current_user),
+async def stream_url(rating_key: str, request: Request, user: dict = Depends(get_current_user),
                     direct: bool = True, max_bitrate: int = 8000):
+    # IPTV stream resolution. Rating keys are minted as iptv-<kind>-<id> in
+    # the live/vod endpoints above. We mint a short-lived stream token so
+    # the <video> element (which can't send Authorization) can still
+    # authenticate against the proxy via ?t=.
+    if str(rating_key).startswith("iptv-"):
+        try:
+            _, kind, sid = rating_key.split("-", 2)
+        except ValueError:
+            raise HTTPException(400, "bad iptv key")
+        if kind not in {"live", "movie", "series"}:
+            raise HTTPException(400, "bad iptv kind")
+        # Live → m3u8 for HLS.js / expo-video; VOD → mp4 direct
+        ext = "m3u8" if kind == "live" else "mp4"
+        stream_token = create_jwt(
+            {"sub": user["id"], "role": "user", "username": user.get("username")},
+            expires_hours=6,
+        )
+        # Build an absolute URL pointing at THIS backend so <video> tags on
+        # https sites don't hit mixed-content rules.
+        proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+        origin = f"{proto}://{host}"
+        url = f"{origin}/api/iptv/p/{kind}/{sid}.{ext}?t={quote(stream_token)}"
+        return {"url": url, "type": "hls" if kind == "live" else "direct"}
+
     uri, token = await _server_ctx()
     if direct:
         meta = await plex_get(f"{uri}/library/metadata/{rating_key}", token=token)

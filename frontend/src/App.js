@@ -3,7 +3,7 @@ import { Routes, Route, Navigate, useLocation, useNavigate, Link } from "react-r
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Users, Server, Settings, Activity, LogOut, Tv,
-  Smartphone, Download, MonitorPlay, Menu, X, AlertTriangle,
+  Smartphone, Download, MonitorPlay, Menu, X, AlertTriangle, Cable,
 } from "lucide-react";
 import { IS_PRODUCTION_BACKEND, PRODUCTION_URL } from "./api";
 import Login from "./pages/Login";
@@ -16,11 +16,14 @@ import MobilePreview from "./pages/MobilePreview";
 import FireTV from "./pages/FireTV";
 import FireTVPreview from "./pages/FireTVPreview";
 import Watch from "./pages/Watch";
+import Activate from "./pages/Activate";
+import Iptv from "./pages/Iptv";
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, testid: "nav-dashboard" },
-  { to: "/users", label: "Users", icon: Users, testid: "nav-users" },
+  { to: "/users", label: "Subscribers", icon: Users, testid: "nav-users" },
   { to: "/servers", label: "Plex Servers", icon: Server, testid: "nav-servers" },
+  { to: "/iptv", label: "IPTV Provider", icon: Cable, testid: "nav-iptv" },
   { to: "/preview", label: "App Preview", icon: Smartphone, testid: "nav-preview" },
   { to: "/tv-preview", label: "Fire TV Preview", icon: MonitorPlay, testid: "nav-tv-preview" },
   { to: "/firetv", label: "Fire TV Install", icon: Download, testid: "nav-firetv" },
@@ -201,6 +204,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/activate" element={<Activate />} />
       <Route path="/watch/*" element={<Watch />} />
       <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
       <Route path="/users" element={<RequireAuth><UsersPage /></RequireAuth>} />

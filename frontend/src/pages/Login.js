@@ -1,11 +1,13 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, Loader2, AlertTriangle } from "lucide-react";
 import api, { IS_PRODUCTION_BACKEND, PRODUCTION_URL } from "../api";
 
 export default function Login() {
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
+  const continueTo = searchParams.get("continue");
   const [u, setU] = useState("");
   const [p, setP] = useState("");
   const [show, setShow] = useState(false);
@@ -20,14 +22,14 @@ export default function Login() {
       if (data.role === "admin") {
         localStorage.setItem("qtv_admin_token", data.token);
         localStorage.removeItem("qtv_user_token");
-        nav("/");
+        nav(continueTo || "/");
       } else {
         localStorage.setItem("qtv_user_token", data.token);
         localStorage.removeItem("qtv_admin_token");
         localStorage.setItem("qtv_user", JSON.stringify({
           username: data.username, display_name: data.display_name, avatar: data.avatar,
         }));
-        nav("/watch");
+        nav(continueTo || "/watch");
       }
     } catch (e) {
       setErr(e?.response?.data?.detail || "Incorrect username or password. Please try again.");

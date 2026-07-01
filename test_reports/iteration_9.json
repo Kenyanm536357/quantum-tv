@@ -1,0 +1,43 @@
+{
+  "summary": "IPTV Live TV merge verified end-to-end. 15/15 backend pytest cases pass (backend/tests/test_iptv_livetv.py) covering channel-list merge, stream URL minting, HLS manifest rewrite, encrypted segment pass-through, IPTV metadata, logo proxy, and Plex regression. Frontend at /watch/live shows source chips 'All (5,382)' and 'IPTV (5,382)', live-search filters correctly (gibberish -> empty state), 300 IPTV cards render with LIVE badge + logos, clicking a card navigates to /watch/play/iptv-live-<id> and triggers the full network pipeline (livetv/channels -> metadata/iptv-live -> stream/iptv-live -> iptv/p/live/*.m3u8 -> iptv/pass — all HTTP 200). Plex is not connected in this preview DB, so plex chip is absent (expected per E1 note). No functional bugs found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/iptv/logo", "issue": "Backend correctly sets 'Cache-Control: public, max-age=86400, immutable' but the ingress/CF layer rewrites it to 'no-store, no-cache, must-revalidate' before it reaches the client. Not a backend bug per se, but logos will be re-fetched every session because of it. Content-Type is preserved (image/png)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/watch/live", "issues": ["Search field caps display at 300 (MAX_SHOW). When typing a broad term like 'espn' the count stays at 300, which is correct given 5k+ channels, but there is no 'x more matches — refine search' hint until the user scrolls to the very bottom. Consider surfacing the overflow indicator above the grid when a search is active."]},
+      {"screen": "/watch/play/iptv-live-<id>", "issues": ["In headless Chromium the HLS.js player throws 'Playback error (bufferAddCodecError)' — expected/acceptable per E1 note (headless codec support). All network fetches (manifest + first segment) return 200. On real browsers/Fire TV this should render correctly assuming the stream codecs are supported."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iptv_livetv.py",
+    "/app/test_reports/pytest/iteration_9_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: Consider adding overflow banner (e.g. 'Showing 300 of N matches') at the top of the live-grid when search is active, so users know they may still need to refine.",
+    "OPTIONAL: If browsers should cache proxied logos, work around the ingress/CF Cache-Control rewrite (currently everything becomes no-store)."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 1945 lines — well past the 700-line threshold. Strongly consider extracting the IPTV subsystem (config, proxy, passthrough, logo, stream URL minting, m3u8 rewrite) into a separate module (e.g. backend/iptv.py) mounted on the same APIRouter. Same for Plex logic.",
+    "_rewrite_m3u8 always base64-Fernet-encrypts the full absolute URL for every segment on every request. For a long/live playlist this is CPU-noticeable; consider caching the manifest for a few seconds (Xtream typically increments segment names, so the same URL is only rewritten once per rotation anyway).",
+    "The passthrough endpoint always requires ?t=<user-jwt>, but Fernet ciphertext k already binds the URL — the token+ciphertext double-check is fine, but token expiry (6h) is the only revocation. That is acceptable for now.",
+    "iptv_proxy uses `ext` freely in the URL join; validated 'kind' is in {live,movie,series} but no explicit whitelist on `ext`. Not exploitable (fernet is separate), but a whitelist ('m3u8', 'ts', 'mp4') would harden it.",
+    "live_channels returns Plex channels first then merges IPTV — with 5k IPTV channels the response payload is ~700KB+. Frontend already caps display at 300, but the API itself has no pagination/limit param. Consider ?q=&limit= server-side to reduce initial load.",
+    "iptv_logo endpoint is public (no auth) with `u=` accepting any http/https URL — effectively an open image proxy. Low-risk since payload is passed through untouched and content-type is whatever upstream serves, but it could be abused to obscure the source IP for HTTP GETs. Consider (a) restricting host to the configured IPTV domain, or (b) rate-limiting."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iptv_livetv.py"
+  ],
+  "success_rate": {"backend": "100% (15/15 passed)", "frontend": "100% (chips, search, filter, empty state, card click → /watch/play/iptv-live-*, full manifest+segment network pipeline all verified)"},
+  "test_credentials": "user: test / Test12345 (works). NOTE: /app/memory/test_credentials.md still lists '12345' — main agent should update the memory file OR verify which password is intended; both should not be documented.",
+  "seed_data_creation": "None. Only read/query operations against pre-existing IPTV config (line.2tvusa.xyz, 5,382 channels).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend base URL is https://stream-plex-mobile.preview.emergentagent.com (from /app/frontend/.env). Test user is 'test' / 'Test12345'. Plex is NOT connected in this preview DB — do not fail tests requiring Plex data. IPTV Xtream provider has 5,382 live channels; sample known-good rating_key is 'iptv-live-1389624' (BEIN SPORTS MAX 1 AR). Full regression suite lives at /app/backend/tests/test_iptv_livetv.py — run with REACT_APP_BACKEND_URL env var set. Frontend player uses HLS.js and works via network verification in headless (visual playback fails with bufferAddCodecError which is a codec/headless limitation, not a bug).",
+  "rca of the issue": "N/A — no bugs found. Playback error in headless Chromium is a known limitation of the headless codec set, not a backend/frontend defect. Cache-Control rewrite is an infra (ingress/CF) behavior, not code."
+}

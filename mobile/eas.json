@@ -6,17 +6,23 @@
       "distribution": "internal",
       "android": { "buildType": "apk" }
     },
-    "preview": {
+    "firetv": {
       "distribution": "internal",
-      "channel": "preview",
+      "channel": "firetv",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://quantumtv.app"
+      },
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"
       }
     },
-    "firetv": {
+    "preview": {
       "distribution": "internal",
-      "channel": "firetv",
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://quantumtv.app"
+      },
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"

@@ -70,7 +70,7 @@ const BrandHeader = () => (
 );
 
 const PreviewBanner = () => (
-  <div data-testid="preview-banner" className="bg-amber-500/15 border-b border-amber-400/30 text-amber-100 px-4 sm:px-6 md:px-8 py-2.5 flex items-start sm:items-center gap-3">
+  <div data-testid="preview-banner" className="bg-amber-500/15 border-b border-amber-400/30 text-amber-100 px-3 sm:px-4 md:px-6 py-2 flex items-start sm:items-center gap-3">
     <AlertTriangle className="w-5 h-5 text-amber-300 shrink-0 mt-0.5 sm:mt-0" />
     <div className="text-xs sm:text-sm leading-snug flex-1 min-w-0">
       <span className="font-semibold text-amber-200">Preview environment.</span>{" "}
@@ -165,7 +165,7 @@ const Shell = ({ children }) => {
 
       <main className="flex-1 min-w-0 w-full">
         {!IS_PRODUCTION_BACKEND && <PreviewBanner />}
-        <header className="h-14 sm:h-16 border-b border-white/5 px-4 sm:px-6 md:px-8 flex items-center justify-between sticky top-0 bg-[#060714]/80 backdrop-blur-md z-30">
+        <header className="h-12 sm:h-14 border-b border-white/5 px-3 sm:px-4 md:px-6 flex items-center justify-between sticky top-0 bg-[#060714]/80 backdrop-blur-md z-30">
           <div className="flex items-center gap-3 min-w-0">
             <button
               data-testid="open-drawer"
@@ -185,7 +185,7 @@ const Shell = ({ children }) => {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="p-4 sm:p-6 md:p-8"
+          className="p-3 sm:p-4 md:p-6"
         >
           {children}
         </motion.div>

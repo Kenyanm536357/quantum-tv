@@ -147,9 +147,13 @@ function ManageDrawer({ userId, onClose }) {
   if (!userId) return null;
   const refreshAll = async () => { await refetch(); await qc.invalidateQueries({ queryKey: ["users"] }); };
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm" data-testid="manage-drawer">
-      <div className="w-full sm:max-w-lg bg-[#0a0b1e] border-l border-white/10 h-full overflow-y-auto p-5 sm:p-7 relative">
-        <button onClick={onClose} data-testid="manage-close" className="absolute top-4 right-4 p-2 rounded-lg text-zinc-400 hover:text-white">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-sm"
+      data-testid="manage-drawer"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="w-full max-w-5xl max-h-[92vh] bg-[#0a0b1e] border border-white/10 rounded-2xl shadow-2xl overflow-y-auto p-5 sm:p-8 relative">
+        <button onClick={onClose} data-testid="manage-close" className="absolute top-4 right-4 p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5">
           <X className="w-5 h-5" />
         </button>
         {!data ? <div className="text-zinc-400">Loading…</div> : (

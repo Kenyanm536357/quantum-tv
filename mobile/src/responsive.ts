@@ -83,7 +83,7 @@ export const SIZES = {
   cardW: IS_TV ? s(180) : s(140),
   cardH: IS_TV ? vs(270) : vs(210),
 
-  tabBarH: IS_TV ? vs(96) : vs(78),
+  tabBarH: IS_TV ? vs(78) : vs(62),
   iconSm: ms(16),
   iconMd: ms(22),
   iconLg: ms(32),
@@ -97,5 +97,17 @@ export const FOCUS_RING = {
   shadowOpacity: 0.6,
   shadowRadius: 16,
   shadowOffset: { width: 0, height: 0 },
-  transform: [{ scale: 1.04 }],
+  transform: [{ scale: 1.06 }],
+};
+
+// Cyan glow overlay applied to focused cards (Fire TV D-pad hover)
+export const FOCUSED_CARD = {
+  borderWidth: 3,
+  borderColor: "#06B6D4",
+  shadowColor: "#06B6D4",
+  shadowOpacity: 0.9,
+  shadowRadius: 22,
+  shadowOffset: { width: 0, height: 0 },
+  elevation: 12,
+  transform: [{ scale: 1.06 }],
 };

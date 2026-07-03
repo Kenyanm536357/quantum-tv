@@ -1577,6 +1577,133 @@ async def on_deck(user: dict = Depends(get_current_user), limit: int = 30):
     return {"items": [_normalize_item(uri, token, i) for i in items]}
 
 
+@api.get("/browse/rows")
+async def browse_rows(user: dict = Depends(get_current_user), per_row: int = 20, max_sections: int = 5):
+    """Compose the mobile app's Netflix-style home screen in ONE request:
+       - Continue Watching   (Plex on-deck)
+       - Recently Added      (all libraries, cross-section)
+       - Top Live Channels   (Plex + IPTV mix, top 20)
+       - Up to `max_sections` Plex library sections, sorted by size (biggest
+         libraries first). Each capped at `per_row`.
+
+       All library fetches run in parallel via asyncio.gather so the total
+       latency is roughly the slowest single call (≈2 s), not the sum
+       (which was ≈30 s and hit Cloudflare's 60 s ceiling)."""
+    import asyncio
+
+    rows: list[dict] = []
+
+    # --- Plex-backed rows -------------------------------------------------
+    uri: Optional[str] = None
+    token: Optional[str] = None
+    try:
+        uri, token = await _server_ctx()
+    except Exception as e:
+        log.info("Browse rows: Plex not connected (%s) — skipping Plex sections", e)
+
+    async def _plex_metadata(path: str, params: Optional[dict] = None) -> list[dict]:
+        if not (uri and token):
+            return []
+        try:
+            data = await plex_get(f"{uri}{path}", token=token, params=params or {})
+            return data.get("MediaContainer", {}).get("Metadata", []) or []
+        except Exception as e:
+            log.info("Plex fetch failed %s: %s", path, e)
+            return []
+
+    async def _plex_directories(path: str) -> list[dict]:
+        if not (uri and token):
+            return []
+        try:
+            data = await plex_get(f"{uri}{path}", token=token)
+            return data.get("MediaContainer", {}).get("Directory", []) or []
+        except Exception as e:
+            log.info("Plex directories fetch failed %s: %s", path, e)
+            return []
+
+    plex_page = {"X-Plex-Container-Start": 0, "X-Plex-Container-Size": per_row}
+
+    on_deck_task = _plex_metadata("/library/onDeck", plex_page) if uri and token else None
+    recent_task = _plex_metadata("/library/recentlyAdded", plex_page) if uri and token else None
+    sections_task = _plex_directories("/library/sections") if uri and token else None
+    live_task = live_channels(user)
+
+    on_deck, recent, sec_dirs, live_resp = await asyncio.gather(
+        on_deck_task or asyncio.sleep(0, result=[]),
+        recent_task or asyncio.sleep(0, result=[]),
+        sections_task or asyncio.sleep(0, result=[]),
+        live_task,
+        return_exceptions=False,
+    )
+
+    if on_deck:
+        rows.append({
+            "id": "continue",
+            "title": "Continue Watching",
+            "kind": "poster",
+            "items": [_normalize_item(uri, token, i) for i in on_deck[:per_row]],
+        })
+    if recent:
+        rows.append({
+            "id": "recent",
+            "title": "Recently Added",
+            "kind": "poster",
+            "items": [_normalize_item(uri, token, i) for i in recent[:per_row]],
+        })
+
+    # --- Top Live channels (Plex + IPTV) ---------------------------------
+    try:
+        chs = (live_resp or {}).get("channels", []) or []
+        # Prefer channels with logos for a prettier row
+        chs.sort(key=lambda c: (0 if c.get("logo") else 1, str(c.get("title") or "")))
+        top_live = chs[:per_row]
+        if top_live:
+            rows.append({
+                "id": "live",
+                "title": "Top Live Channels",
+                "kind": "live",
+                "items": [
+                    {
+                        "rating_key": c["key"],
+                        "title": c.get("title"),
+                        "thumb": c.get("logo"),
+                        "type": "live",
+                        "number": c.get("number"),
+                        "source": c.get("source"),
+                    }
+                    for c in top_live
+                ],
+            })
+    except Exception as e:
+        log.info("Live row failed: %s", e)
+
+    # --- One row per Plex library section (parallel, capped) -------------
+    if uri and token and sec_dirs:
+        libs = [d for d in sec_dirs if d.get("type") in {"movie", "show"}]
+        # Order so movies come before shows (matches Netflix's typical layout)
+        libs.sort(key=lambda d: (0 if d.get("type") == "movie" else 1, str(d.get("title") or "")))
+        libs = libs[:max_sections]
+
+        section_results = await asyncio.gather(*[
+            _plex_metadata(
+                f"/library/sections/{d.get('key')}/all",
+                {"X-Plex-Container-Start": 0, "X-Plex-Container-Size": per_row, "sort": "addedAt:desc"},
+            )
+            for d in libs
+        ])
+        for d, items in zip(libs, section_results):
+            if not items:
+                continue
+            rows.append({
+                "id": f"section-{d.get('key')}",
+                "title": d.get("title") or "Library",
+                "kind": "poster",
+                "items": [_normalize_item(uri, token, i) for i in items[:per_row]],
+            })
+
+    return {"rows": rows}
+
+
 @api.get("/search")
 async def search(q: str, user: dict = Depends(get_current_user), limit: int = 30):
     uri, token = await _server_ctx()

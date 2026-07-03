@@ -43,8 +43,9 @@ export default function Search() {
         renderItem={({ item }) => (
           <Pressable
             testID={`result-${item.rating_key}`}
+            focusable
             onPress={() => router.push({ pathname: "/player/[rk]", params: { rk: String(item.rating_key), title: item.title } })}
-            style={s.row}
+            style={({ focused }) => [s.row, focused && { borderWidth: 2, borderColor: colors.cyan, borderRadius: 12, paddingHorizontal: 8, backgroundColor: "rgba(6,182,212,0.08)" }]}
           >
             <View style={s.thumb}>
               {item.thumb ? (

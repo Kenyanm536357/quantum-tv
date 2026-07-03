@@ -43,7 +43,7 @@ export function ListScreen({ endpoint, title, removeLabel, removeFromList, empty
         renderItem={({ item }) => (
           <Pressable
             testID={`item-${item.rating_key}`}
-            style={({ focused }) => [{ flex: 1 }, focused && s.focused]}
+            style={({ focused }) => [{ flex: 1, borderRadius: 14 }, focused && s.focused]}
             focusable
             onPress={() => router.push({ pathname: "/player/[rk]", params: { rk: String(item.rating_key), title: item.title } })}
             onLongPress={() => remove.mutate(String(item.rating_key))}
@@ -77,7 +77,7 @@ const s = StyleSheet.create({
   cSub: { color: colors.zinc500, fontFamily: "Outfit_400Regular", fontSize: isTV ? 12 : 10, marginTop: 1 },
   hint: { color: colors.zinc500, fontSize: isTV ? 11 : 9, marginTop: 4, fontFamily: "Outfit_400Regular" },
   empty: { color: colors.zinc400, marginTop: 14, fontFamily: "Outfit_400Regular", fontSize: isTV ? 16 : 13, textAlign: "center" },
-  focused: { transform: [{ scale: 1.05 }], shadowColor: colors.cyan, shadowOpacity: 0.8, shadowRadius: 16, shadowOffset: { width: 0, height: 0 } },
+  focused: { transform: [{ scale: 1.06 }], borderWidth: 3, borderColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: 0.9, shadowRadius: 22, shadowOffset: { width: 0, height: 0 }, elevation: 12 },
 });
 
 export default ListScreen;

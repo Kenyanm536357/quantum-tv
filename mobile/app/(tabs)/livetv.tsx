@@ -5,7 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import client, { BACKEND, colors } from "../../src/api";
-import { SAFE, SIZES, GRID_COLS, IS_TV, vs, ms, s } from "../../src/responsive";
+import { SAFE, SIZES, GRID_COLS, IS_TV, vs, ms, s, FOCUSED_CARD } from "../../src/responsive";
 
 type Channel = { key: string; title: string; number?: number | string; logo?: string; source?: "plex" | "iptv" };
 
@@ -120,7 +120,7 @@ export default function LiveTV() {
             testID={`channel-${item.key}`}
             focusable
             hasTVPreferredFocus={index === 0}
-            style={({ focused }) => [{ flex: 1 }, focused && { transform: [{ scale: 1.05 }] }]}
+            style={({ focused }) => [{ flex: 1, borderRadius: SIZES.radius }, focused && FOCUSED_CARD]}
             onPress={() => router.push({ pathname: "/player/[rk]", params: { rk: String(item.key), title: item.title } })}
           >
             <View style={{ height: IS_TV ? vs(180) : vs(160), borderRadius: SIZES.radius, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: "rgba(255,255,255,0.05)" }}>

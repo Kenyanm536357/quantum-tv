@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, Pressable, Image, StyleSheet, RefreshControl, ActivityIndicator } from "react-native";
+import { View, Text, ScrollView, Pressable, Image, StyleSheet, RefreshControl, ActivityIndicator, FlatList, TVFocusGuideView } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -88,25 +88,35 @@ function ChannelCard({ item, onPress }: { item: BrowseItem; onPress: () => void 
 function Row({ row }: { row: BrowseRow }) {
   const router = useRouter();
   if (!row.items?.length) return null;
+  const renderItem = ({ item }: { item: BrowseItem }) => {
+    const go = () => router.push({ pathname: "/player/[rk]", params: { rk: String(item.rating_key), title: item.title } });
+    return row.kind === "live"
+      ? <ChannelCard item={item} onPress={go} />
+      : <PosterCard item={item} onPress={go} />;
+  };
   return (
-    <View style={{ marginTop: vs(18) }} testID={`row-${row.id}`}>
+    // TVFocusGuideView declares an explicit focus target for the row so
+    // D-pad up/down between rows can't get "stranded" inside a horizontal
+    // scroll view — Android TV's native focus finder is unreliable across
+    // stacked ScrollViews. Fixes Fire TV navigation between rows.
+    <TVFocusGuideView style={{ marginTop: vs(18) }} trapFocusUp={false} trapFocusDown={false} testID={`row-${row.id}`}>
       <View style={{ paddingHorizontal: SAFE.left }}>
         <Text style={{ color: "#fff", fontFamily: "Unbounded_700Bold", fontSize: SIZES.fontH2, letterSpacing: 0.3 }}>{row.title}</Text>
       </View>
-      <ScrollView
+      <FlatList
         horizontal
         showsHorizontalScrollIndicator={false}
+        data={row.items}
+        keyExtractor={(it) => String(it.rating_key)}
+        renderItem={renderItem}
         style={{ marginTop: vs(10) }}
         contentContainerStyle={{ paddingLeft: SAFE.left, paddingRight: SAFE.right, paddingVertical: vs(6) }}
-      >
-        {row.items.map((it) => {
-          const go = () => router.push({ pathname: "/player/[rk]", params: { rk: String(it.rating_key), title: it.title } });
-          return row.kind === "live"
-            ? <ChannelCard key={String(it.rating_key)} item={it} onPress={go} />
-            : <PosterCard key={String(it.rating_key)} item={it} onPress={go} />;
-        })}
-      </ScrollView>
-    </View>
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        windowSize={7}
+        removeClippedSubviews
+      />
+    </TVFocusGuideView>
   );
 }
 

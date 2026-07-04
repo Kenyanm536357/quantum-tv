@@ -113,7 +113,6 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 0 },
     ...(Platform.OS === "android" ? { elevation: 10 } : null),
-    transform: [{ scale: 1.02 }],
   },
 });
 

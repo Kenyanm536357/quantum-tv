@@ -2,38 +2,26 @@ import { Tabs } from "expo-router";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
-import { useState } from "react";
 import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { colors } from "../../src/api";
-import { IS_TV, SIZES, SAFE, SIDE_RAIL_W, SIDE_RAIL_W_EXPANDED, s, vs, ms } from "../../src/responsive";
+import { IS_TV, SIZES, SAFE, SIDE_RAIL_W, s, vs } from "../../src/responsive";
 
 // ============================================================
-// TV Layout — collapsible left-side navigation rail
-// Netflix/Prime Video pattern: 72px collapsed (icons only), expands
-// to 260px with labels when any nav item is D-pad-focused. Content is
-// unaffected because SAFE.left already reserves rail width on TV.
+// TV Layout — always-visible left-side navigation rail
+// Fixed 220 px wide, all labels visible, no width animation. Older
+// customers get a stable predictable menu that never "moves".
 // ============================================================
 function TVSideRail({ state, descriptors, navigation }: BottomTabBarProps) {
-  const [focusedTab, setFocusedTab] = useState<string | null>(null);
-  const anyFocused = focusedTab !== null;
-
   return (
     <View
-      style={[
-        styles.rail,
-        {
-          top: SAFE.top,
-          bottom: SAFE.bottom,
-          width: anyFocused ? SIDE_RAIL_W_EXPANDED : SIDE_RAIL_W,
-        },
-      ]}
+      style={[styles.rail, { top: SAFE.top, bottom: SAFE.bottom, width: SIDE_RAIL_W }]}
       pointerEvents="box-none"
     >
       <BlurView tint="dark" intensity={60} style={StyleSheet.absoluteFill} />
-      <View style={styles.railLogo}>
-        <Ionicons name="menu" size={SIZES.iconMd} color={colors.zinc400} />
+      <View style={styles.railHeader}>
+        <Text style={styles.railBrand}>QUANTUM <Text style={{ color: colors.cyan }}>TV</Text></Text>
       </View>
-      <View style={{ paddingVertical: vs(10) }}>
+      <View style={{ paddingVertical: vs(6) }}>
         {state.routes.map((route, i) => {
           const { options } = descriptors[route.key];
           const active = state.index === i;
@@ -44,9 +32,7 @@ function TVSideRail({ state, descriptors, navigation }: BottomTabBarProps) {
               key={route.key}
               testID={`tab-${route.name}`}
               focusable
-              hasTVPreferredFocus={active && !anyFocused}
-              onFocus={() => setFocusedTab(route.key)}
-              onBlur={() => setFocusedTab((f) => (f === route.key ? null : f))}
+              hasTVPreferredFocus={active}
               onPress={() => {
                 const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
                 if (!active && !event.defaultPrevented) navigation.navigate(route.name);
@@ -59,26 +45,24 @@ function TVSideRail({ state, descriptors, navigation }: BottomTabBarProps) {
               ]}
             >
               {({ focused }) => {
-                const color = focused ? "#050614" : active ? colors.cyan : colors.zinc300;
+                // Text stays WHITE everywhere except when focused (on cyan
+                // background, needs dark for contrast). No color swaps that
+                // could read as "flashing" to older customers.
+                const color = focused ? "#050614" : "#FFFFFF";
                 return (
                   <>
-                    <View style={{ width: SIDE_RAIL_W, alignItems: "center" }}>
+                    <View style={styles.railIconBox}>
                       {iconRender ? iconRender({ focused, color, size: SIZES.iconMd }) : null}
                     </View>
-                    {anyFocused ? (
-                      <Text
-                        numberOfLines={1}
-                        style={[
-                          styles.railLabel,
-                          {
-                            color,
-                            fontFamily: focused || active ? "Unbounded_700Bold" : "Outfit_500Medium",
-                          },
-                        ]}
-                      >
-                        {label}
-                      </Text>
-                    ) : null}
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.railLabel,
+                        { color, fontFamily: focused || active ? "Unbounded_700Bold" : "Outfit_500Medium" },
+                      ]}
+                    >
+                      {label}
+                    </Text>
                     {active && !focused ? <View style={styles.railActiveBar} /> : null}
                   </>
                 );
@@ -121,7 +105,7 @@ function BottomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
               ]}
             >
               {({ focused }) => {
-                const color = focused ? "#050614" : active ? colors.cyan : colors.zinc400;
+                const color = focused ? "#050614" : active ? colors.cyan : "#FFFFFF";
                 return (
                   <>
                     {iconRender ? iconRender({ focused, color, size: SIZES.iconSm }) : null}
@@ -165,34 +149,29 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(6,7,20,0.94)",
     zIndex: 30,
   },
-  railLogo: { alignItems: "center", justifyContent: "center", paddingVertical: vs(14) },
+  railHeader: { alignItems: "flex-start", paddingHorizontal: 16, paddingVertical: vs(16) },
+  railBrand: { color: "#FFFFFF", fontFamily: "Unbounded_800ExtraBold", fontSize: SIZES.fontH2, letterSpacing: 1.2 },
   railItem: {
     flexDirection: "row",
     alignItems: "center",
-    minHeight: vs(56),
+    minHeight: vs(52),
     borderRadius: 12,
-    marginHorizontal: 6,
+    marginHorizontal: 8,
     marginVertical: 3,
     paddingRight: 12,
   },
-  railItemActive: {
-    backgroundColor: "rgba(6,182,212,0.12)",
-  },
+  railItemActive: { backgroundColor: "rgba(6,182,212,0.12)" },
   railItemFocused: {
+    // BIG obvious highlight without any transform to prevent layout wiggle.
     backgroundColor: colors.cyan,
-    transform: [{ scale: 1.04 }],
     shadowColor: colors.cyan,
     shadowOpacity: 0.9,
-    shadowRadius: 22,
+    shadowRadius: 20,
     shadowOffset: { width: 0, height: 0 },
     ...(Platform.OS === "android" ? { elevation: 12 } : null),
   },
-  railLabel: {
-    fontSize: SIZES.fontBody,
-    letterSpacing: 0.5,
-    marginLeft: 4,
-    flex: 1,
-  },
+  railIconBox: { width: 52, alignItems: "center", justifyContent: "center", paddingVertical: 4 },
+  railLabel: { fontSize: SIZES.fontBody, letterSpacing: 0.5, flex: 1 },
   railActiveBar: {
     position: "absolute",
     left: 0,
@@ -225,21 +204,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: s(6),
     minHeight: vs(46),
   },
-  tabActive: {
-    backgroundColor: "rgba(6,182,212,0.10)",
-  },
+  tabActive: { backgroundColor: "rgba(6,182,212,0.10)" },
   tabFocused: {
     backgroundColor: colors.cyan,
-    transform: [{ scale: 1.06 }],
     shadowColor: colors.cyan,
     shadowOpacity: 0.9,
     shadowRadius: 22,
     shadowOffset: { width: 0, height: 0 },
     ...(Platform.OS === "android" ? { elevation: 14 } : null),
   },
-  label: {
-    fontSize: SIZES.fontTiny,
-    marginTop: 2,
-    letterSpacing: 0.4,
-  },
+  label: { fontSize: SIZES.fontTiny, marginTop: 2, letterSpacing: 0.4 },
 });

@@ -77,7 +77,7 @@ const s = StyleSheet.create({
   cSub: { color: colors.zinc500, fontFamily: "Outfit_400Regular", fontSize: isTV ? 12 : 10, marginTop: 1 },
   hint: { color: colors.zinc500, fontSize: isTV ? 11 : 9, marginTop: 4, fontFamily: "Outfit_400Regular" },
   empty: { color: colors.zinc400, marginTop: 14, fontFamily: "Outfit_400Regular", fontSize: isTV ? 16 : 13, textAlign: "center" },
-  focused: { transform: [{ scale: 1.06 }], borderWidth: 3, borderColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: 0.9, shadowRadius: 22, shadowOffset: { width: 0, height: 0 }, elevation: 12 },
+  focused: { borderWidth: 3, borderColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: 0.9, shadowRadius: 22, shadowOffset: { width: 0, height: 0 }, elevation: 12 },
 });
 
 export default ListScreen;

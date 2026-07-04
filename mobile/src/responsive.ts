@@ -48,15 +48,14 @@ export const ms = (size: number, factor = 0.5): number => {
 
 // TV-safe insets: ~5% of each edge to avoid overscan + bezels.
 // Phones: keep small margins; TVs: use generous safe area.
-// On TV, the left inset also accounts for the collapsed navigation rail
-// (72 px) so screen content never renders underneath the sidebar icons.
-export const SIDE_RAIL_W = 72; // collapsed rail (icons-only)
-export const SIDE_RAIL_W_EXPANDED = 260;
+// On TV, the left inset also accounts for the always-visible navigation
+// rail so screen content never renders underneath the sidebar.
+export const SIDE_RAIL_W = IS_TV ? 220 : 0; // always-expanded on TV
 const safePct = IS_TV ? 0.055 : 0.02;
 export const SAFE = {
   top: Math.round(SCREEN_H * safePct),
   bottom: Math.round(SCREEN_H * safePct),
-  left: Math.round(SCREEN_W * safePct) + (IS_TV ? SIDE_RAIL_W : 0),
+  left: Math.round(SCREEN_W * safePct) + SIDE_RAIL_W,
   right: Math.round(SCREEN_W * safePct),
 };
 
@@ -104,7 +103,10 @@ export const FOCUS_RING = {
   transform: [{ scale: 1.06 }],
 };
 
-// Cyan glow overlay applied to focused cards (Fire TV D-pad hover)
+// Cyan glow overlay applied to focused cards (Fire TV D-pad hover).
+// NOTE: No `transform: scale` — the size change was showing up as "weird
+// movement" on older TVs. Border + shadow alone gives more than enough
+// visual signal that a card is focused, without the layout wiggle.
 export const FOCUSED_CARD = {
   borderWidth: 3,
   borderColor: "#06B6D4",
@@ -113,5 +115,4 @@ export const FOCUSED_CARD = {
   shadowRadius: 22,
   shadowOffset: { width: 0, height: 0 },
   elevation: 12,
-  transform: [{ scale: 1.06 }],
 };

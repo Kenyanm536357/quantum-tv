@@ -2,7 +2,7 @@
   "expo": {
     "name": "Quantum TV",
     "slug": "quantum-tv",
-    "version": "1.0.9",
+    "version": "1.0.10",
     "orientation": "landscape",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "dark",
@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.quantumtv.app",
-      "versionCode": 10,
+      "versionCode": 11,
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#060714"

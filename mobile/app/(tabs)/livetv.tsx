@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { View, Text, FlatList, Pressable, Image, StyleSheet, ActivityIndicator, TextInput } from "react-native";
+import { View, Text, FlatList, Pressable, Image, StyleSheet, ActivityIndicator } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import client, { BACKEND, colors } from "../../src/api";
+import TVTextInput from "../../src/TVTextInput";
 import { SAFE, SIZES, GRID_COLS, IS_TV, vs, ms, s, FOCUSED_CARD } from "../../src/responsive";
 
 type Channel = { key: string; title: string; number?: number | string; logo?: string; source?: "plex" | "iptv" };

@@ -92,7 +92,7 @@ TVTextInput.displayName = "TVTextInput";
 const styles = StyleSheet.create({
   wrap: {
     borderRadius: 14,
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: "transparent",
   },
   row: {
@@ -107,10 +107,13 @@ const styles = StyleSheet.create({
   },
   focusRing: {
     borderColor: colors.cyan,
+    backgroundColor: "rgba(6,182,212,0.10)",
     shadowColor: colors.cyan,
-    shadowOpacity: 0.7,
-    shadowRadius: 14,
+    shadowOpacity: 0.9,
+    shadowRadius: 20,
     shadowOffset: { width: 0, height: 0 },
+    ...(Platform.OS === "android" ? { elevation: 10 } : null),
+    transform: [{ scale: 1.02 }],
   },
 });
 

@@ -86,3 +86,15 @@
 1. (Owner) Open the Expo mobile app via Expo Go to sign into a real Plex account and validate Movies/Live TV streaming end-to-end on a phone.
 2. (Owner) Set production CORS origin in `/app/backend/server.py` and rotate `FERNET_KEY` + `JWT_SECRET` before App Store / Play Store launch.
 3. (Future) `eas build -p ios --profile production` for TestFlight.
+
+## Session 2026-07-08
+- ✅ Discovered v1.0.11 EAS build had finished (build a831ae64) but was never uploaded to `/api/q`. Downloaded artifact and uploaded to PRODUCTION `quantumtv.app/api/q` with `?version=1.0.11` (sha256 c0e28b6a2100, 88.9MB). Download link verified serving APK (HTTP 200).
+- ✅ Removed leftover `scale: 1.02` transform on Browse hero card (`/app/mobile/app/(tabs)/browse.tsx`) — user disliked "weird movement".
+- ✅ Bumped app.json to v1.0.12 (versionCode 13) and started EAS build 680ec05d-ce8d-4b03-bc32-9883423fb24f (profile firetv). Free-tier build takes hours; when finished, download artifact and upload to `/api/q?version=1.0.12`.
+- ℹ️ Expo auth: user provided EXPO_TOKEN (in chat, 2026-07-08). Use `export EXPO_TOKEN=...` with eas-cli.
+- ℹ️ EAS warns `expo-updates` not installed — installing it (P1) would enable OTA JS updates, no more APK reinstalls via Downloader.
+
+## Pending
+- v1.0.12 build in progress on EAS → upload to /api/q when done.
+- iOS TestFlight build (user requested; needs Apple Developer credentials + eas.json ios profile).
+- Favorites + Recently Watched strips on Live TV (P1).

@@ -1,9 +1,13 @@
+import { useEffect } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts, Unbounded_400Regular, Unbounded_700Bold, Unbounded_800ExtraBold } from "@expo-google-fonts/unbounded";
 import { Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold } from "@expo-google-fonts/outfit";
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const qc = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } });
 
@@ -12,6 +16,9 @@ export default function RootLayout() {
     Unbounded_400Regular, Unbounded_700Bold, Unbounded_800ExtraBold,
     Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold,
   });
+  useEffect(() => {
+    if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
+  }, [fontsLoaded]);
   if (!fontsLoaded) return null;
   return (
     <SafeAreaProvider>

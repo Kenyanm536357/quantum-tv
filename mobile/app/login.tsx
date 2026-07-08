@@ -104,7 +104,7 @@ function TVPairScreen({ router, onFallback }: { router: any; onFallback: () => v
   }, [status, deviceCode, router]);
 
   return (
-    <View style={[styles.root, { paddingHorizontal: SAFE.left, paddingVertical: SAFE.top, alignItems: "center", justifyContent: "center" }]}>
+    <View style={[styles.root, { paddingHorizontal: SAFE.right, paddingVertical: SAFE.top, alignItems: "center", justifyContent: "center" }]}>
       <LinearGradient
         colors={["rgba(139,92,246,0.18)", "transparent"]}
         style={{ position: "absolute", top: 0, left: 0, right: 0, height: 320 }}
@@ -238,7 +238,7 @@ export default function Login() {
   };
 
   return (
-    <View style={[styles.root, { paddingHorizontal: SAFE.left, paddingVertical: SAFE.top }]}>
+    <View style={[styles.root, { paddingHorizontal: SAFE.right, paddingVertical: SAFE.top }]}>
       {tvPairing ? (
         <TVPairScreen router={router} onFallback={() => setTvPairing(false)} />
       ) : (

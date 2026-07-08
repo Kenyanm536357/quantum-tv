@@ -131,7 +131,7 @@ function Hero({ item }: { item: BrowseItem }) {
         onPress={() => router.push({ pathname: "/player/[rk]", params: { rk: String(item.rating_key), title: item.title } })}
         style={({ focused }) => [
           { borderRadius: SIZES.radiusLg, overflow: "hidden" },
-          focused && { ...FOCUSED_CARD, transform: [{ scale: 1.02 }] },
+          focused && FOCUSED_CARD,
         ]}
       >
         <View style={[styles.heroWrap, { height: IS_TV ? vs(280) : vs(200), borderRadius: SIZES.radiusLg }]}>

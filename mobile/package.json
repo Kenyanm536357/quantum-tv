@@ -7,7 +7,8 @@
     "ios": "expo run:ios",
     "android": "expo run:android",
     "web": "expo start --web",
-    "build:firetv": "eas build -p android --profile firetv"
+    "build:firetv": "eas build -p android --profile firetv",
+    "postinstall": "bash scripts/fix-hermesc.sh"
   },
   "dependencies": {
     "@expo-google-fonts/outfit": "^0.2.3",
@@ -27,6 +28,7 @@
     "expo-router": "~3.5.23",
     "expo-status-bar": "~1.12.1",
     "expo-system-ui": "~3.0.7",
+    "expo-updates": "~0.25.28",
     "expo-video": "~1.2.4",
     "expo-web-browser": "~13.0.3",
     "react": "18.2.0",

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Quantum TV",
     "slug": "quantum-tv",
-    "version": "1.0.12",
+    "version": "1.0.13",
     "orientation": "landscape",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "dark",
@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.quantumtv.app",
-      "versionCode": 13,
+      "versionCode": 14,
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#060714"
@@ -26,9 +26,19 @@
       "permissions": [
         "INTERNET",
         "ACCESS_NETWORK_STATE",
+        "WAKE_LOCK",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
         "WAKE_LOCK"
       ],
       "intentFilters": [
+        {
+          "action": "MAIN",
+          "category": [
+            "LAUNCHER",
+            "LEANBACK_LAUNCHER"
+          ]
+        },
         {
           "action": "MAIN",
           "category": [
@@ -64,6 +74,12 @@
       },
       "backendUrl": "https://quantumtv.app"
     },
-    "owner": "kenyanm"
+    "owner": "kenyanm",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/dcff3612-a952-43e9-a210-ddefaffcd9e8"
+    }
   }
 }

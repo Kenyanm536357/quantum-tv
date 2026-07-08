@@ -98,3 +98,12 @@
 - v1.0.12 build in progress on EAS → upload to /api/q when done.
 - iOS TestFlight build (user requested; needs Apple Developer credentials + eas.json ios profile).
 - Favorites + Recently Watched strips on Live TV (P1).
+
+## Session 2026-07-08 (part 2 — OTA updates)
+- ✅ Installed `expo-updates` (~0.25.28) + ran `eas update:configure` → app.json now has `updates.url` (u.expo.dev/dcff3612…) and `runtimeVersion: {policy: appVersion}`.
+- ✅ Built **v1.0.13 (versionCode 14)** with OTA baked in (EAS build e25f4749). Uploaded to PRODUCTION `quantumtv.app/api/q?version=1.0.13` (sha 01f52bb37319, 91MB). Verified serving.
+- ✅ Published baseline OTA update to channel `firetv` (update group 5892372d-c57b-404e-8623-290a9dee535a). Pipeline verified end-to-end.
+- 🔧 HOW TO PUSH OTA UPDATES: `cd /app/mobile && export EXPO_TOKEN=<token> && npx eas-cli update --channel firetv --message "..." --non-interactive`. DO NOT bump app.json version for JS-only fixes (runtimeVersion=appVersion means OTA only reaches builds with same version, currently 1.0.13). Bump version ONLY when native deps/config change → then full APK rebuild + upload to /api/q.
+- 🔧 ARM64 container fix: x86_64 hermesc wrapped with qemu-user-static (`/app/mobile/scripts/fix-hermesc.sh`, wired as package.json postinstall). Required for `eas update` local export. qemu-user-static installed via apt.
+- 🔧 Added `/app/mobile/app.config.js`: dedupes android.permissions/intentFilters (expo config loader duplicated them, which EAS Update manifest validation rejects).
+- ℹ️ v1.0.12 build (680ec05d) finished but was superseded by 1.0.13 — never uploaded, intentionally.

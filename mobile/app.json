@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.quantumtv.app",
-      "versionCode": 16,
+      "versionCode": 17,
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#060714"
@@ -79,7 +79,10 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/dcff3612-a952-43e9-a210-ddefaffcd9e8"
+      "url": "https://u.expo.dev/dcff3612-a952-43e9-a210-ddefaffcd9e8",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 4000
     }
   }
 }

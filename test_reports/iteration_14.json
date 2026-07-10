@@ -1,0 +1,21 @@
+{
+  "summary": "Backend regression sanity check for iteration_14 (APK v17 build). Ran all 4 pytest suites (test_iter11/12/13_regression.py + test_live_favorites_recent.py). All 26/26 tests pass identically to iteration_13. No backend code changes were made this iteration — only /app/mobile/app.json versionCode bump and OTA fallbackToCacheTimeout config. Production-touching endpoints verified: /api/livetv/channels (country/genre enrichment), /api/me/live/favorites CRUD, /api/me/live/recent CRUD, /api/metadata/{rk}/children on movie (returns empty items), /api/stream/{rk} on show (400 with pick episode).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter11_regression.py",
+    "/app/backend/tests/test_iter12_regression.py",
+    "/app/backend/tests/test_iter13_regression.py",
+    "/app/backend/tests/test_live_favorites_recent.py",
+    "/app/test_reports/pytest/iter14_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (26/26)", "frontend": "N/A (skipped per request)"},
+  "test_credentials": "admin/Quantum2024, test/Test12345 — both used and working",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration_14 is purely a mobile app.json + versionCode 17 bump. Backend is untouched vs iter13. Regression suite (26 tests) at test_iter11/12/13 + test_live_favorites_recent passes in ~51s. Once new APK builds on EAS (build 52c83de5-6f3c-41a0-9631-3a17c1f2e896) and uploads to /api/q, next round should validate that download endpoint still serves the APK correctly."
+}

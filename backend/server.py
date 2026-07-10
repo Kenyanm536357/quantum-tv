@@ -1931,10 +1931,24 @@ async def my_live_favorites(user: dict = Depends(get_current_user)):
 @api.post("/me/live/favorites")
 async def add_live_favorite(body: LiveChannelBody, user: dict = Depends(get_current_user)):
     snap = _live_snapshot(body)
-    # Remove any existing entry with the same key, then push the fresh snapshot
-    # to the end of the array (keeps the newest metadata).
-    await db.users.update_one({"id": user["id"]}, {"$pull": {"live_favorites": {"key": snap["key"]}}})
-    await db.users.update_one({"id": user["id"]}, {"$push": {"live_favorites": snap}})
+    # Atomic upsert: remove any existing entry with the same key, then push the
+    # fresh snapshot in one update so a rapid double-click can't produce dupes.
+    await db.users.update_one(
+        {"id": user["id"]},
+        [
+            {"$set": {
+                "live_favorites": {
+                    "$concatArrays": [
+                        {"$filter": {
+                            "input": {"$ifNull": ["$live_favorites", []]},
+                            "cond": {"$ne": ["$$this.key", snap["key"]]},
+                        }},
+                        [snap],
+                    ]
+                }
+            }},
+        ],
+    )
     return {"ok": True}
 
 
@@ -1953,25 +1967,40 @@ async def my_live_recent(user: dict = Depends(get_current_user)):
 async def add_live_recent(body: LiveChannelBody, user: dict = Depends(get_current_user)):
     snap = _live_snapshot(body)
     snap["watched_at"] = datetime.now(timezone.utc).isoformat()
-    # Remove any prior entry for the same channel, then unshift to the front,
-    # capping the array at LIVE_RECENT_CAP entries (most-recent first).
-    await db.users.update_one({"id": user["id"]}, {"$pull": {"live_recent": {"key": snap["key"]}}})
+    # Atomic upsert-to-front + cap: filter out any existing entry for the same
+    # channel, prepend the fresh snapshot, and slice to the cap. Single write
+    # so a rapid double-tap can't produce a duplicate.
     await db.users.update_one(
         {"id": user["id"]},
-        {"$push": {"live_recent": {"$each": [snap], "$position": 0, "$slice": LIVE_RECENT_CAP}}},
+        [
+            {"$set": {
+                "live_recent": {
+                    "$slice": [
+                        {"$concatArrays": [
+                            [snap],
+                            {"$filter": {
+                                "input": {"$ifNull": ["$live_recent", []]},
+                                "cond": {"$ne": ["$$this.key", snap["key"]]},
+                            }},
+                        ]},
+                        LIVE_RECENT_CAP,
+                    ]
+                }
+            }},
+        ],
     )
-    return {"ok": True}
-
-
-@api.delete("/me/live/recent/{channel_key}")
-async def del_live_recent(channel_key: str, user: dict = Depends(get_current_user)):
-    await db.users.update_one({"id": user["id"]}, {"$pull": {"live_recent": {"key": channel_key}}})
     return {"ok": True}
 
 
 @api.delete("/me/live/recent")
 async def clear_live_recent(user: dict = Depends(get_current_user)):
     await db.users.update_one({"id": user["id"]}, {"$set": {"live_recent": []}})
+    return {"ok": True}
+
+
+@api.delete("/me/live/recent/{channel_key}")
+async def del_live_recent(channel_key: str, user: dict = Depends(get_current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$pull": {"live_recent": {"key": channel_key}}})
     return {"ok": True}
 
 

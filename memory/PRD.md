@@ -107,3 +107,11 @@
 - 🔧 ARM64 container fix: x86_64 hermesc wrapped with qemu-user-static (`/app/mobile/scripts/fix-hermesc.sh`, wired as package.json postinstall). Required for `eas update` local export. qemu-user-static installed via apt.
 - 🔧 Added `/app/mobile/app.config.js`: dedupes android.permissions/intentFilters (expo config loader duplicated them, which EAS Update manifest validation rejects).
 - ℹ️ v1.0.12 build (680ec05d) finished but was superseded by 1.0.13 — never uploaded, intentionally.
+
+## Session 2026-07-08/10 (part 3 — blue screen fix + collapsible rail)
+- 🐛 ROOT CAUSE of user's "blue screen on activation": splash screen (logo.png = blue gradient square) stuck on screen, never hiding — side-effect of adding expo-updates. Fix: `SplashScreen.preventAutoHideAsync()` + explicit `hideAsync()` after fonts load in `/app/mobile/app/_layout.tsx`.
+- ✅ Fixed login screen over-padding: was using SAFE.left (incl. rail width) on both sides; now uses SAFE.right.
+- ✅ Netflix-style collapsible TV nav rail (`/app/mobile/app/(tabs)/_layout.tsx`): collapsed 68px icon-only by default (SIDE_RAIL_W=68 in responsive.ts, drives content SAFE.left), expands to 230px (SIDE_RAIL_EXPANDED_W) while D-pad focus is inside rail via onFocus/onBlur + 120ms collapse timer, collapses on selection. Expanded rail overlays content (absolute, elevation 20). No animations per user preference.
+- ✅ Published 2 OTA updates to channel firetv (runtime 1.0.13): splash fix (7791a757) + collapsible rail (group in eas_update4).
+- ✅ Rebuilt APK v1.0.13 versionCode 15 (build 59c1e021) with all fixes embedded → uploaded to PRODUCTION /api/q (sha 6a706190f164, 91MB). Verified serving.
+- ⚠️ USER VERIFICATION PENDING: blue screen fix + rail collapse behavior on Fire Stick. User can either OTA-heal (force-stop → open → wait 20s → force-stop → reopen) or reinstall from Downloader link.

@@ -48,9 +48,10 @@ export const ms = (size: number, factor = 0.5): number => {
 
 // TV-safe insets: ~5% of each edge to avoid overscan + bezels.
 // Phones: keep small margins; TVs: use generous safe area.
-// On TV, the left inset also accounts for the always-visible navigation
-// rail so screen content never renders underneath the sidebar.
-export const SIDE_RAIL_W = IS_TV ? 220 : 0; // always-expanded on TV
+// On TV, the left inset accounts for the COLLAPSED (icon-only) nav rail
+// width. The expanded rail overlays content Netflix-style.
+export const SIDE_RAIL_W = IS_TV ? 68 : 0; // collapsed icon-only width
+export const SIDE_RAIL_EXPANDED_W = 230;
 const safePct = IS_TV ? 0.055 : 0.02;
 export const SAFE = {
   top: Math.round(SCREEN_H * safePct),

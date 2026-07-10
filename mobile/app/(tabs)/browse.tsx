@@ -1,11 +1,12 @@
 import { View, Text, ScrollView, Pressable, Image, StyleSheet, RefreshControl, ActivityIndicator, FlatList, TVFocusGuideView } from "react-native";
+import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useState } from "react";
 import client, { BACKEND, colors } from "../../src/api";
-import { SAFE, SIZES, IS_TV, s, vs, FOCUSED_CARD } from "../../src/responsive";
+import BrandBackground from "../../src/BrandBackground";
+import { SAFE, SIZES, IS_TV, s, vs, ms, FOCUSED_CARD } from "../../src/responsive";
 
 type BrowseItem = {
   rating_key: string;
@@ -85,11 +86,20 @@ function ChannelCard({ item, onPress }: { item: BrowseItem; onPress: () => void 
   );
 }
 
-function Row({ row }: { row: BrowseRow }) {
+function Row({ row }: { row: BrowseRow; key?: React.Key }) {
   const router = useRouter();
   if (!row.items?.length) return null;
   const renderItem = ({ item }: { item: BrowseItem }) => {
-    const go = () => router.push({ pathname: "/player/[rk]", params: { rk: String(item.rating_key), title: item.title } });
+    // Shows must go to a detail page for the season/episode picker;
+    // everything else (movies, live channels) plays straight through.
+    const isShow = (item.type || "").toLowerCase() === "show";
+    const go = () => {
+      if (isShow) {
+        router.push({ pathname: "/show/[rk]", params: { rk: String(item.rating_key), title: item.title } });
+      } else {
+        router.push({ pathname: "/player/[rk]", params: { rk: String(item.rating_key), title: item.title } });
+      }
+    };
     return row.kind === "live"
       ? <ChannelCard item={item} onPress={go} />
       : <PosterCard item={item} onPress={go} />;
@@ -179,38 +189,47 @@ export default function Browse() {
   };
 
   return (
-    <ScrollView
-      style={styles.root}
-      contentContainerStyle={{ paddingTop: SAFE.top + vs(10), paddingBottom: SIZES.tabBarH + vs(30) }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.cyan} />}
-    >
-      <View style={{ paddingHorizontal: SAFE.left, marginBottom: vs(6) }}>
-        <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", letterSpacing: 2, textTransform: "uppercase", fontSize: SIZES.fontTiny }}>Welcome back</Text>
-        <Text style={{ color: "#fff", fontFamily: "Unbounded_800ExtraBold", fontSize: SIZES.fontH1, marginTop: 2 }}>Quantum <Text style={{ color: colors.cyan }}>TV</Text></Text>
-      </View>
-
-      {heroItem ? <Hero item={heroItem} /> : null}
-
-      {isLoading && !data ? (
-        <ActivityIndicator color={colors.cyan} style={{ marginTop: 40 }} />
-      ) : rows.length === 0 ? (
-        <View style={{ alignItems: "center", marginTop: vs(60), paddingHorizontal: SAFE.left }}>
-          <Ionicons name="cloud-offline-outline" size={40} color={colors.zinc500} />
-          <Text style={{ color: colors.zinc400, marginTop: 10, textAlign: "center", fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall }}>
-            No content yet. Ask the admin to connect a Plex server or IPTV line.
-          </Text>
+    <BrandBackground>
+      <ScrollView
+        style={styles.root}
+        contentContainerStyle={{ paddingTop: SAFE.top + vs(10), paddingBottom: SIZES.tabBarH + vs(30) }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.cyan} />}
+      >
+        <View style={{ paddingHorizontal: SAFE.left, marginBottom: vs(6), flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <Image
+            source={require("../../assets/logo.png")}
+            style={{ width: IS_TV ? ms(48) : ms(38), height: IS_TV ? ms(48) : ms(38), borderRadius: ms(10) }}
+            resizeMode="contain"
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", letterSpacing: 2, textTransform: "uppercase", fontSize: SIZES.fontTiny }}>Welcome back</Text>
+            <Text style={{ color: "#fff", fontFamily: "Unbounded_800ExtraBold", fontSize: SIZES.fontH1, marginTop: 2 }}>Quantum <Text style={{ color: colors.cyan }}>TV</Text></Text>
+          </View>
         </View>
-      ) : (
-        rows.map((r) => <Row key={r.id} row={r} />)
-      )}
-    </ScrollView>
+
+        {heroItem ? <Hero item={heroItem} /> : null}
+
+        {isLoading && !data ? (
+          <ActivityIndicator color={colors.cyan} style={{ marginTop: 40 }} />
+        ) : rows.length === 0 ? (
+          <View style={{ alignItems: "center", marginTop: vs(60), paddingHorizontal: SAFE.left }}>
+            <Ionicons name="cloud-offline-outline" size={40} color={colors.zinc500} />
+            <Text style={{ color: colors.zinc400, marginTop: 10, textAlign: "center", fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall }}>
+              No content yet. Ask the admin to connect a Plex server or IPTV line.
+            </Text>
+          </View>
+        ) : (
+          rows.map((r) => <Row key={r.id} row={r} />)
+        )}
+      </ScrollView>
+    </BrandBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { backgroundColor: colors.bg, flex: 1 },
+  root: { flex: 1 },
   card: { overflow: "hidden", backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: "rgba(255,255,255,0.05)" },
   cardShade: { position: "absolute", left: 0, right: 0, bottom: 0, height: "60%" },
   heroWrap: { overflow: "hidden", justifyContent: "flex-end" },
-  featuredPill: { alignSelf: "flex-start", backgroundColor: "rgba(6,182,212,0.85)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
+  featuredPill: { alignSelf: "flex-start", backgroundColor: "rgba(232,121,249,0.85)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
 });

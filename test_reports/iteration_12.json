@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 12 backend regression — verified new IPTV country/genre enrichment on /api/livetv/channels + full regression on live favorites/recent, browse/rows, metadata endpoints. 18/18 pytest passed (10 new iter12 tests + 5 iter10 fav/recent + 3 iter11 regression). All IPTV channels now carry non-null string `country` + `genre` + `category_id` + `category_name`; classifier vocabulary confirmed; no channels emit unknown labels; USA/UK/Canada/Sports/News/Kids known mappings verified against actual provider catalog. Plex channels correctly omit the new fields. Mobile Fire TV UI was NOT tested (out of Playwright scope per request).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/metadata/{rating_key}/children", "issue": "Returns 500 (bubbled httpx.HTTPStatusError) instead of 400/404 when Plex responds 400 for non-container rating_keys (e.g., movies). Not a regression — pre-existing at server.py:1560. Recommend wrapping plex_get in try/except to convert Plex 4xx into a proper HTTPException(404)."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter12_regression.py",
+    "/app/backend/tests/test_iter11_regression.py",
+    "/app/backend/tests/test_live_favorites_recent.py",
+    "/app/test_reports/pytest/iteration_12_results.xml"
+  ],
+  "action_items": [
+    "(Low priority, pre-existing) Guard /api/metadata/{rk}/children against Plex 4xx — currently 500s when called on a movie rating_key.",
+    "server.py at 2275 lines — still trending up; consider modularizing (live TV classifier / iptv proxy / me endpoints) into separate modules."
+  ],
+  "critical_code_review_comments": [
+    "_classify_live_category is clean, deterministic and covers a good vocabulary; consider caching cat_by_id lookup across requests (rebuilt on every /api/livetv/channels call — one extra Xtream get_live_categories round-trip per request per user).",
+    "In live_channels: cat.get() fallback dict {'name': None, 'country':'Other', 'genre':'General'} is fine, but the case where cid is empty string still routes through fallback correctly.",
+    "The new fields (country/genre/category_id/category_name) are only added to IPTV channels — Plex channel dicts don't have these keys at all. Mobile client must handle missing keys gracefully (verify via ch?.country ?? 'Other').",
+    "logo_raw is unconditionally wrapped in /api/iptv/logo?u=... — if a provider ever returns an https logo it'd still be proxied (harmless, but wasteful). Consider only proxying http://."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter12_regression.py"
+  ],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "not tested (mobile Fire TV out of scope; web frontend regression skipped per main-agent instruction — no web code changed this iter)"},
+  "test_credentials": "user: test / Test12345 (device_id auto-generated); admin: admin / Quantum2024. Device cap auto-cleared via admin DELETE.",
+  "seed_data_creation": "Test favorites/recent for user 'test' created and cleaned up in each test module. No lingering test data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Preview URL: https://tv-ui-staging-1.preview.emergentagent.com. Backend /api/livetv/channels response shape: {channels:[{key,title,source(plex|iptv),number,logo, and for iptv: category_id,category_name,country,genre}]}. Classifier vocabulary is closed set — see _COUNTRY_PATTERNS/_GENRE_PATTERNS at server.py:1727. Run pytest suite: `pytest backend/tests/test_iter12_regression.py backend/tests/test_iter11_regression.py backend/tests/test_live_favorites_recent.py -v`. Fire TV mobile app under /app/mobile — Playwright cannot drive it.",
+  "rca of the issue": "N/A — no regressions detected. Minor pre-existing /children→500 documented above."
+}

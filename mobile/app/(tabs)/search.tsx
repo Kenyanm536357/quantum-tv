@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { View, Text, TextInput, FlatList, Pressable, Image, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, FlatList, Pressable, Image, StyleSheet, ActivityIndicator } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import client, { BACKEND, colors } from "../../src/api";
+import BrandBackground from "../../src/BrandBackground";
 import TVTextInput from "../../src/TVTextInput";
-import { IS_TV } from "../../src/responsive";
+import { IS_TV, SAFE, SIZES, vs, ms, s as scale } from "../../src/responsive";
 
 export default function Search() {
   const router = useRouter();
@@ -16,63 +17,97 @@ export default function Search() {
     queryKey: ["search", q],
     queryFn: async () => (await client.get(`/search?q=${encodeURIComponent(q)}`)).data,
   });
+
+  const openItem = (item: any) => {
+    const isShow = (item.type || "").toLowerCase() === "show";
+    if (isShow) {
+      router.push({ pathname: "/show/[rk]", params: { rk: String(item.rating_key), title: item.title } });
+    } else {
+      router.push({ pathname: "/player/[rk]", params: { rk: String(item.rating_key), title: item.title } });
+    }
+  };
+
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: 60 }}>
-      <View style={{ paddingHorizontal: 20 }}>
-        <Text style={s.kicker}>FIND</Text>
-        <Text style={s.title}>Search</Text>
-        <TVTextInput
-          testID="search-input"
-          value={q}
-          onChangeText={setQ}
-          placeholder="Search movies, shows, channels…"
-          placeholderTextColor={colors.zinc500}
-          left={<Ionicons name="search" size={18} color={colors.zinc500} />}
-          wrapperStyle={s.searchBox}
-          style={s.searchInput}
-          autoCapitalize="none"
-          hasTVPreferredFocus={IS_TV}
-          returnKeyType="search"
+    <BrandBackground>
+      <View style={{ flex: 1, paddingTop: SAFE.top + vs(10) }}>
+        <View style={{ paddingHorizontal: SAFE.left, flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <Image
+            source={require("../../assets/logo.png")}
+            style={{ width: IS_TV ? ms(40) : ms(30), height: IS_TV ? ms(40) : ms(30), borderRadius: ms(8) }}
+            resizeMode="contain"
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.kicker}>FIND</Text>
+            <Text style={styles.title}>Search</Text>
+          </View>
+        </View>
+        <View style={{ paddingHorizontal: SAFE.left, marginTop: vs(14) }}>
+          <TVTextInput
+            testID="search-input"
+            value={q}
+            onChangeText={setQ}
+            placeholder="Search movies, shows, channels…"
+            placeholderTextColor={colors.zinc500}
+            left={<Ionicons name="search" size={ms(18)} color={colors.zinc500} />}
+            wrapperStyle={styles.searchBox}
+            style={styles.searchInput}
+            autoCapitalize="none"
+            hasTVPreferredFocus={IS_TV}
+            returnKeyType="search"
+          />
+        </View>
+        {isFetching && <ActivityIndicator color={colors.cyan} style={{ marginTop: 24 }} />}
+        <FlatList
+          contentContainerStyle={{ paddingHorizontal: SAFE.left, paddingBottom: SIZES.tabBarH + vs(40), paddingTop: vs(20) }}
+          data={data?.items || []}
+          keyExtractor={(it) => String(it.rating_key)}
+          renderItem={({ item }) => (
+            <Pressable
+              testID={`result-${item.rating_key}`}
+              focusable
+              onPress={() => openItem(item)}
+              style={({ focused }) => [
+                styles.row,
+                focused && { backgroundColor: "rgba(139,92,246,0.14)", borderColor: colors.cyan, borderWidth: 2 },
+              ]}
+            >
+              <View style={styles.thumb}>
+                {item.thumb ? (
+                  <Image source={{ uri: `${BACKEND}${item.thumb}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                ) : (
+                  <LinearGradient colors={["#2A0F5A", "#0B0518"]} style={StyleSheet.absoluteFill} />
+                )}
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
+                <Text style={styles.rowSub} numberOfLines={1}>{item.type} {item.year ? `· ${item.year}` : ""}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={ms(18)} color={colors.zinc500} />
+            </Pressable>
+          )}
         />
       </View>
-      {isFetching && <ActivityIndicator color={colors.cyan} style={{ marginTop: 24 }} />}
-      <FlatList
-        contentContainerStyle={{ padding: 20, paddingBottom: 110 }}
-        data={data?.items || []}
-        keyExtractor={(it) => String(it.rating_key)}
-        renderItem={({ item }) => (
-          <Pressable
-            testID={`result-${item.rating_key}`}
-            focusable
-            onPress={() => router.push({ pathname: "/player/[rk]", params: { rk: String(item.rating_key), title: item.title } })}
-            style={({ focused }) => [s.row, focused && { borderWidth: 2, borderColor: colors.cyan, borderRadius: 12, paddingHorizontal: 8, backgroundColor: "rgba(6,182,212,0.08)" }]}
-          >
-            <View style={s.thumb}>
-              {item.thumb ? (
-                <Image source={{ uri: `${BACKEND}${item.thumb}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-              ) : (
-                <LinearGradient colors={["#1A1C3A", "#0D0E23"]} style={StyleSheet.absoluteFill} />
-              )}
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={s.rowTitle} numberOfLines={1}>{item.title}</Text>
-              <Text style={s.rowSub} numberOfLines={1}>{item.type} {item.year ? `· ${item.year}` : ""}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.zinc500} />
-          </Pressable>
-        )}
-      />
-    </View>
+    </BrandBackground>
   );
 }
 
-const s = StyleSheet.create({
-  kicker: { color: colors.zinc500, letterSpacing: 2, textTransform: "uppercase", fontSize: 11, fontFamily: "Outfit_400Regular" },
-  title: { color: "#fff", fontSize: 28, fontFamily: "Unbounded_800ExtraBold", marginTop: 4 },
-  searchBox: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 18, backgroundColor: "rgba(255,255,255,0.05)", borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" },
-  searchInput: { flex: 1, color: "#fff", fontFamily: "Outfit_400Regular", fontSize: 14 },
-  row: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomColor: "rgba(255,255,255,0.06)", borderBottomWidth: 1 },
-  thumb: { width: 60, height: 80, borderRadius: 8, overflow: "hidden", backgroundColor: "#0D0E23" },
-  rowTitle: { color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: 14 },
-  rowSub: { color: colors.zinc500, fontFamily: "Outfit_400Regular", fontSize: 12, marginTop: 2, textTransform: "capitalize" },
+const styles = StyleSheet.create({
+  kicker: { color: colors.zinc500, letterSpacing: 2, textTransform: "uppercase", fontSize: SIZES.fontTiny, fontFamily: "Outfit_400Regular" },
+  title: { color: "#fff", fontSize: SIZES.fontTitle, fontFamily: "Unbounded_800ExtraBold", marginTop: 4 },
+  searchBox: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "rgba(255,255,255,0.05)", borderRadius: SIZES.radius,
+    paddingHorizontal: scale(14), paddingVertical: vs(12),
+    borderWidth: 1, borderColor: "rgba(139,92,246,0.30)",
+  },
+  searchInput: { flex: 1, color: "#fff", fontFamily: "Outfit_400Regular", fontSize: SIZES.fontBody },
+  row: {
+    flexDirection: "row", alignItems: "center",
+    paddingVertical: vs(10), paddingHorizontal: 10,
+    borderRadius: SIZES.radius, marginBottom: vs(6),
+    borderWidth: 2, borderColor: "transparent",
+  },
+  thumb: { width: scale(60), height: vs(80), borderRadius: 8, overflow: "hidden", backgroundColor: "#1C0A38" },
+  rowTitle: { color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontBody },
+  rowSub: { color: colors.zinc500, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall, marginTop: 2, textTransform: "capitalize" },
 });

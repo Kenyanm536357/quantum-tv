@@ -9,6 +9,7 @@ Architecture:
 from __future__ import annotations
 
 import os
+import re
 import uuid
 import asyncio
 import base64
@@ -1713,6 +1714,69 @@ async def search(q: str, user: dict = Depends(get_current_user), limit: int = 30
     return {"items": [_normalize_item(uri, token, i) for i in items]}
 
 
+# ============================================================
+# Live TV category classification
+# ------------------------------------------------------------
+# Xtream Codes providers name their categories freeform (e.g.
+# "US| USA - Sports HD", "UK - News", "Kids Movies", "24/7 Ted Lasso").
+# We derive two orthogonal chip filters — country + genre — from the
+# category name so the mobile app can offer clean, browseable filters
+# without any name-parsing on the client. Anything unrecognized falls
+# into "Other" / "General".
+# ============================================================
+_COUNTRY_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"\b(US|USA|UNITED\s*STATES|U\.S\.)\b", re.I), "USA"),
+    (re.compile(r"\b(UK|UNITED\s*KINGDOM|GB|GREAT\s*BRITAIN|BRITAIN|BRIT)\b", re.I), "UK"),
+    (re.compile(r"\b(CA|CAN|CANADA)\b", re.I), "Canada"),
+    (re.compile(r"\b(AU|AUS|AUSTRALIA)\b", re.I), "Australia"),
+    (re.compile(r"\b(MX|MEX|MEXICO)\b", re.I), "Mexico"),
+    (re.compile(r"\b(IN|IND|INDIA)\b", re.I), "India"),
+    (re.compile(r"\b(FR|FRA|FRANCE|FRENCH)\b", re.I), "France"),
+    (re.compile(r"\b(DE|GER|GERMAN(?:Y)?|DEUTSCH)\b", re.I), "Germany"),
+    (re.compile(r"\b(ES|SPAIN|SPANISH|ESPAN|LATINO)\b", re.I), "Spanish"),
+    (re.compile(r"\b(IT|ITA|ITALY|ITALIAN)\b", re.I), "Italy"),
+    (re.compile(r"\b(BR|BRA|BRAZIL|BRASIL)\b", re.I), "Brazil"),
+    (re.compile(r"\b(PT|PORT|PORTUGAL)\b", re.I), "Portugal"),
+    (re.compile(r"\b(NL|NETH|NETHERLANDS|DUTCH)\b", re.I), "Netherlands"),
+    (re.compile(r"\b(AR|ARAB|ARABIC|MENA)\b", re.I), "Arabic"),
+    (re.compile(r"\b(JP|JAP|JAPAN|JAPANESE)\b", re.I), "Japan"),
+    (re.compile(r"\b(CN|CHI|CHINA|CHINESE)\b", re.I), "China"),
+    (re.compile(r"\b(KR|KOR|KOREA(?:N)?)\b", re.I), "Korea"),
+    (re.compile(r"\b(IE|IRE|IRELAND|IRISH)\b", re.I), "Ireland"),
+    (re.compile(r"\b(RU|RUS|RUSSIA(?:N)?)\b", re.I), "Russia"),
+    (re.compile(r"\b(TR|TUR|TURK(?:EY|ISH)?)\b", re.I), "Turkey"),
+]
+_GENRE_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"\b(SPORT(?:S)?|ESPN|NFL|NBA|MLB|NHL|SOCCER|FOOTBALL|GOLF|RACING|FIGHT|UFC|BOXING|WWE|WRESTLING)\b", re.I), "Sports"),
+    (re.compile(r"\b(NEWS|CNN|FOX(?:\s*NEWS)?|MSNBC|CNBC|BBC|BLOOMBERG|NEWSMAX)\b", re.I), "News"),
+    (re.compile(r"\b(KIDS|CHILDREN|CARTOON|DISNEY|NICK(?:ELODEON)?)\b", re.I), "Kids"),
+    (re.compile(r"\b(MOVIE(?:S)?|CINEMA|FILM)\b", re.I), "Movies"),
+    (re.compile(r"\b(MUSIC|MTV|VEVO)\b", re.I), "Music"),
+    (re.compile(r"\b(DOC(?:UMENTARY|UMENTARIES)?|NAT\s*GEO|DISCOVERY|HISTORY|SCIENCE)\b", re.I), "Documentary"),
+    (re.compile(r"\b(RELIGION|CHURCH|GOSPEL|CHRIST|FAITH|CATHOLIC|MUSLIM|ISLAM)\b", re.I), "Religion"),
+    (re.compile(r"\b(24\s*[\/-]?\s*7|247)\b", re.I), "24/7"),
+    (re.compile(r"\b(PPV|PAY\s*PER\s*VIEW|EVENT(?:S)?)\b", re.I), "PPV / Events"),
+    (re.compile(r"\b(ADULT|XXX|EROTIC)\b", re.I), "Adult"),
+    (re.compile(r"\b(ENT(?:ERTAINMENT)?|LIFESTYLE|REALITY|VARIETY)\b", re.I), "Entertainment"),
+]
+
+
+def _classify_live_category(name: Optional[str]) -> dict:
+    text = name or ""
+    country = "Other"
+    for pat, label in _COUNTRY_PATTERNS:
+        if pat.search(text):
+            country = label
+            break
+    genre = "General"
+    for pat, label in _GENRE_PATTERNS:
+        if pat.search(text):
+            genre = label
+            break
+    return {"country": country, "genre": genre}
+
+
+
 @api.get("/livetv/channels")
 async def live_channels(user: dict = Depends(get_current_user)):
     uri, token = None, None
@@ -1753,9 +1817,23 @@ async def live_channels(user: dict = Depends(get_current_user)):
             log.info("Live section fetch failed: %s", e)
 
     # Merge IPTV live channels (if configured). Keyed as iptv-live-<id> so the
-    # /stream/{rk} endpoint can route playback through the proxy.
+    # /stream/{rk} endpoint can route playback through the proxy. Enrich each
+    # channel with category_id/name so the mobile client can offer clean
+    # "Country" + "Genre" filter chips without doing name-parsing itself.
     cfg = await db.settings.find_one({"id": "iptv_config"})
     if cfg and cfg.get("password_enc"):
+        # Build the category_id -> {name, country, genre} lookup once.
+        cat_by_id: dict[str, dict] = {}
+        try:
+            raw_cats = await _iptv_get("get_live_categories")
+            for c in raw_cats or []:
+                cid = str(c.get("category_id") or "")
+                name = str(c.get("category_name") or "").strip()
+                cls = _classify_live_category(name)
+                cat_by_id[cid] = {"name": name, "country": cls["country"], "genre": cls["genre"]}
+        except Exception as e:
+            log.warning("IPTV categories fetch failed: %s", e)
+
         try:
             raw = await _iptv_get("get_live_streams")
             for s in raw or []:
@@ -1766,12 +1844,18 @@ async def live_channels(user: dict = Depends(get_current_user)):
                 # Route http logos through our logo proxy so browsers on
                 # https pages actually render them.
                 logo = f"/api/iptv/logo?u={quote(logo_raw, safe='')}" if logo_raw else None
+                cid = str(s.get("category_id") or "")
+                cat = cat_by_id.get(cid) or {"name": None, "country": "Other", "genre": "General"}
                 out.append({
                     "title": s.get("name"),
                     "number": s.get("num"),
                     "logo": logo,
                     "key": f"iptv-live-{sid}",
                     "source": "iptv",
+                    "category_id": cid or None,
+                    "category_name": cat["name"],
+                    "country": cat["country"],
+                    "genre": cat["genre"],
                 })
         except Exception as e:
             log.warning("IPTV live channels merge failed: %s", e)

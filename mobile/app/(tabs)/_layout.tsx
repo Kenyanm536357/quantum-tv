@@ -2,10 +2,11 @@ import { Tabs } from "expo-router";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform, Image } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import { colors } from "../../src/api";
-import { IS_TV, SIZES, SAFE, SIDE_RAIL_W, SIDE_RAIL_EXPANDED_W, s, vs } from "../../src/responsive";
+import { colors, GRADIENTS } from "../../src/api";
+import { IS_TV, SIZES, SAFE, SIDE_RAIL_W, SIDE_RAIL_EXPANDED_W, s, vs, ms } from "../../src/responsive";
 
 // ============================================================
 // TV Layout — Netflix-style collapsible left navigation rail.
@@ -64,10 +65,33 @@ function TVSideRail({ state, descriptors, navigation }: BottomTabBarProps) {
         pointerEvents="box-none"
       >
         <BlurView tint="dark" intensity={60} style={StyleSheet.absoluteFill} />
+        {/* Subtle purple gradient overlay so the rail feels branded (matches
+            logo palette) rather than a flat navy panel. */}
+        <LinearGradient
+          colors={["rgba(43,10,90,0.75)", "rgba(11,5,24,0.95)"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
         <View style={styles.railHeader}>
-          <Text style={styles.railBrand} numberOfLines={1}>
-            {expanded ? (<>QUANTUM <Text style={{ color: colors.cyan }}>TV</Text></>) : (<Text style={{ color: colors.cyan }}>Q</Text>)}
-          </Text>
+          {/* Logo image — small when collapsed, larger next to wordmark when expanded. */}
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Image
+              source={require("../../assets/logo.png")}
+              style={{
+                width: expanded ? ms(30) : ms(34),
+                height: expanded ? ms(30) : ms(34),
+                borderRadius: ms(8),
+              }}
+              resizeMode="contain"
+            />
+            {expanded ? (
+              <Text style={[styles.railBrand, { marginLeft: 8 }]} numberOfLines={1}>
+                QUANTUM <Text style={{ color: colors.cyan }}>TV</Text>
+              </Text>
+            ) : null}
+          </View>
         </View>
         <View style={{ paddingVertical: vs(6) }}>
           {state.routes.map((route, i) => {
@@ -200,14 +224,14 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
-    borderRightColor: "rgba(255,255,255,0.06)",
+    borderRightColor: "rgba(139,92,246,0.15)",
     borderRightWidth: 1,
-    backgroundColor: "#060714",
+    backgroundColor: colors.bg,
   },
   railExpanded: {
-    backgroundColor: "#060714",
-    shadowColor: "#000",
-    shadowOpacity: 0.6,
+    backgroundColor: colors.bg,
+    shadowColor: colors.purple,
+    shadowOpacity: 0.4,
     shadowRadius: 30,
     shadowOffset: { width: 8, height: 0 },
     ...(Platform.OS === "android" ? { elevation: 20 } : null),

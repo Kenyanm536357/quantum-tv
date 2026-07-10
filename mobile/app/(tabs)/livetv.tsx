@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, FlatList, Pressable, Image, StyleSheet, ActivityIndicator,
-  useTVEventHandler, TVFocusGuideView, Modal,
+  TVFocusGuideView, Modal,
 } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import client, { BACKEND, colors } from "../../src/api";
+import BrandBackground from "../../src/BrandBackground";
 import TVTextInput from "../../src/TVTextInput";
 import { SAFE, SIZES, GRID_COLS, IS_TV, vs, ms, s, FOCUSED_CARD } from "../../src/responsive";
 
@@ -17,25 +18,62 @@ type Channel = {
   number?: number | string;
   logo?: string;
   source?: "plex" | "iptv";
+  category_id?: string | number;
+  category_name?: string;
+  country?: string;
+  genre?: string;
 };
+
+type LiveCategory = { category_id: string; category_name: string };
 
 const MAX_CHANNELS = 400; // Fire TV list perf cap; user can search to narrow.
 const NUM_BUFFER_TIMEOUT_MS = 2200; // clear the typed channel-number buffer if user pauses
 
-// Extract digit (0-9) from a react-native-tvos event. The event's eventType is
-// a string; standard remotes fire "up"/"down"/etc., but USB keyboards and
-// keypad remotes send numeric key codes here. Android keycodes 7-15 map to
-// digits 0-9, but some builds pass the literal digit string. Cover both.
-function digitFromTvEvent(evt: { eventType?: string; eventKeyAction?: string | number }): number | null {
-  if (!evt || !evt.eventType) return null;
-  if (evt.eventKeyAction === 1 || evt.eventKeyAction === "up") return null; // only fire on keydown
-  const et = String(evt.eventType);
-  if (/^[0-9]$/.test(et)) return parseInt(et, 10);
-  const m = et.match(/(?:^|_|digit|num)(\d)$/i);
-  if (m) return parseInt(m[1], 10);
-  const asInt = parseInt(et, 10);
-  if (asInt >= 7 && asInt <= 16) return asInt - 7; // KEYCODE_0..9
-  return null;
+// Parse a raw IPTV category name (e.g. "US| USA - Sports HD", "UK - News",
+// "Kids Movies") into a coarse country + genre. The heuristic is lossy but
+// gives us clean, browseable chips. Anything unrecognized falls into "Other".
+const COUNTRY_MAP: Array<[RegExp, string]> = [
+  [/\b(US|USA|UNITED\s*STATES|U\.S\.)\b/i, "USA"],
+  [/\b(UK|UNITED\s*KINGDOM|GB|GREAT\s*BRITAIN|BRITAIN|BRIT)\b/i, "UK"],
+  [/\b(CA|CAN|CANADA)\b/i, "Canada"],
+  [/\b(AU|AUS|AUSTRALIA)\b/i, "Australia"],
+  [/\b(MX|MEX|MEXICO)\b/i, "Mexico"],
+  [/\b(IN|IND|INDIA)\b/i, "India"],
+  [/\b(FR|FRA|FRANCE|FRENCH)\b/i, "France"],
+  [/\b(DE|GER|GERMAN(?:Y)?|DEUTSCH)\b/i, "Germany"],
+  [/\b(ES|SPAIN|SPANISH|ESPAN|LATINO)\b/i, "Spanish"],
+  [/\b(IT|ITA|ITALY|ITALIAN)\b/i, "Italy"],
+  [/\b(BR|BRA|BRAZIL|BRASIL)\b/i, "Brazil"],
+  [/\b(PT|PORT|PORTUGAL)\b/i, "Portugal"],
+  [/\b(NL|NETH|NETHERLANDS|DUTCH)\b/i, "Netherlands"],
+  [/\b(AR|ARAB|ARABIC|MENA)\b/i, "Arabic"],
+  [/\b(JP|JAP|JAPAN|JAPANESE)\b/i, "Japan"],
+  [/\b(CN|CHI|CHINA|CHINESE)\b/i, "China"],
+  [/\b(KR|KOR|KOREA(?:N)?)\b/i, "Korea"],
+  [/\b(IE|IRE|IRELAND|IRISH)\b/i, "Ireland"],
+  [/\b(RU|RUS|RUSSIA(?:N)?)\b/i, "Russia"],
+  [/\b(TR|TUR|TURK(?:EY|ISH)?)\b/i, "Turkey"],
+];
+const GENRE_MAP: Array<[RegExp, string]> = [
+  [/\b(SPORT(?:S)?|ESPN|NFL|NBA|MLB|NHL|SOCCER|FOOTBALL|GOLF|RACING|FIGHT|UFC|BOXING|WWE|WRESTLING)\b/i, "Sports"],
+  [/\b(NEWS|CNN|FOX(?:\s*NEWS)?|MSNBC|CNBC|BBC|BLOOMBERG|NEWSMAX)\b/i, "News"],
+  [/\b(KIDS|CHILDREN|CARTOON|DISNEY|NICK(?:ELODEON)?)\b/i, "Kids"],
+  [/\b(MOVIE(?:S)?|CINEMA|FILM)\b/i, "Movies"],
+  [/\b(MUSIC|MTV|VEVO)\b/i, "Music"],
+  [/\b(DOC(?:UMENTARY|UMENTARIES)?|NAT\s*GEO|DISCOVERY|HISTORY|SCIENCE)\b/i, "Documentary"],
+  [/\b(RELIGION|CHURCH|GOSPEL|CHRIST|FAITH|CATHOLIC|MUSLIM|ISLAM)\b/i, "Religion"],
+  [/\b(ENT(?:ERTAINMENT)?|LIFESTYLE|REALITY|VARIETY)\b/i, "Entertainment"],
+  [/\b(24\/?7|247)\b/i, "24/7"],
+  [/\b(PPV|PAY\s*PER\s*VIEW|EVENT(?:S)?)\b/i, "PPV / Events"],
+  [/\b(ADULT|XXX|EROTIC)\b/i, "Adult"],
+];
+function classifyCategory(name: string): { country: string; genre: string } {
+  const upper = (name || "").toUpperCase();
+  let country = "Other";
+  for (const [re, label] of COUNTRY_MAP) { if (re.test(upper)) { country = label; break; } }
+  let genre = "General";
+  for (const [re, label] of GENRE_MAP) { if (re.test(upper)) { genre = label; break; } }
+  return { country, genre };
 }
 
 export default function LiveTV() {
@@ -81,7 +119,8 @@ export default function LiveTV() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["live-recent"] }),
   });
 
-  const [source, setSource] = useState<"all" | "plex" | "iptv">("all");
+  const [country, setCountry] = useState<string>("All");
+  const [genre, setGenre] = useState<string>("All");
   const [q, setQ] = useState("");
 
   const openChannel = useCallback((ch: Channel) => {
@@ -89,26 +128,29 @@ export default function LiveTV() {
     router.push({ pathname: "/player/[rk]", params: { rk: String(ch.key), title: ch.title } });
   }, [recordRecent, router]);
 
-  const { list, counts, overflow } = useMemo(() => {
+  const { list, counts, overflow, countries, genres } = useMemo(() => {
     const all: Channel[] = data?.channels || [];
-    const c = {
-      all: all.length,
-      plex: all.filter((x) => x.source === "plex").length,
-      iptv: all.filter((x) => x.source === "iptv").length,
-    };
+    // Build the country + genre chip lists from what's actually in the data,
+    // sorted by count desc so USA/Sports/etc. surface first.
+    const countryCounts = new Map<string, number>();
+    const genreCounts = new Map<string, number>();
+    for (const c of all) {
+      const co = c.country || "Other";
+      const ge = c.genre || "General";
+      countryCounts.set(co, (countryCounts.get(co) || 0) + 1);
+      genreCounts.set(ge, (genreCounts.get(ge) || 0) + 1);
+    }
+    const countries = Array.from(countryCounts.entries()).sort((a, b) => b[1] - a[1]);
+    const genres = Array.from(genreCounts.entries()).sort((a, b) => b[1] - a[1]);
     let filtered = all;
-    if (source !== "all") filtered = filtered.filter((x) => x.source === source);
+    if (country !== "All") filtered = filtered.filter((x) => (x.country || "Other") === country);
+    if (genre !== "All") filtered = filtered.filter((x) => (x.genre || "General") === genre);
     const needle = q.trim().toLowerCase();
     if (needle) filtered = filtered.filter((x) => (x.title || "").toLowerCase().includes(needle));
     const overflow = Math.max(0, filtered.length - MAX_CHANNELS);
-    return { list: filtered.slice(0, MAX_CHANNELS), counts: c, overflow };
-  }, [data, source, q]);
-
-  const chips: Array<{ id: "all" | "plex" | "iptv"; label: string; show: boolean }> = [
-    { id: "all", label: `All (${counts.all.toLocaleString()})`, show: true },
-    { id: "plex", label: `Plex (${counts.plex.toLocaleString()})`, show: counts.plex > 0 },
-    { id: "iptv", label: `IPTV (${counts.iptv.toLocaleString()})`, show: counts.iptv > 0 },
-  ];
+    const c = { all: all.length };
+    return { list: filtered.slice(0, MAX_CHANNELS), counts: c, overflow, countries, genres };
+  }, [data, country, genre, q]);
 
   // -------- Channel-number quick-jump --------
   // Buffer the typed digits so a user can type e.g. "1", "2", "3" quickly to
@@ -122,10 +164,6 @@ export default function LiveTV() {
       clearTimeout(jumpTimer.current);
       jumpTimer.current = null;
     }
-  };
-  const scheduleJumpClear = () => {
-    clearJumpTimer();
-    jumpTimer.current = setTimeout(() => setJumpBuf(""), NUM_BUFFER_TIMEOUT_MS);
   };
 
   const commitJump = useCallback((buf: string) => {
@@ -143,46 +181,23 @@ export default function LiveTV() {
   }, [data, openChannel]);
 
   const pressDigit = useCallback((d: number) => {
-    setJumpBuf((prev) => {
-      const next = (prev + String(d)).slice(-4); // channel numbers are rarely >4 digits
-      // Auto-tune when the buffer would only ever match one channel: if there's
-      // exactly one channel whose number starts with `next`, wait a beat for
-      // more input; if the user's clearly typed a full number, we still wait
-      // for the timeout to fire commitJump. Simpler: always schedule.
-      return next;
-    });
-    scheduleJumpClear();
+    setJumpBuf((prev) => (prev + String(d)).slice(-4));
+    clearJumpTimer();
+    jumpTimer.current = setTimeout(() => setJumpBuf(""), NUM_BUFFER_TIMEOUT_MS);
   }, []);
 
   const eraseDigit = useCallback(() => {
     setJumpBuf((prev) => prev.slice(0, -1));
-    scheduleJumpClear();
+    clearJumpTimer();
+    jumpTimer.current = setTimeout(() => setJumpBuf(""), NUM_BUFFER_TIMEOUT_MS);
   }, []);
-
-  // TV remote listener — attempts to catch digit key events from external
-  // keyboards / 3rd-party remotes that DO send numeric keycodes on Fire TV.
-  const onTvEvent = useCallback((evt: any) => {
-    const d = digitFromTvEvent(evt);
-    if (d !== null) {
-      pressDigit(d);
-    }
-  }, [pressDigit]);
-  useTVEventHandler(onTvEvent);
-
-  // Commit the buffered jump ~1.6s after the last digit — gives the user a
-  // brief window to add another digit before we auto-tune.
-  useEffect(() => {
-    if (!jumpBuf) return;
-    const t = setTimeout(() => commitJump(jumpBuf), 1600);
-    return () => clearTimeout(t);
-  }, [jumpBuf, commitJump]);
 
   // Cleanup on unmount
   useEffect(() => () => clearJumpTimer(), []);
 
   const favItems = favQ.data?.items || [];
   const recentItems = recentQ.data?.items || [];
-  const showStrips = !q.trim() && source === "all";
+  const showStrips = !q.trim() && country === "All" && genre === "All";
 
   // Snapshot the initial "did we show strips at mount time?" so that
   // hasTVPreferredFocus doesn't re-fire on subsequent renders (which
@@ -190,17 +205,24 @@ export default function LiveTV() {
   const initialShowStripsRef = useRef(showStrips);
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: SAFE.top }}>
+    <BrandBackground>
+    <View style={{ flex: 1, paddingTop: SAFE.top }}>
       <View style={{ paddingHorizontal: SAFE.left, marginBottom: vs(12), flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" }}>
-        <View style={{ minWidth: 0, flex: 1 }}>
-          <Text style={{ color: colors.zinc500, letterSpacing: 2, textTransform: "uppercase", fontSize: SIZES.fontSmall, fontFamily: "Outfit_400Regular" }}>LIVE</Text>
-          <Text style={{ color: "#fff", fontSize: SIZES.fontTitle, fontFamily: "Unbounded_800ExtraBold", marginTop: 4 }}>All Channels</Text>
-          {counts.all > 0 && (
-            <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall, marginTop: 4 }}>
-              {counts.all.toLocaleString()} channel{counts.all === 1 ? "" : "s"}
-              {counts.plex > 0 && counts.iptv > 0 ? ` · ${counts.plex.toLocaleString()} Plex + ${counts.iptv.toLocaleString()} IPTV` : ""}
-            </Text>
-          )}
+        <View style={{ minWidth: 0, flex: 1, flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <Image
+            source={require("../../assets/logo.png")}
+            style={{ width: IS_TV ? ms(40) : ms(30), height: IS_TV ? ms(40) : ms(30), borderRadius: ms(8) }}
+            resizeMode="contain"
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: colors.zinc500, letterSpacing: 2, textTransform: "uppercase", fontSize: SIZES.fontSmall, fontFamily: "Outfit_400Regular" }}>LIVE</Text>
+            <Text style={{ color: "#fff", fontSize: SIZES.fontTitle, fontFamily: "Unbounded_800ExtraBold", marginTop: 4 }}>All Channels</Text>
+            {counts.all > 0 && (
+              <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall, marginTop: 4 }}>
+                {list.length.toLocaleString()} of {counts.all.toLocaleString()} channel{counts.all === 1 ? "" : "s"}
+              </Text>
+            )}
+          </View>
         </View>
         <Pressable
           testID="live-jump-btn"
@@ -220,31 +242,25 @@ export default function LiveTV() {
         </Pressable>
       </View>
 
-      {counts.all > 0 && (
-        <View style={{ flexDirection: "row", gap: 8, paddingHorizontal: SAFE.left, marginBottom: vs(10), flexWrap: "wrap" }}>
-          {chips.filter((c) => c.show).map((c) => {
-            const active = source === c.id;
-            return (
-              <Pressable
-                key={c.id}
-                testID={`live-source-${c.id}`}
-                onPress={() => setSource(c.id)}
-                focusable
-                style={({ focused }) => [
-                  {
-                    paddingHorizontal: s(14), paddingVertical: vs(6),
-                    borderRadius: 999,
-                    borderWidth: 2,
-                    borderColor: focused ? colors.cyan : (active ? "rgba(103,232,249,0.4)" : "rgba(255,255,255,0.10)"),
-                    backgroundColor: active ? "rgba(139,92,246,0.20)" : "rgba(255,255,255,0.04)",
-                  },
-                ]}
-              >
-                <Text style={{ color: active ? "#fff" : colors.zinc400, fontFamily: "Outfit_500Medium", fontSize: SIZES.fontSmall }}>{c.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+      {/* Country + Genre filters — two horizontal-scroll chip rows so the
+          user can quickly narrow ~5000 channels down to something manageable. */}
+      {countries.length > 1 && (
+        <FilterChipRow
+          testIDBase="live-country"
+          label="Country"
+          value={country}
+          items={countries}
+          onChange={setCountry}
+        />
+      )}
+      {genres.length > 1 && (
+        <FilterChipRow
+          testIDBase="live-genre"
+          label="Genre"
+          value={genre}
+          items={genres}
+          onChange={setGenre}
+        />
       )}
 
       {counts.all > 30 && (
@@ -325,7 +341,7 @@ export default function LiveTV() {
             <View style={{ alignItems: "center", marginTop: 60 }}>
               <Ionicons name="radio-outline" size={ms(36)} color={colors.zinc500} />
               <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", marginTop: 10, textAlign: "center", fontSize: SIZES.fontSmall }}>
-                No channels match your filters.{"\n"}Try switching source or clearing the search.
+                No channels match your filters.{"\n"}Try switching country or genre, or clear the search.
               </Text>
             </View>
           )
@@ -359,8 +375,64 @@ export default function LiveTV() {
         onClear={() => setJumpBuf("")}
       />
     </View>
+    </BrandBackground>
   );
 }
+
+// ---- Filter chip row (horizontal scroll, D-pad friendly) ---------------
+// Renders an "All" chip plus one chip per distinct value found in the
+// data (sorted by count desc, so USA/Sports surface first).
+function FilterChipRow({
+  testIDBase, label, value, items, onChange,
+}: {
+  testIDBase: string;
+  label: string;
+  value: string;
+  items: Array<[string, number]>; // [label, count] pairs
+  onChange: (v: string) => void;
+}) {
+  const total = items.reduce((sum, [, n]) => sum + n, 0);
+  const chips = [["All", total] as [string, number], ...items];
+  return (
+    <View style={{ marginBottom: vs(8) }} testID={`${testIDBase}-row`}>
+      <Text style={{ color: colors.zinc500, letterSpacing: 1.5, textTransform: "uppercase", fontSize: SIZES.fontTiny, fontFamily: "Outfit_400Regular", paddingHorizontal: SAFE.left, marginBottom: 4 }}>
+        {label}
+      </Text>
+      <FlatList
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        data={chips}
+        keyExtractor={(c, i) => `${testIDBase}-${c[0]}-${i}`}
+        contentContainerStyle={{ paddingHorizontal: SAFE.left, paddingRight: SAFE.right, gap: 8, paddingVertical: 4 }}
+        renderItem={({ item }) => {
+          const [name, count] = item;
+          const active = value === name;
+          return (
+            <Pressable
+              testID={`${testIDBase}-${name}`}
+              onPress={() => onChange(name)}
+              focusable
+              style={({ focused }) => [
+                {
+                  paddingHorizontal: s(14), paddingVertical: vs(6),
+                  borderRadius: 999,
+                  borderWidth: 2,
+                  borderColor: focused ? colors.cyan : (active ? "rgba(103,232,249,0.4)" : "rgba(255,255,255,0.10)"),
+                  backgroundColor: active ? "rgba(139,92,246,0.20)" : "rgba(255,255,255,0.04)",
+                },
+              ]}
+            >
+              <Text style={{ color: active ? "#fff" : colors.zinc400, fontFamily: "Outfit_500Medium", fontSize: SIZES.fontSmall }}>
+                {name} <Text style={{ color: active ? "rgba(255,255,255,0.7)" : colors.zinc500 }}>({count.toLocaleString()})</Text>
+              </Text>
+            </Pressable>
+          );
+        }}
+      />
+    </View>
+  );
+}
+
 
 // ---- Channel card (grid + strip) ----------------------------------------
 function ChannelCard({

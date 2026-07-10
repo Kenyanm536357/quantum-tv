@@ -121,6 +121,7 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
         {"id": user_id},
         {"id": 1, "username": 1, "display_name": 1, "status": 1, "avatar": 1,
          "watchlist": 1, "favorites": 1, "password_hash": 1,
+         "live_favorites": 1, "live_recent": 1,
          "account_number": 1, "subscription_months": 1, "expires_at": 1,
          "max_devices": 1, "devices": 1},
     )
@@ -1893,6 +1894,87 @@ async def del_favorite(rating_key: str, user: dict = Depends(get_current_user)):
     return {"ok": True}
 
 
+# ============================================================
+# Live TV: Favorites (starred channels) + Recently Watched
+# ------------------------------------------------------------
+# Unlike movie/show favorites (rating_key -> Plex metadata), channels are a
+# mix of Plex live + IPTV streams. We store a self-contained SNAPSHOT of the
+# channel (key/title/logo/number/source) so the row can render instantly
+# even if the underlying channel list is slow to load or IPTV drops the ID.
+# ============================================================
+LIVE_RECENT_CAP = 20
+
+
+class LiveChannelBody(BaseModel):
+    key: str
+    title: Optional[str] = None
+    logo: Optional[str] = None
+    number: Optional[Any] = None  # ints or strings — IPTV uses both
+    source: Optional[str] = None  # "plex" | "iptv"
+
+
+def _live_snapshot(body: LiveChannelBody) -> dict:
+    return {
+        "key": str(body.key),
+        "title": body.title or "",
+        "logo": body.logo or None,
+        "number": body.number,
+        "source": body.source or None,
+    }
+
+
+@api.get("/me/live/favorites")
+async def my_live_favorites(user: dict = Depends(get_current_user)):
+    return {"items": list(user.get("live_favorites") or [])}
+
+
+@api.post("/me/live/favorites")
+async def add_live_favorite(body: LiveChannelBody, user: dict = Depends(get_current_user)):
+    snap = _live_snapshot(body)
+    # Remove any existing entry with the same key, then push the fresh snapshot
+    # to the end of the array (keeps the newest metadata).
+    await db.users.update_one({"id": user["id"]}, {"$pull": {"live_favorites": {"key": snap["key"]}}})
+    await db.users.update_one({"id": user["id"]}, {"$push": {"live_favorites": snap}})
+    return {"ok": True}
+
+
+@api.delete("/me/live/favorites/{channel_key}")
+async def del_live_favorite(channel_key: str, user: dict = Depends(get_current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$pull": {"live_favorites": {"key": channel_key}}})
+    return {"ok": True}
+
+
+@api.get("/me/live/recent")
+async def my_live_recent(user: dict = Depends(get_current_user)):
+    return {"items": list(user.get("live_recent") or [])}
+
+
+@api.post("/me/live/recent")
+async def add_live_recent(body: LiveChannelBody, user: dict = Depends(get_current_user)):
+    snap = _live_snapshot(body)
+    snap["watched_at"] = datetime.now(timezone.utc).isoformat()
+    # Remove any prior entry for the same channel, then unshift to the front,
+    # capping the array at LIVE_RECENT_CAP entries (most-recent first).
+    await db.users.update_one({"id": user["id"]}, {"$pull": {"live_recent": {"key": snap["key"]}}})
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$push": {"live_recent": {"$each": [snap], "$position": 0, "$slice": LIVE_RECENT_CAP}}},
+    )
+    return {"ok": True}
+
+
+@api.delete("/me/live/recent/{channel_key}")
+async def del_live_recent(channel_key: str, user: dict = Depends(get_current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$pull": {"live_recent": {"key": channel_key}}})
+    return {"ok": True}
+
+
+@api.delete("/me/live/recent")
+async def clear_live_recent(user: dict = Depends(get_current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$set": {"live_recent": []}})
+    return {"ok": True}
+
+
 # Public service config
 @api.get("/config")
 async def public_config():
@@ -1988,7 +2070,7 @@ async def _shorten(url: str) -> Optional[str]:
 @app.post("/api/admin/apk/shorten")
 async def regenerate_short_urls(admin: dict = Depends(get_current_admin)):
     """Generate/refresh short URLs (is.gd) for the APK download endpoint."""
-    preview_url = "https://stream-plex-mobile.preview.emergentagent.com/api/q"
+    preview_url = "https://tv-ui-staging-1.preview.emergentagent.com/api/q"
     prod_url = "https://stream-plex-mobile.emergent.host/api/q"
     p_short = await _shorten(preview_url)
     pr_short = await _shorten(prod_url)

@@ -35,7 +35,7 @@
     "Grid columns verified: Live TV mobile=2 cols (visible by 'No channels' empty state on this server, but grid class is grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 — correct); Movies desktop=6 cols (192px each, 200 children rendered); Movies mobile=3 cols (~112px each, fluid card width).",
     "Search input on mobile = 358px wide (full container width, NOT max-w-xl), autoCapitalize='none', autoCorrect='off'. ✓",
     "Case-insensitive login regression: POST /api/auth/login {username:'TEST', password:'12345'} returns role=user and frontend redirects to /watch. No regression from iteration_1.",
-    "/app/memory/test_credentials.md API base URL still shows the OLD preview URL (740c242f-...). Real current URL is https://stream-plex-mobile.preview.emergentagent.com. Same minor doc issue flagged in iteration_1 — still not corrected."
+    "/app/memory/test_credentials.md API base URL still shows the OLD preview URL (740c242f-...). Real current URL is https://tv-ui-staging-1.preview.emergentagent.com. Same minor doc issue flagged in iteration_1 — still not corrected."
   ],
   "updated_files": [],
   "success_rate": {

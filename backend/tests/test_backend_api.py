@@ -4,7 +4,7 @@ import uuid
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://740c242f-4923-4028-ac71-f7cfb28f51cc.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://tv-ui-staging-1.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "quantum2026"

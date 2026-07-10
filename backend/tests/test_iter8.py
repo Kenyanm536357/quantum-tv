@@ -11,7 +11,7 @@ import pytest
 import requests
 from datetime import datetime, timezone
 
-BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or "https://stream-plex-mobile.preview.emergentagent.com").rstrip("/")
+BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or "https://tv-ui-staging-1.preview.emergentagent.com").rstrip("/")
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "Quantum2024"
 

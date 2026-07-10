@@ -1,0 +1,132 @@
+<analysis>**original_problem_statement**: 
+Build Quantum TV, a full-stack streaming platform that proxies a Plex media server and Xtream Codes IPTV. PRODUCT REQUIREMENTS: Web-based Admin Panel to manage connections/users, Web Player, and a native Fire TV/Android TV app (using React Native TVOS). Must include custom user auth with device limits/expiry, mobile-responsive web app, HLS video playback, TV D-Pad support, Netflix-style TV UI layout, 5-digit TV device pairing flow, and seamlessly combined Plex + IPTV content delivery.
+
+**User's preferred language**: English
+*(INSTRUCT NEXT AGENT: You MUST automatically detect the user's primary language from their messages inside the <trajectory> tag and INSTRUCT next agent to respond in the user's preferred language only. In this case, respond in English.)*
+
+**what currently exists?** 
+A FastAPI + MongoDB backend and React frontend that successfully merges and proxies Plex and IPTV content. An Expo React Native TVOS mobile/TV app that features a 5-digit pairing screen (), a Netflix-style multi-row horizontal Browse screen, a left-side collapsible navigation rail, and explicitly managed D-pad focus via . Over-The-Air (OTA) updates are now configured via .
+
+**Last working item**:
+- **Last item agent was working**: Responding to the user's queries regarding app re-installation and credit optimization. The agent successfully deployed OTA updates (), fixed a stuck splash screen issue, made the left-side TV menu collapsible, and compiled EAS build v1.0.13b. 
+- **Status**: USER VERIFICATION PENDING
+- **Agent Testing Done**: Y
+- **Which testing method agent to use?**: NA (Wait for the user to install the latest APK via Downloader and report back).
+- **User Testing Done**: N
+
+**All Pending/In progress Issue list**:
+No active blocking issues. Wait for the user to confirm if v1.0.13b (and the new collapsible menu/splash fixes) works correctly on their Fire TV.
+
+**In progress Task List**:
+- **Task 1**: Apple/iOS App Store TestFlight Version
+  - **Where to resume**: User previously requested an Apple version for TestFlight.
+  - **What will be achieved with this?**: iOS native app availability.
+  - **Status**: NOT STARTED
+  - **Should Test frontend/backend/both after fix?**: Frontend (Mobile EAS Build)
+  - **Blocked on something**: Requires User's Apple Developer credentials and configuring the iOS profile.
+
+**Upcoming and Future Tasks**
+Upcoming Tasks:
+- (P1) Favorites ⭐ + Recently Watched strips on Live TV: Add ability to star channels/shows so they pin to the top of Live TV to reduce scrolling.
+- (P2) Refactor : Highly monolithic (>800 lines). Break down into sub-components.
+- (P2) Refactor : Break into routers (auth, plex, iptv, admin) as it is >2000 lines.
+- (P3) Channel-number quick-jump on Fire TV remote (allow typing channel numbers to switch).
+
+**Completed work in this session**
+- Removed scale transforms on Fire TV browse cards to fix weird movement. (DONE)
+- Configured and integrated  for Over-The-Air (OTA) JS/UI updates. (DONE)
+- Fixed ARM64 Linux  compiler execution issue by wrapping it with . (DONE)
+- Fixed a bug where the Splash Screen was getting stuck indefinitely after adding . (DONE)
+- Rebuilt the TV side navigation rail to be collapsible (slim icons by default, expands to show labels when focused). (DONE)
+- Built and hosted v1.0.13b APK for Fire TV Downloader. (DONE)
+
+**Earlier issues found/mentioned but not fixed**
+- **Environment Split-Brain**: The user has deployed the app to a PRODUCTION environment (). Changes made in the preview container backend/frontend do not affect production until the user clicks Redeploy. Always clarify if issues are in Preview or Production.
+
+**Known issue recurrence from previous fork**
+- **EAS Build Times**: Expo free-tier builds take time. Poll them without aggressive loops or use background checks.
+- **Hermes Compiler on Linux ARM64**: EAS local exports fail on ARM64 due to x86-64  binaries. The agent created  to route execution through . Do not remove this script.
+
+**Code Architecture**
+
+
+**Key Technical Concepts**
+Backend: FastAPI, Motor (Async MongoDB), Fernet (URL Encryption).
+Frontend: React, Tailwind, HLS.js.
+Mobile: Expo, React Native TVOS, Expo Updates (OTA). TV focus relies heavily on  and .
+
+**key DB schema**
+- : 
+- : , 
+
+**changes in tech stack**
+- Added  for Over-The-Air update delivery, eliminating the need for constant full APK rebuilds for JS/UI changes.
+- Added  system dependency to handle Hermes compiler execution.
+
+**All files of reference**
+- : Updated to handle collapsible TV navigation rail and fix Splash Screen visibility.
+- : Created to deduplicate intent filters from .
+- : Contains OTA update config and explicit URL injections.
+- : Fixes the  for Hermes.
+
+**Areas that need refactoring**
+- 
+- 
+
+**key api endpoints**
+-  & : TV code generation and polling.
+- : Parallel-fetches Plex categories + IPTV for Netflix UI.
+- : Merged Plex + IPTV channel list.
+
+**Critical Info for New Agent**
+- **OTA Updates Active**: You no longer need to run full EAS APK builds for UI, React Native, or logic changes! You can simply run  and push OTA updates, saving massive amounts of time. Only run an EAS build if you change native modules or  configuration.
+- **TV Component Rules**: When working on the TV app,  requires explicit focus paths. Do NOT use  horizontally on TV. Use . 
+- **Production Environment**: The user's live app uses . If they report missing data, verify if the production DB has the proper config. Prompt them to redeploy if you change web/backend code.
+
+**documents and test reports created in this job**
+-  (from previous fork)
+- 
+- 
+
+**Last 10 User Messages and any pending HUMAN messages**
+1. (User) Asks if 1.0.11 is done.
+2. (Agent) Tries to build, hits EAS auth error. Asks for Expo token and if scale animations should be removed.
+3. (User) Provides Expo token, says yes to removing animations.
+4. (Agent) Removes animations, builds v1.0.12, suggests adding  for OTA delivery.
+5. (User) Yes please potential improvement!!!
+6. (Agent) Configures , fixes Hermes compiler issue, pushes OTA update, builds v1.0.13 APK.
+7. (User) Uploads image of TV showing the app stuck on a blue Splash Screen.
+8. (Agent) Realizes OTA config broke splash screen hiding. Fixes  and pushes an OTA patch.
+9. (User) Reports that the left-side navigation rail doesn't collapse after selecting a category, blocking the screen.
+10. (Agent) Implements collapsible side rail logic. Pushes new OTA update and builds final v1.0.13b APK.
+11. (User) System notifies of production deployment. User asks if they need to reinstall the app and how to save credits.
+12. (Agent) Uses support agent to provide a detailed Credit Optimization guide and confirms the user needs to reinstall the APK one last time to gain OTA capabilities. *(RESOLVED)*
+
+**Project Health Check:**
+- Broken: None
+- Mocked: None
+
+**3rd Party Integrations**
+- Plex API (Requires User Token)
+- Xtream Codes IPTV (Requires User Credentials)
+- Expo EAS & Expo Updates (Requires User Token - Configured)
+
+**Testing status**
+- Testing agent used after significant changes: NO (Iterated via manual compilation/OTA tests due to user providing live visual feedback)
+- Troubleshoot agent used after agent stuck in loop: NO
+- Test files created: None
+- Known regressions: None currently.
+
+**Credentials to test flow:**
+- Admin:  / 
+- User:  / 
+- Expo Token available in history context for CLI auth.
+
+**What agent forgot to execute**
+- iOS TestFlight application creation remains untouched. Focus shifted to stabilizing Fire TV deployment and adding OTA pipelines. 
+
+**Debugging checklist for current issue**
+NA. Awaiting user verification on Fire TV. If the UI is still misaligned or the splash screen is stuck:
+Frontend files to check: 
+-  (Check  timing and  expansion variables).
+-  (Check  margin overlaps).</analysis>

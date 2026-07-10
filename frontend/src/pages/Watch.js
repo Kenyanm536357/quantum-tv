@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   Grid3X3, Radio, Film, Tv2, Search, Bookmark, Heart, User, LogOut, Play,
-  ChevronLeft, ChevronRight, X, Plus, Check, Loader2,
+  ChevronLeft, ChevronRight, X, Plus, Check, Loader2, Star,
 } from "lucide-react";
 import api, { ASSET_BASE } from "../api";
 import VideoPlayer from "../components/VideoPlayer";
@@ -356,8 +356,77 @@ const LIVE_SORT = [
   { id: "title:desc", label: "Name Z → A" },
 ];
 
+// ---- Live TV card (with star-to-favorite in top-right) ----
+function LiveChannelCard({ ch, isFav, onOpen, onToggleFav }) {
+  return (
+    <div className="relative group aspect-video rounded-xl overflow-hidden bg-white/[0.04] border border-white/5" data-testid={`live-${ch.key}`}>
+      <motion.button
+        whileHover={{ scale: 1.04, y: -3 }}
+        onClick={() => onOpen(ch)}
+        className="absolute inset-0 text-left"
+      >
+        {ch.logo ? (
+          <img src={ch.logo.startsWith("http") ? ch.logo : `${ASSET_BASE}${ch.logo}`} alt="" className="w-full h-full object-contain p-4 bg-black/40" loading="lazy" />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-purple-700/40 to-cyan-700/40" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+        <div className="absolute top-1.5 left-1.5 sm:top-2 sm:left-2 bg-red-500 px-1.5 sm:px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-heading font-extrabold tracking-widest">● LIVE</div>
+        <div className="absolute bottom-1.5 left-1.5 right-1.5 sm:bottom-2 sm:left-2 sm:right-2">
+          <div className="text-white font-medium text-xs sm:text-sm truncate">{ch.title}</div>
+          {ch.number && <div className="text-zinc-300 text-[10px] sm:text-xs">Ch {ch.number}</div>}
+        </div>
+      </motion.button>
+      <button
+        onClick={(e) => { e.stopPropagation(); onToggleFav(ch); }}
+        data-testid={`live-fav-${ch.key}`}
+        title={isFav ? "Remove from Favorites" : "Add to Favorites"}
+        className={`absolute top-1.5 right-1.5 sm:top-2 sm:right-2 z-10 w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center backdrop-blur-md transition-colors ${
+          isFav ? "bg-yellow-400/95 text-black hover:bg-yellow-300" : "bg-black/50 text-white hover:bg-black/70 opacity-90"
+        }`}
+      >
+        <Star className={`w-4 h-4 ${isFav ? "fill-current" : ""}`} />
+      </button>
+    </div>
+  );
+}
+
+// ---- Horizontal channel row (Favorites / Recently Watched) ----
+function LiveChannelRow({ title, subtitle, items, favKeys, onOpen, onToggleFav, testidPrefix }) {
+  const ref = React.useRef(null);
+  if (!items || items.length === 0) return null;
+  const scroll = (d) => ref.current?.scrollBy({ left: d, behavior: "smooth" });
+  return (
+    <div className="mb-6 sm:mb-8" data-testid={`${testidPrefix}-row`}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="min-w-0">
+          <h3 className="font-heading text-base sm:text-xl font-bold">{title}</h3>
+          {subtitle && <div className="text-[10px] sm:text-xs text-zinc-500 mt-0.5">{subtitle}</div>}
+        </div>
+        <div className="hidden sm:flex gap-2">
+          <button onClick={() => scroll(-400)} className="p-2 rounded-full bg-white/5 hover:bg-white/10"><ChevronLeft className="w-4 h-4" /></button>
+          <button onClick={() => scroll(400)} className="p-2 rounded-full bg-white/5 hover:bg-white/10"><ChevronRight className="w-4 h-4" /></button>
+        </div>
+      </div>
+      <div ref={ref} className="flex gap-2.5 sm:gap-3 overflow-x-auto scrollbar-thin -mx-4 sm:-mx-2 px-4 sm:px-2 pb-2 snap-x">
+        {items.map((ch) => (
+          <div key={`${testidPrefix}-${ch.key}`} className="snap-start shrink-0 w-[190px] sm:w-[240px]">
+            <LiveChannelCard
+              ch={ch}
+              isFav={favKeys.has(String(ch.key))}
+              onOpen={onOpen}
+              onToggleFav={onToggleFav}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function LiveTV() {
   const nav = useNavigate();
+  const qc = useQueryClient();
   const [sort, setSort] = React.useState("channel:asc");
   const [source, setSource] = React.useState("all"); // all | plex | iptv
   const [q, setQ] = React.useState("");
@@ -365,6 +434,48 @@ function LiveTV() {
     queryKey: ["live"],
     queryFn: async () => (await api.get("/livetv/channels")).data,
   });
+  const favQ = useQuery({
+    queryKey: ["live-favorites"],
+    queryFn: async () => (await api.get("/me/live/favorites")).data,
+  });
+  const recentQ = useQuery({
+    queryKey: ["live-recent"],
+    queryFn: async () => (await api.get("/me/live/recent")).data,
+  });
+
+  const favKeys = React.useMemo(
+    () => new Set((favQ.data?.items || []).map((f) => String(f.key))),
+    [favQ.data]
+  );
+
+  const toggleFav = useMutation({
+    mutationFn: async (ch) => {
+      const isFav = favKeys.has(String(ch.key));
+      if (isFav) return api.delete(`/me/live/favorites/${encodeURIComponent(ch.key)}`);
+      return api.post(`/me/live/favorites`, {
+        key: String(ch.key), title: ch.title || "", logo: ch.logo || null,
+        number: ch.number ?? null, source: ch.source || null,
+      });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["live-favorites"] }),
+  });
+
+  const recordRecent = useMutation({
+    mutationFn: async (ch) =>
+      api.post(`/me/live/recent`, {
+        key: String(ch.key), title: ch.title || "", logo: ch.logo || null,
+        number: ch.number ?? null, source: ch.source || null,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["live-recent"] }),
+  });
+
+  const openChannel = React.useCallback((ch) => {
+    recordRecent.mutate(ch); // fire-and-forget; UI navigates immediately
+    nav(`/watch/play/${ch.key}`, {
+      state: { item: { title: ch.title, rating_key: ch.key, thumb: ch.logo, type: "live" } },
+    });
+  }, [nav, recordRecent]);
+
   const channels = React.useMemo(() => {
     let list = data?.channels || [];
     if (source !== "all") list = list.filter((c) => c.source === source);
@@ -394,6 +505,12 @@ function LiveTV() {
   const MAX_SHOW = 300;
   const shown = channels.slice(0, MAX_SHOW);
   const overflow = Math.max(0, channels.length - MAX_SHOW);
+
+  // Hide favorites / recent strips when filtering — they'd be misleading if
+  // a user typed a search that doesn't match their favorites.
+  const showStrips = !q.trim() && source === "all";
+  const favItems = favQ.data?.items || [];
+  const recentItems = recentQ.data?.items || [];
 
   return (
     <div className="fade-in">
@@ -447,6 +564,30 @@ function LiveTV() {
         />
       </div>
 
+      {/* Favorites & Recently Watched strips (only when not filtering) */}
+      {showStrips && (
+        <>
+          <LiveChannelRow
+            title="⭐ Favorites"
+            subtitle={favItems.length ? `${favItems.length} pinned channel${favItems.length === 1 ? "" : "s"}` : null}
+            items={favItems}
+            favKeys={favKeys}
+            onOpen={openChannel}
+            onToggleFav={(ch) => toggleFav.mutate(ch)}
+            testidPrefix="live-favorites"
+          />
+          <LiveChannelRow
+            title="Recently Watched"
+            subtitle={recentItems.length ? `Last ${recentItems.length} channel${recentItems.length === 1 ? "" : "s"} you tuned into` : null}
+            items={recentItems}
+            favKeys={favKeys}
+            onOpen={openChannel}
+            onToggleFav={(ch) => toggleFav.mutate(ch)}
+            testidPrefix="live-recent"
+          />
+        </>
+      )}
+
       {isLoading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 sm:gap-4">
           {[...Array(10)].map((_, i) => <div key={i} className="aspect-video rounded-xl bg-white/[0.03] animate-pulse" />)}
@@ -457,25 +598,13 @@ function LiveTV() {
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 sm:gap-4">
             {shown.map((ch) => (
-              <motion.button
+              <LiveChannelCard
                 key={ch.key}
-                whileHover={{ scale: 1.04, y: -3 }}
-                onClick={() => nav(`/watch/play/${ch.key}`, { state: { item: { title: ch.title, rating_key: ch.key, thumb: ch.logo, type: "live" } } })}
-                className="aspect-video rounded-xl overflow-hidden bg-white/[0.04] border border-white/5 relative group text-left"
-                data-testid={`live-${ch.key}`}
-              >
-                {ch.logo ? (
-                  <img src={ch.logo.startsWith("http") ? ch.logo : `${ASSET_BASE}${ch.logo}`} alt="" className="w-full h-full object-contain p-4 bg-black/40" loading="lazy" />
-                ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-purple-700/40 to-cyan-700/40" />
-                )}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-                <div className="absolute top-1.5 left-1.5 sm:top-2 sm:left-2 bg-red-500 px-1.5 sm:px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-heading font-extrabold tracking-widest">● LIVE</div>
-                <div className="absolute bottom-1.5 left-1.5 right-1.5 sm:bottom-2 sm:left-2 sm:right-2">
-                  <div className="text-white font-medium text-xs sm:text-sm truncate">{ch.title}</div>
-                  {ch.number && <div className="text-zinc-300 text-[10px] sm:text-xs">Ch {ch.number}</div>}
-                </div>
-              </motion.button>
+                ch={ch}
+                isFav={favKeys.has(String(ch.key))}
+                onOpen={openChannel}
+                onToggleFav={(c) => toggleFav.mutate(c)}
+              />
             ))}
           </div>
           {overflow > 0 && (

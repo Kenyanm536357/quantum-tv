@@ -115,3 +115,28 @@
 - ✅ Published 2 OTA updates to channel firetv (runtime 1.0.13): splash fix (7791a757) + collapsible rail (group in eas_update4).
 - ✅ Rebuilt APK v1.0.13 versionCode 15 (build 59c1e021) with all fixes embedded → uploaded to PRODUCTION /api/q (sha 6a706190f164, 91MB). Verified serving.
 - ⚠️ USER VERIFICATION PENDING: blue screen fix + rail collapse behavior on Fire Stick. User can either OTA-heal (force-stop → open → wait 20s → force-stop → reopen) or reinstall from Downloader link.
+
+
+## Session 2026-07-10 (Live TV Favorites + Recently Watched + Channel Jump — P1 + P3)
+- ✅ **Backend** (`/app/backend/server.py` ~lines 1895-2000): 8 new endpoints under `/api/me/live/*`:
+  - `GET/POST /favorites` and `DELETE /favorites/{key}` — pinned channels (star)
+  - `GET/POST /recent`, `DELETE /recent` (clear-all), `DELETE /recent/{key}` — most-recent-first list capped at 20
+  - Storage: SNAPSHOTS on user document (`live_favorites`, `live_recent`) with fields `{key,title,logo,number,source,watched_at?}` — snapshots survive IPTV key churn.
+  - Atomic upserts via mongo aggregation-pipeline update (`$filter+$concatArrays+$slice`) so a rapid double-click can't produce dupes.
+  - `get_current_user` projection extended to include the new fields.
+- ✅ **Web frontend** (`/app/frontend/src/pages/Watch.js`): New `LiveChannelCard` + `LiveChannelRow` components rendered inside `LiveTV`.
+  - ⭐ **Favorites row** and **Recently Watched row** appear at the top of `/watch/live`. Both hidden while user is filtering (search text OR non-`all` source chip) so the filter doesn't feel misleading.
+  - **Star button** (`data-testid="live-fav-<key>"`) top-right of every channel card toggles favorite. Star fills gold when active.
+  - **Recently Watched** is auto-populated when the user clicks any channel card (fire-and-forget mutation before nav).
+  - Newest useMutation invalidates `live-favorites` / `live-recent` react-query keys.
+- ✅ **Mobile TV app** (`/app/mobile/app/(tabs)/livetv.tsx`): Rewritten with:
+  - **Favorites + Recently Watched rows** via `TVFocusGuideView` + horizontal `FlatList` (matching Browse's Netflix-style row pattern).
+  - **Long-press to favorite/unfavorite** a channel (works with D-pad Select long-press on Fire TV).
+  - Gold star badge on the card when a channel is favorited.
+  - **Channel-number quick jump** — two paths for TV:
+    1. `useTVEventHandler` intercepts digit key presses (0-9) — works with USB keyboards & 3rd-party remotes that send numeric keycodes. Buffered with 1.6s auto-commit timeout; float overlay banner shows current buffer.
+    2. **"🔢 Jump" button** in the header opens a full D-pad-friendly numpad modal (1-9, 0, ⌫, Go, Clear, Close) — works with the vanilla Fire TV remote which has no digit keys.
+  - Commit logic finds the channel with matching `number` field and calls `openChannel` (records recent + navigates to player).
+- ✅ **OTA update pushed** to channel `firetv` (runtime 1.0.13) — group `0e601035-d30c-4d4d-aea9-0da6bb3e21fd`. User's installed APK v1.0.13b will fetch this on next launch.
+- ✅ Verified via `testing_agent_v3_fork` iteration_10 — 5/5 pytest pass, 100% frontend playwright pass (star toggle, persistence on reload, recent auto-record, filter-hides-rows all confirmed). No bugs found.
+- ⚠️ **PRODUCTION BACKEND NOT YET REDEPLOYED**: the new `/api/me/live/*` endpoints exist in PREVIEW only. Once the user clicks "Redeploy" on `quantumtv.app`, the mobile OTA will light up (until then, star clicks / row queries will 404 silently and rows will hide gracefully because both are wrapped in `if (!items?.length) return null`).

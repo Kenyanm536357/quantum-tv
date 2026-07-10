@@ -140,3 +140,21 @@
 - ✅ **OTA update pushed** to channel `firetv` (runtime 1.0.13) — group `0e601035-d30c-4d4d-aea9-0da6bb3e21fd`. User's installed APK v1.0.13b will fetch this on next launch.
 - ✅ Verified via `testing_agent_v3_fork` iteration_10 — 5/5 pytest pass, 100% frontend playwright pass (star toggle, persistence on reload, recent auto-record, filter-hides-rows all confirmed). No bugs found.
 - ⚠️ **PRODUCTION BACKEND NOT YET REDEPLOYED**: the new `/api/me/live/*` endpoints exist in PREVIEW only. Once the user clicks "Redeploy" on `quantumtv.app`, the mobile OTA will light up (until then, star clicks / row queries will 404 silently and rows will hide gracefully because both are wrapped in `if (!items?.length) return null`).
+
+
+## Session 2026-07-10 (HOTFIX: Fire TV nav-rail focus getting stuck on Browse)
+- **Bug**: After the prior OTA push, Fire TV user reported D-pad up/down snapped focus back to "Browse" every time, blocking navigation. Gray/dark rail background bled visually.
+- **Root cause** (verified from screen recording IMG_6649.mov):
+  1. `hasTVPreferredFocus={active}` was being re-applied on every re-render inside `TVSideRail`. React Native TV's native focus finder re-honors this prop on subsequent renders, snapping focus back to whichever tab was currently "active" (Browse) on every D-pad event.
+  2. Rail's outer `width` toggled between `SIDE_RAIL_W` (68px) and `SIDE_RAIL_EXPANDED_W` (~230px) on expand/collapse, causing layout thrash mid-focus-transition which broke the focus finder.
+  3. Semi-transparent `rgba(6,7,20,0.94)` rail background revealed content behind — the "gray border not covering panel" the user reported.
+- **Fix** (`/app/mobile/app/(tabs)/_layout.tsx`):
+  - Pinned the **outer container width** to `SIDE_RAIL_EXPANDED_W` always (`position:absolute`, `pointerEvents="box-none"`). Only the INNER rail resizes now, so parent layout never thrashes.
+  - Captured the initial tab index in an `initialTabIndex` **ref at mount** — pass `hasTVPreferredFocus={i === initialTabIndex.current}` so it fires only once on first mount, never on subsequent re-renders.
+  - Rail background is now solid `#060714` (both collapsed and expanded states).
+  - Extended `onBlur` collapse delay 120ms → 180ms so a sibling's `onFocus` reliably cancels the collapse during same-frame D-pad transitions.
+  - Cleared collapse timer on unmount.
+- Applied same **mount-ref pattern** to `hasPreferredFocus` on the first grid card in `/app/mobile/app/(tabs)/livetv.tsx` (via `initialShowStripsRef`) to avoid the same failure mode on LiveTV.
+- **OTA pushed** to channel `firetv` (runtime 1.0.13) — group `10c00b2c-0d3f-472c-a6a6-7a845b5f8be1`. Fire TV picks it up on next app launch (force-stop → reopen for fastest pickup).
+- **Regression verified**: `testing_agent_v3_fork` iteration_11 — backend 8/8 pytest pass, frontend 100% pass on all 7 top-nav routes + live favorites/recent flows. No regressions.
+- **User verification pending**: user still needs to confirm Fire TV rail navigation is fixed after picking up the OTA (Playwright cannot drive a Fire TV D-pad).

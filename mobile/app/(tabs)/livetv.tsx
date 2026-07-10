@@ -184,6 +184,11 @@ export default function LiveTV() {
   const recentItems = recentQ.data?.items || [];
   const showStrips = !q.trim() && source === "all";
 
+  // Snapshot the initial "did we show strips at mount time?" so that
+  // hasTVPreferredFocus doesn't re-fire on subsequent renders (which
+  // would trap focus on the first grid card).
+  const initialShowStripsRef = useRef(showStrips);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: SAFE.top }}>
       <View style={{ paddingHorizontal: SAFE.left, marginBottom: vs(12), flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" }}>
@@ -312,7 +317,7 @@ export default function LiveTV() {
             isFav={favKeys.has(String(item.key))}
             onOpen={openChannel}
             onToggleFav={(c) => toggleFav.mutate(c)}
-            hasPreferredFocus={!showStrips && index === 0}
+            hasPreferredFocus={!initialShowStripsRef.current && index === 0}
           />
         )}
         ListEmptyComponent={() =>

@@ -1,7 +1,7 @@
 import { Tabs } from "expo-router";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
 import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { colors } from "../../src/api";
@@ -9,90 +9,121 @@ import { IS_TV, SIZES, SAFE, SIDE_RAIL_W, SIDE_RAIL_EXPANDED_W, s, vs } from "..
 
 // ============================================================
 // TV Layout — Netflix-style collapsible left navigation rail.
-// Collapsed (icons only) by default so shows get the full screen.
-// Expands while D-pad focus is inside the rail; collapses on
-// selection or when focus moves into content. No animations.
+// The rail's OUTER width is fixed at SIDE_RAIL_W (68px collapsed) so
+// layout never thrashes during focus movement. When any rail item is
+// focused we overlay a wider "expanded" panel on top at
+// SIDE_RAIL_EXPANDED_W so labels appear. The overlay is absolutely
+// positioned, so it never affects the underlying content or steals
+// focus mid-transition.
+//
+// hasTVPreferredFocus is applied ONLY on initial mount (captured
+// in a ref) — applying it on every re-render caused Android TV's
+// native focus finder to snap focus back to the "active" tab on
+// every D-pad press, trapping the user (fix for the "stuck on
+// Browse" bug).
 // ============================================================
 function TVSideRail({ state, descriptors, navigation }: BottomTabBarProps) {
   const [expanded, setExpanded] = useState(false);
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Snapshot the initially-active tab ONCE at mount so we can set
+  // hasTVPreferredFocus without re-triggering it on every render.
+  const initialTabIndex = useRef(state.index);
+
+  useEffect(() => () => { if (collapseTimer.current) clearTimeout(collapseTimer.current); }, []);
 
   const onItemFocus = () => {
     if (collapseTimer.current) clearTimeout(collapseTimer.current);
-    setExpanded(true);
+    if (!expanded) setExpanded(true);
   };
   const onItemBlur = () => {
     if (collapseTimer.current) clearTimeout(collapseTimer.current);
-    collapseTimer.current = setTimeout(() => setExpanded(false), 120);
+    // Delay long enough for a sibling item's onFocus (same-frame
+    // transition) to cancel the collapse. Only collapse if focus
+    // truly leaves the rail entirely.
+    collapseTimer.current = setTimeout(() => setExpanded(false), 180);
   };
+
+  const railWidth = expanded ? SIDE_RAIL_EXPANDED_W : SIDE_RAIL_W;
 
   return (
     <View
-      style={[
-        styles.rail,
-        { top: SAFE.top, bottom: SAFE.bottom, width: expanded ? SIDE_RAIL_EXPANDED_W : SIDE_RAIL_W },
-        expanded && styles.railExpanded,
-      ]}
+      // Outer container is ALWAYS the expanded width so the child View
+      // can expand/collapse inside it without changing the parent's
+      // layout — this prevents the focus snap that layout thrashing
+      // was causing. pointerEvents="box-none" lets D-pad focus flow
+      // through the transparent gutter to content on the right.
+      style={{ position: "absolute", top: SAFE.top, bottom: SAFE.bottom, left: 0, width: SIDE_RAIL_EXPANDED_W, zIndex: 30 }}
       pointerEvents="box-none"
     >
-      <BlurView tint="dark" intensity={60} style={StyleSheet.absoluteFill} />
-      <View style={styles.railHeader}>
-        <Text style={styles.railBrand} numberOfLines={1}>
-          {expanded ? (<>QUANTUM <Text style={{ color: colors.cyan }}>TV</Text></>) : (<Text style={{ color: colors.cyan }}>Q</Text>)}
-        </Text>
-      </View>
-      <View style={{ paddingVertical: vs(6) }}>
-        {state.routes.map((route, i) => {
-          const { options } = descriptors[route.key];
-          const active = state.index === i;
-          const label = (options.title ?? route.name) as string;
-          const iconRender = options.tabBarIcon;
-          return (
-            <Pressable
-              key={route.key}
-              testID={`tab-${route.name}`}
-              focusable
-              hasTVPreferredFocus={active}
-              onFocus={onItemFocus}
-              onBlur={onItemBlur}
-              onPress={() => {
-                const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
-                if (!active && !event.defaultPrevented) navigation.navigate(route.name);
-                setExpanded(false);
-              }}
-              style={({ focused, pressed }) => [
-                styles.railItem,
-                expanded && { paddingRight: 12 },
-                active && styles.railItemActive,
-                focused && styles.railItemFocused,
-                pressed && { opacity: 0.7 },
-              ]}
-            >
-              {({ focused }) => {
-                const color = focused ? "#050614" : "#FFFFFF";
-                return (
-                  <>
-                    <View style={styles.railIconBox}>
-                      {iconRender ? iconRender({ focused, color, size: SIZES.iconMd }) : null}
-                    </View>
-                    {expanded ? (
-                      <Text
-                        numberOfLines={1}
-                        style={[
-                          styles.railLabel,
-                          { color, fontFamily: focused || active ? "Unbounded_700Bold" : "Outfit_500Medium" },
-                        ]}
-                      >
-                        {label}
-                      </Text>
-                    ) : null}
-                    {active && !focused ? <View style={styles.railActiveBar} /> : null}
-                  </>
-                );
-              }}
-            </Pressable>
-          );
-        })}
+      <View
+        style={[
+          styles.rail,
+          { width: railWidth },
+          expanded && styles.railExpanded,
+        ]}
+        pointerEvents="box-none"
+      >
+        <BlurView tint="dark" intensity={60} style={StyleSheet.absoluteFill} />
+        <View style={styles.railHeader}>
+          <Text style={styles.railBrand} numberOfLines={1}>
+            {expanded ? (<>QUANTUM <Text style={{ color: colors.cyan }}>TV</Text></>) : (<Text style={{ color: colors.cyan }}>Q</Text>)}
+          </Text>
+        </View>
+        <View style={{ paddingVertical: vs(6) }}>
+          {state.routes.map((route, i) => {
+            const { options } = descriptors[route.key];
+            const active = state.index === i;
+            const label = (options.title ?? route.name) as string;
+            const iconRender = options.tabBarIcon;
+            return (
+              <Pressable
+                key={route.key}
+                testID={`tab-${route.name}`}
+                focusable
+                hasTVPreferredFocus={i === initialTabIndex.current}
+                onFocus={onItemFocus}
+                onBlur={onItemBlur}
+                onPress={() => {
+                  const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
+                  if (!active && !event.defaultPrevented) navigation.navigate(route.name);
+                  // Collapse shortly after selection so content fills the screen again.
+                  if (collapseTimer.current) clearTimeout(collapseTimer.current);
+                  collapseTimer.current = setTimeout(() => setExpanded(false), 180);
+                }}
+                style={({ focused, pressed }) => [
+                  styles.railItem,
+                  expanded && { paddingRight: 12 },
+                  active && styles.railItemActive,
+                  focused && styles.railItemFocused,
+                  pressed && { opacity: 0.7 },
+                ]}
+              >
+                {({ focused }) => {
+                  const color = focused ? "#050614" : "#FFFFFF";
+                  return (
+                    <>
+                      <View style={styles.railIconBox}>
+                        {iconRender ? iconRender({ focused, color, size: SIZES.iconMd }) : null}
+                      </View>
+                      {expanded ? (
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            styles.railLabel,
+                            { color, fontFamily: focused || active ? "Unbounded_700Bold" : "Outfit_500Medium" },
+                          ]}
+                        >
+                          {label}
+                        </Text>
+                      ) : null}
+                      {active && !focused ? <View style={styles.railActiveBar} /> : null}
+                    </>
+                  );
+                }}
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
     </View>
   );
@@ -167,13 +198,14 @@ const styles = StyleSheet.create({
   rail: {
     position: "absolute",
     left: 0,
+    top: 0,
+    bottom: 0,
     borderRightColor: "rgba(255,255,255,0.06)",
     borderRightWidth: 1,
-    backgroundColor: "rgba(6,7,20,0.94)",
-    zIndex: 30,
+    backgroundColor: "#060714",
   },
   railExpanded: {
-    backgroundColor: "rgba(6,7,20,0.98)",
+    backgroundColor: "#060714",
     shadowColor: "#000",
     shadowOpacity: 0.6,
     shadowRadius: 30,

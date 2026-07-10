@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 11 regression testing after mobile-only fix (/app/mobile/app/(tabs)/_layout.tsx + livetv.tsx). Verified NO REGRESSION on web frontend or backend. Backend: 8/8 pytest passed (5 existing live-fav/recent + 3 new iter11 regression tests: concurrent-POST atomicity, /api/livetv/channels, /api/browse/rows). Frontend web: login OK, all 7 top-nav items (Browse, Live TV, Movies, Series, Watchlist, Favorites, Search) navigate correctly, /watch/live star toggle adds favorite (API confirmed), reload persists live-favorites-row, search text hides favorites row and clear restores it, non-'all' source chip hides favorites row, channel body click opens /watch/play/iptv-live-<id> and records recent, unstar removes favorite. All flows working identically to iteration_10.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_live_favorites_recent.py",
+    "/app/backend/tests/test_iter11_regression.py",
+    "/app/test_reports/pytest/iteration_11_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Atomic upsert now verified: 3 concurrent POSTs to /api/me/live/favorites for the same key produce exactly 1 entry (test_favorites_concurrent_add_produces_single_entry). The earlier concern from iter_10 (two-step $pull then $push race) appears to be mitigated in practice — but check server.py add_live_favorite for whether a single-command $pull+$push was applied; if not, this test may occasionally flake under heavier concurrency.",
+    "Mobile change scope is correctly isolated to /app/mobile/**; web frontend and backend files were untouched — no risk of web regression from this change.",
+    "server.py still >2000 lines (previously called out) — no new bloat this iter."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter11_regression.py"
+  ],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100% (login, all 7 top-nav routes, star toggle add/persist/remove, recent recording, search-filter hides row, source-chip filter hides row all verified via data-testid selectors)"},
+  "test_credentials": "user: test / Test12345. admin: admin / Quantum2024. Both work; devices auto-cleared via admin DELETE before login.",
+  "seed_data_creation": "Test-created favorites & recent for user 'test' were cleaned up at end of both backend pytest and playwright runs.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Preview URL: https://tv-ui-staging-1.preview.emergentagent.com. User 'test' UUID f638b065-1fc0-41cb-8400-9a226a97b997 — clear devices via admin DELETE if 3-device cap hit. Auth token in localStorage under key 'qtv_user_token'. Data-testids: live-{key}, live-fav-{key}, live-search, live-source-{id}, live-favorites-row, live-recent-row, watch-nav-{label}. Fire TV D-pad focus fix in /app/mobile/app/(tabs)/_layout.tsx and livetv.tsx CANNOT be verified in Playwright — requires physical Fire TV or Android TV emulator; out of web-test scope.",
+  "rca of the issue": "N/A — no regressions detected."
+}

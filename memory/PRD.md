@@ -158,3 +158,43 @@
 - **OTA pushed** to channel `firetv` (runtime 1.0.13) — group `10c00b2c-0d3f-472c-a6a6-7a845b5f8be1`. Fire TV picks it up on next app launch (force-stop → reopen for fastest pickup).
 - **Regression verified**: `testing_agent_v3_fork` iteration_11 — backend 8/8 pytest pass, frontend 100% pass on all 7 top-nav routes + live favorites/recent flows. No regressions.
 - **User verification pending**: user still needs to confirm Fire TV rail navigation is fixed after picking up the OTA (Playwright cannot drive a Fire TV D-pad).
+
+## Session 2026-07-10 (P0 hotfix + brand refresh — Fire TV OTA)
+**User-reported P0 issues + branding follow-up:**
+1. Live TV crash from the sidebar (blocker)
+2. Hamburger overlap on the More/disconnect screen
+3. Remove "IPTV" filter label; provide country + genre category filters
+4. Series were playing straight through with no season/episode picker
+5. Favorites broken app-wide
+6. "No stream" errors on many titles
+7. Whole app should feel like the login screen (purple/cyan/magenta from logo), not navy blue; show logo everywhere
+8. OTA only — no APK rebuild
+
+**Fixes shipped (OTA group `b2c912b8-c1c7-4d77-a32e-d2c079e26169`, channel `firetv`):**
+- `/app/mobile/app/(tabs)/livetv.tsx` — removed `useTVEventHandler` (likely crash source on Fire TV native TV listener; the on-screen 🔢 Jump numpad still works with the vanilla D-pad remote). Country + Genre chip rows replaced the Plex/IPTV source chips.
+- `/app/mobile/app/(tabs)/more.tsx` — proper `SAFE.top` / `SAFE.left` padding + branded header eliminates hamburger overlap.
+- `/app/mobile/app/show/[rk].tsx` (**new**) — season/episode picker with hero backdrop + favorite toggle. All show clicks now route here instead of straight into `/player/[rk]`.
+- `/app/mobile/src/LibraryGrid.tsx` — routes `type === "show"` to the new show detail; adds gold-star favorite badge + long-press-to-favorite on every poster (movies + series).
+- `/app/mobile/src/ListScreen.tsx` (Favorites / Watchlist) — same routing + brand refresh.
+- `/app/mobile/app/(tabs)/browse.tsx`, `search.tsx` — same show-routing fix.
+- **Brand refresh (all screens):**
+  - `/app/mobile/src/BrandBackground.tsx` (**new**) — 3-layer branded background (deep-purple base + diagonal royal wash + top-anchored radial glow). Matches the login screen.
+  - `/app/mobile/src/api.ts` palette rewritten around the logo's colors: `bg #0B0518`, `surface #1C0A38`, `purple #8B5CF6`, `cyan #67E8F9`, `magenta #E879F9`, `pink #F0ABFC`. Added `GRADIENTS` presets.
+  - `/app/mobile/app/(tabs)/_layout.tsx` — TV nav rail now shows the logo image (small when collapsed, next to "QUANTUM TV" wordmark when expanded) + subtle purple gradient overlay.
+  - Every main screen (Browse, LiveTV, Movies, Series, Watchlist, Favorites, Search, More, Show detail) now uses `BrandBackground` and shows the logo in its header.
+
+**Backend improvements (require production redeploy to reach mobile):**
+- `/api/livetv/channels` — every IPTV channel now enriched with `category_id`, `category_name`, `country`, `genre`. Country + genre are derived via `_classify_live_category` (~50 regexes covering USA/UK/Canada/Sports/News/Kids/etc.). Verified: all 5,383 IPTV channels classified.
+- `/api/metadata/{rk}/children` — was 500ing on non-container rating_keys (movies). Now catches `httpx.HTTPStatusError` and returns `{items:[]}` for 400/404.
+- `/api/stream/{rk}` — used to hand back a broken HLS URL when a show/season rk was passed. Now raises `HTTPException(400)` with a clear "Cannot play a {show|season} directly — please pick an episode first" message that the mobile player surfaces to the user.
+- Added `import re` for the classifier patterns.
+
+**Testing** — `testing_agent_v3_fork` iteration_13: **26/26 backend regression pass** (8 new hardening tests + 18 prior regression tests). 0 critical, 0 minor. No frontend/mobile tests (Playwright can't drive Fire TV D-pad).
+
+**⚠️ Redeploy needed:** the mobile OTA points at `quantumtv.app`; country/genre filters + graceful stream errors won't materialize until the production backend is redeployed.
+
+**Backlog (still open):**
+- HTTP-stream cleartext support on Android (`network_security_config.xml`) requires an APK rebuild — deferred per user's "OTA only" directive.
+- iOS TestFlight build — still awaiting user's Apple Developer credentials.
+- Refactor `/app/backend/server.py` (2,294 lines) into routers.
+

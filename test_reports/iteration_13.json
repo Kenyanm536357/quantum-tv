@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration 13 backend regression — verified two hardening fixes since iter12: (1) /api/metadata/{rk}/children on a movie rating_key now returns 200 {items:[]} instead of 500 (confirmed with real movie rk from user's Plex library); (2) /api/stream/{rk}?direct=true on a show rating_key now returns 400 with detail mentioning show/episode/season (confirmed on real show rk). Regressions verified: /children on show still returns >=1 season; /stream on movie still returns {url,type}; /stream on IPTV live channel still returns {url,type:'hls'}; /api/livetv/channels IPTV enrichment (country/genre/category_id/category_name) intact; /api/me/live/favorites & /api/me/live/recent CRUD unaffected. 8/8 new iter13 tests + 18/18 prior regression tests = 26/26 pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter13_regression.py",
+    "/app/backend/tests/test_iter12_regression.py",
+    "/app/backend/tests/test_iter11_regression.py",
+    "/app/backend/tests/test_live_favorites_recent.py",
+    "/app/test_reports/pytest/iteration_13_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py at 2294 lines — trending up over iterations; still a candidate for modularization (live TV classifier / iptv proxy / me endpoints / stream helpers).",
+    "In metadata_children the except catches httpx.HTTPStatusError and returns {items:[]} for 400/404 — correct, but silently swallowing 404 for a rating_key that truly doesn't exist (bad id) also returns {items:[]}. That is acceptable UX (empty state) but could hide bugs; consider logging the swallowed status at DEBUG.",
+    "In stream_url the show/season guard uses items[0].get('type').lower() and checks {'show','season','artist','album'}. Good — covers music containers. Consider also including 'collection' if Plex ever returns that at this endpoint (currently would fall through and 404-ish on missing Part).",
+    "The 400 detail message is human-readable ('Cannot play a show directly — please pick an episode/track first.') but not localized/i18n-friendly. If mobile client string-matches to decide UI behavior, prefer a structured error code (e.g., detail={'code':'NEEDS_EPISODE','message':...})."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter13_regression.py"],
+  "success_rate": {"backend": "100% (26/26 across new + prior regressions)", "frontend": "not tested (backend-only per request)"},
+  "test_credentials": "user: test / Test12345 (device_id auto-generated); admin: admin / Quantum2024. Device cap auto-cleared via admin DELETE on user f638b065-1fc0-41cb-8400-9a226a97b997.",
+  "seed_data_creation": "Temporary favorites/recent test rows keyed 'iptv-live-test-<uuid6>' — favorites CRUD cleaned up its own additions via DELETE; recent rows left in place (mirrors iter10/iter12 behavior; no impact).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Preview URL from /app/frontend/.env REACT_APP_BACKEND_URL. Full regression suite: `pytest backend/tests/test_iter13_regression.py backend/tests/test_iter12_regression.py backend/tests/test_iter11_regression.py backend/tests/test_live_favorites_recent.py -v` — currently 26/26 pass in ~55s. iter13 tests dynamically pick real Plex rating_keys via /api/libraries -> /api/libraries/{key}/items?limit=1, so they will still pass even if the Plex library contents change (skip gracefully if no movie/show library exists).",
+  "rca of the issue": "N/A — both fixes verified working. Iter12's documented minor issue (/children→500 on movies) is now resolved via the httpx.HTTPStatusError catch at server.py:1566-1569."
+}

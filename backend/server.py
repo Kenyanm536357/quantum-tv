@@ -1556,8 +1556,17 @@ async def metadata_detail(rating_key: str, user: dict = Depends(get_current_user
 
 @api.get("/metadata/{rating_key}/children")
 async def metadata_children(rating_key: str, user: dict = Depends(get_current_user)):
+    # Plex only returns children for containers (shows / seasons / albums).
+    # Movies and single episodes 4xx on this endpoint — surface a 404 so the
+    # mobile show-detail screen can show a clean empty state instead of the
+    # generic axios 500 that used to bubble up.
     uri, token = await _server_ctx()
-    data = await plex_get(f"{uri}/library/metadata/{rating_key}/children", token=token)
+    try:
+        data = await plex_get(f"{uri}/library/metadata/{rating_key}/children", token=token)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code in (400, 404):
+            return {"items": []}
+        raise HTTPException(502, "Plex error fetching children")
     items = data.get("MediaContainer", {}).get("Metadata", []) or []
     return {"items": [_normalize_item(uri, token, i) for i in items]}
 
@@ -1897,6 +1906,16 @@ async def stream_url(rating_key: str, request: Request, user: dict = Depends(get
         items = meta.get("MediaContainer", {}).get("Metadata", []) or []
         if not items:
             raise HTTPException(404, "Not found")
+        # A show/season rating_key has no Media[0].Part — the client should
+        # be showing a season/episode picker, not calling /stream. Surface a
+        # helpful 400 so the mobile app can display "Pick an episode" instead
+        # of failing silently with "no stream".
+        item_type = (items[0].get("type") or "").lower()
+        if item_type in {"show", "season", "artist", "album"}:
+            raise HTTPException(
+                400,
+                f"Cannot play a {item_type} directly — please pick an episode/track first.",
+            )
         try:
             part = items[0]["Media"][0]["Part"][0]
             url = f"{uri}{part['key']}?X-Plex-Token={token}"

@@ -198,3 +198,33 @@
 - iOS TestFlight build — still awaiting user's Apple Developer credentials.
 - Refactor `/app/backend/server.py` (2,294 lines) into routers.
 
+
+## Session 2026-07-12 (EPG Guide + Fire TV crash hardening + Hero routing fix)
+**User-reported issues:**
+1. App crashes sometimes on Fire Stick (intermittent, no specific repro)
+2. Live TV tab should have an EPG-guide-style view (channel + "Now"/"Next" program info)
+3. Home page (Browse) shows/movies must route to show detail page (not straight to player)
+4. General streaming reliability
+
+**Fixes shipped (OTA group `4114f2c8-f3c0-4963-bd8c-1094aa694439`, channel `firetv`):**
+- **Hero routing bug fixed** (`/app/mobile/app/(tabs)/browse.tsx`): The Featured tile at the top of Browse was routing shows straight to `/player/[rk]` → backend now returns "pick an episode first" → user sees the error. Now checks `type === "show"` and routes to `/show/[rk]`. Fixes the "shortcut to shows and episodes" ask.
+- **Root ErrorBoundary** (`/app/mobile/src/ErrorBoundary.tsx` NEW; wired in `/app/mobile/app/_layout.tsx`): unhandled JS errors now show a dismissable "Something went wrong / Try again" screen instead of crashing the whole app. Also `retry: 1` on the react-query client so transient network hiccups don't fault.
+- **Memory hardening on LiveTV FlatList**: `initialNumToRender` 20 → 12, `maxToRenderPerBatch` 20 → 8, `windowSize` 7 → 5. Fewer channels off-screen at once = less RAM pressure on Fire TV Stick.
+- **EPG Guide view** (`/app/mobile/app/(tabs)/livetv.tsx`): New Grid ↔ Guide toggle button in the header. Guide mode renders a vertical list of channels, each with logo + name + "NOW" program + progress bar + "NEXT" program + times. EPG per row fetched lazily via react-query (5-minute cache) so we don't hammer the provider. Plex Live channels show "Press Select to tune in" (no Plex EPG wired yet).
+- Root layout background bumped to `#0B0518` to match new brand palette.
+
+**Backend additions:**
+- `GET /api/livetv/epg?channel_key=iptv-live-<id>&limit=<n>` — normalises Xtream Codes `get_short_epg` output: base64-decodes titles/descriptions, exposes `start_ts`/`end_ts` unix timestamps + human-readable strings. Defensively returns `{programs:[]}` for any parse failure or missing EPG (some channels have no EPG). Rejects non-iptv keys with 400. Verified: current EPG titles like "World Today", "Argentina vs Switzerland - QF4 FIFA World Cup 2026" render as plain text.
+
+**Testing** — `testing_agent_v3_fork` iteration_15: **31/31 backend regression + new-endpoint pass** (5 new /livetv/epg tests + 26 prior regression). 0 issues.
+
+**⚠️ Production redeploy needed:** The mobile OTA is out, but the mobile app hits `quantumtv.app`. The Guide view will show "No guide data" until production has the new `/api/livetv/epg` endpoint. Rebuild-triggerable.
+
+**Notes on the "intermittent crash":**
+No specific repro was given, so I applied three layered defenses:
+1. ErrorBoundary catches any renderer throw
+2. FlatList batches reduced (biggest suspect on 5,383-channel Fire TV render)
+3. Hero routing bug eliminated (was a user-visible soft failure, not a hard crash — but adjacent code paths were suspect)
+
+If crashes persist after this OTA, the next step is to have the user capture `adb logcat` output right after a crash so we can see the native stack trace.
+

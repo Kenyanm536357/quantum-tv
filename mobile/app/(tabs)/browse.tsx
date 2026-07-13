@@ -133,12 +133,22 @@ function Row({ row }: { row: BrowseRow; key?: React.Key }) {
 // ---------- Hero -----------------------------------------------------------
 function Hero({ item }: { item: BrowseItem }) {
   const router = useRouter();
+  const go = () => {
+    // Shows go to the detail page for a season/episode picker.
+    // Everything else (movies, live channels, episodes) plays directly.
+    const isShow = (item.type || "").toLowerCase() === "show";
+    if (isShow) {
+      router.push({ pathname: "/show/[rk]", params: { rk: String(item.rating_key), title: item.title } });
+    } else {
+      router.push({ pathname: "/player/[rk]", params: { rk: String(item.rating_key), title: item.title } });
+    }
+  };
   return (
     <View style={{ marginTop: vs(6), marginHorizontal: SAFE.left }}>
       <Pressable
         focusable
         hasTVPreferredFocus
-        onPress={() => router.push({ pathname: "/player/[rk]", params: { rk: String(item.rating_key), title: item.title } })}
+        onPress={go}
         style={({ focused }) => [
           { borderRadius: SIZES.radiusLg, overflow: "hidden" },
           focused && FOCUSED_CARD,

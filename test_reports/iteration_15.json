@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration 15 backend testing complete. Validated new /api/livetv/epg endpoint (5 new tests) + full 26-test regression from iter11/12/13/live_favorites_recent. All 31/31 tests pass. EPG endpoint correctly: (a) returns normalized programs with base64-decoded titles/descriptions (verified 'World Today', 'Argentina vs Switzerland - QF4 FIFA World Cup 2026', etc. are plain text — NOT base64), (b) rejects plex-* channel_keys with 400, (c) rejects malformed iptv-live-BAD with 400, (d) gracefully returns {programs:[]} for nonexistent stream_id 9999999, (e) requires auth (401 without bearer token). Regression suite covers livetv/channels enrichment, live favorites/recent CRUD, metadata/{rk}/children graceful empty on Plex 400/404, and stream/{rk} 400 on show/season rating_keys.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter15_epg.py",
+    "/app/backend/tests/test_iter11_regression.py",
+    "/app/backend/tests/test_iter12_regression.py",
+    "/app/backend/tests/test_iter13_regression.py",
+    "/app/backend/tests/test_live_favorites_recent.py",
+    "/app/test_reports/pytest/iteration_15_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Minor: /api/livetv/epg fixture in test uses channel field 'key' — the actual /livetv/channels response uses 'key' (not 'rating_key' as some other endpoints); consistent naming across channel-list endpoints would reduce integration confusion.",
+    "server.py is very large (>2000 lines). Consider splitting into routers (auth, iptv, plex, admin) for maintainability — flagged in prior iterations too."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter15_epg.py (new)"
+  ],
+  "success_rate": {"backend": "100% (31/31)", "frontend": "N/A (skipped per request)"},
+  "test_credentials": "admin/Quantum2024, test/Test12345 — both used and working",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "New /api/livetv/epg endpoint (server.py:422-493) is tested in /app/backend/tests/test_iter15_epg.py. IPTV channel list returned by /api/livetv/channels uses field 'key' (e.g. 'iptv-live-1389624'), NOT 'rating_key'. Base64 decoding of Xtream get_short_epg titles/descriptions verified working with live provider (2tvusa.xyz). Fire TV UI OTA (routing home → detail vs player, EPG grid) not testable via Playwright — mobile-only D-pad UI."
+}

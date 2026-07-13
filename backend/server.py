@@ -419,6 +419,82 @@ async def iptv_live_categories(_: dict = Depends(get_current_user)):
     return await _iptv_get("get_live_categories")
 
 
+@api.get("/livetv/epg")
+async def livetv_epg(
+    channel_key: str,
+    limit: int = 6,
+    user: dict = Depends(get_current_user),
+):
+    """EPG programs for a single IPTV live channel.
+
+    Xtream Codes exposes `get_short_epg` which returns up to `limit` upcoming
+    programs for a stream. We normalise the response so the mobile guide
+    view can render `now` + `next` blocks without more parsing.
+
+    Response shape:
+        {"programs": [{"title","description","start","end","start_ts","end_ts"}]}
+    """
+    if not channel_key.startswith("iptv-live-"):
+        raise HTTPException(400, "channel_key must be an iptv-live-<id>")
+    try:
+        stream_id = int(channel_key.split("-", 2)[2])
+    except (IndexError, ValueError):
+        raise HTTPException(400, "bad channel_key")
+    try:
+        raw = await _iptv_get("get_short_epg", {"stream_id": stream_id, "limit": max(1, min(limit, 24))})
+    except Exception as e:
+        log.warning("epg fetch failed for %s: %s", channel_key, e)
+        return {"programs": []}
+    # Xtream implementations vary — some return a bare list of dicts, others
+    # wrap it in {"epg_listings": [...]}, and a few return unexpected shapes.
+    # Normalise to a list of dicts before parsing, and skip anything weird.
+    programs_raw = raw
+    if isinstance(raw, dict):
+        programs_raw = raw.get("epg_listings") or raw.get("programs") or []
+    if not isinstance(programs_raw, list):
+        return {"programs": []}
+    out = []
+    import base64 as _b64
+    for p in programs_raw:
+        if not isinstance(p, dict):
+            continue
+        # Xtream returns titles + descriptions base64-encoded, and start/end
+        # as either ISO strings or unix timestamps (varies by provider).
+        raw_title = p.get("title") or ""
+        try:
+            title = _b64.b64decode(raw_title).decode("utf-8", errors="replace")
+        except Exception:
+            title = raw_title
+        raw_desc = p.get("description") or ""
+        try:
+            desc = _b64.b64decode(raw_desc).decode("utf-8", errors="replace")
+        except Exception:
+            desc = raw_desc
+        start = p.get("start")
+        end = p.get("end") or p.get("stop")
+        start_ts = None
+        end_ts = None
+        try:
+            start_ts = int(p.get("start_timestamp") or 0) or None
+        except Exception:
+            pass
+        try:
+            end_ts = int(p.get("stop_timestamp") or 0) or None
+        except Exception:
+            pass
+        out.append({
+            "title": (title or "").strip() or "No info",
+            "description": (desc or "").strip(),
+            "start": start,
+            "end": end,
+            "start_ts": start_ts,
+            "end_ts": end_ts,
+        })
+    return {"programs": out}
+
+
+
+
 @api.get("/iptv/live/streams")
 async def iptv_live_streams(category_id: Optional[str] = None, _: dict = Depends(get_current_user)):
     params = {"category_id": category_id} if category_id else None

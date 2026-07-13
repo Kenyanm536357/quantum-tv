@@ -122,6 +122,9 @@ export default function LiveTV() {
   const [country, setCountry] = useState<string>("All");
   const [genre, setGenre] = useState<string>("All");
   const [q, setQ] = useState("");
+  // View mode: "grid" is the classic channel-tile layout;
+  // "guide" is a TV-style EPG list showing "Now Playing" per channel.
+  const [viewMode, setViewMode] = useState<"grid" | "guide">("grid");
 
   const openChannel = useCallback((ch: Channel) => {
     recordRecent.mutate(ch);
@@ -224,22 +227,43 @@ export default function LiveTV() {
             )}
           </View>
         </View>
-        <Pressable
-          testID="live-jump-btn"
-          focusable
-          onPress={() => setNumpadOpen(true)}
-          style={({ focused }) => [
-            {
-              paddingHorizontal: s(14), paddingVertical: vs(8), borderRadius: 999,
-              flexDirection: "row", alignItems: "center", gap: 6,
-              borderWidth: 2, borderColor: focused ? colors.cyan : "rgba(103,232,249,0.35)",
-              backgroundColor: "rgba(139,92,246,0.20)",
-            },
-          ]}
-        >
-          <Ionicons name="keypad-outline" size={ms(16)} color="#fff" />
-          <Text style={{ color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall }}>Jump</Text>
-        </Pressable>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Pressable
+            testID="live-view-toggle"
+            focusable
+            onPress={() => setViewMode((m) => (m === "grid" ? "guide" : "grid"))}
+            style={({ focused }) => [
+              {
+                paddingHorizontal: s(14), paddingVertical: vs(8), borderRadius: 999,
+                flexDirection: "row", alignItems: "center", gap: 6,
+                borderWidth: 2,
+                borderColor: focused ? colors.cyan : "rgba(232,121,249,0.4)",
+                backgroundColor: "rgba(232,121,249,0.15)",
+              },
+            ]}
+          >
+            <Ionicons name={viewMode === "guide" ? "grid-outline" : "list-outline"} size={ms(16)} color="#fff" />
+            <Text style={{ color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall }}>
+              {viewMode === "guide" ? "Grid" : "Guide"}
+            </Text>
+          </Pressable>
+          <Pressable
+            testID="live-jump-btn"
+            focusable
+            onPress={() => setNumpadOpen(true)}
+            style={({ focused }) => [
+              {
+                paddingHorizontal: s(14), paddingVertical: vs(8), borderRadius: 999,
+                flexDirection: "row", alignItems: "center", gap: 6,
+                borderWidth: 2, borderColor: focused ? colors.cyan : "rgba(103,232,249,0.35)",
+                backgroundColor: "rgba(139,92,246,0.20)",
+              },
+            ]}
+          >
+            <Ionicons name="keypad-outline" size={ms(16)} color="#fff" />
+            <Text style={{ color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall }}>Jump</Text>
+          </Pressable>
+        </View>
       </View>
 
       {/* Country + Genre filters — two horizontal-scroll chip rows so the
@@ -286,6 +310,44 @@ export default function LiveTV() {
 
       {isLoading && <ActivityIndicator color={colors.cyan} style={{ marginTop: 40 }} />}
 
+      {viewMode === "guide" ? (
+        <FlatList
+          contentContainerStyle={{ paddingHorizontal: SAFE.left, paddingBottom: SIZES.tabBarH + vs(40), paddingTop: vs(6) }}
+          data={list}
+          keyExtractor={(it, i) => `guide-${it.key}-${i}`}
+          initialNumToRender={8}
+          maxToRenderPerBatch={6}
+          windowSize={5}
+          removeClippedSubviews
+          renderItem={({ item, index }) => (
+            <GuideRow
+              channel={item}
+              isFav={favKeys.has(String(item.key))}
+              onOpen={openChannel}
+              onToggleFav={(c) => toggleFav.mutate(c)}
+              hasPreferredFocus={index === 0}
+            />
+          )}
+          ListEmptyComponent={() =>
+            !isLoading && (
+              <View style={{ alignItems: "center", marginTop: 60 }}>
+                <Ionicons name="tv-outline" size={ms(36)} color={colors.zinc500} />
+                <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", marginTop: 10, textAlign: "center", fontSize: SIZES.fontSmall }}>
+                  No channels match your filters.
+                </Text>
+              </View>
+            )
+          }
+          ItemSeparatorComponent={() => <View style={{ height: vs(8) }} />}
+          ListFooterComponent={() =>
+            overflow > 0 ? (
+              <Text style={{ color: colors.zinc500, textAlign: "center", marginTop: vs(16), fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall }}>
+                Showing {MAX_CHANNELS.toLocaleString()} of {(list.length + overflow).toLocaleString()} — search to narrow.
+              </Text>
+            ) : null
+          }
+        />
+      ) : (
       <FlatList
         contentContainerStyle={{ paddingHorizontal: SAFE.left, paddingBottom: SIZES.tabBarH + vs(40) }}
         data={list}
@@ -293,9 +355,9 @@ export default function LiveTV() {
         numColumns={GRID_COLS.channels}
         columnWrapperStyle={{ gap: SIZES.gap }}
         ItemSeparatorComponent={() => <View style={{ height: SIZES.gap }} />}
-        initialNumToRender={20}
-        maxToRenderPerBatch={20}
-        windowSize={7}
+        initialNumToRender={12}
+        maxToRenderPerBatch={8}
+        windowSize={5}
         removeClippedSubviews
         ListHeaderComponent={
           showStrips ? (
@@ -354,6 +416,7 @@ export default function LiveTV() {
           ) : null
         }
       />
+      )}
 
       {/* Floating channel-number typing overlay (visible while user is typing) */}
       {jumpBuf.length > 0 && !numpadOpen && (
@@ -593,6 +656,128 @@ function NumKey({ label, testID, onPress, accent, hasTVPreferredFocus }: {
   );
 }
 
+
+// ---- EPG Guide row (used in the "Guide" view mode) --------------------
+// Netflix/Live-TV-guide-style: channel logo/number on the left, current +
+// next 2 program titles on the right, with an animated progress bar for
+// the current show. EPG data is fetched lazily per row via react-query
+// so we don't hammer the provider with 400 requests at once.
+function GuideRow({
+  channel, isFav, onOpen, onToggleFav, hasPreferredFocus,
+}: {
+  channel: Channel; isFav: boolean;
+  onOpen: (c: Channel) => void; onToggleFav: (c: Channel) => void;
+  hasPreferredFocus?: boolean;
+}) {
+  // Only IPTV channels have EPG through Xtream Codes. Plex Live TV would
+  // need a separate DVR EPG call — punt on that for now.
+  const isIptv = channel.source === "iptv";
+  const epgQ = useQuery({
+    enabled: isIptv,
+    queryKey: ["epg", channel.key],
+    queryFn: async () => (await client.get(`/livetv/epg?channel_key=${encodeURIComponent(channel.key)}&limit=3`)).data as { programs: any[] },
+    staleTime: 5 * 60 * 1000, // 5 min — EPG data doesn't shift often
+  });
+  const programs = epgQ.data?.programs || [];
+  const now = programs[0];
+  const next = programs[1];
+
+  // Compute progress bar % for the current show
+  const nowPct = React.useMemo(() => {
+    if (!now?.start_ts || !now?.end_ts) return null;
+    const t = Math.floor(Date.now() / 1000);
+    if (t < now.start_ts) return 0;
+    if (t > now.end_ts) return 100;
+    const total = now.end_ts - now.start_ts;
+    if (total <= 0) return null;
+    return Math.round(((t - now.start_ts) / total) * 100);
+  }, [now]);
+
+  const fmtTime = (ts?: number, iso?: string) => {
+    try {
+      const d = ts ? new Date(ts * 1000) : (iso ? new Date(iso.replace(" ", "T") + "Z") : null);
+      if (!d) return "";
+      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    } catch { return ""; }
+  };
+
+  return (
+    <Pressable
+      testID={`guide-${channel.key}`}
+      focusable
+      hasTVPreferredFocus={!!hasPreferredFocus}
+      onPress={() => onOpen(channel)}
+      onLongPress={() => onToggleFav(channel)}
+      style={({ focused }) => [
+        styles.guideRow,
+        focused && { borderColor: colors.cyan, backgroundColor: "rgba(139,92,246,0.20)" },
+      ]}
+    >
+      {/* Left: channel logo + number */}
+      <View style={styles.guideChanBox}>
+        {channel.logo ? (
+          <Image
+            source={{ uri: channel.logo.startsWith("http") ? channel.logo : `${BACKEND}${channel.logo}` }}
+            style={{ width: "100%", height: "100%" }}
+            resizeMode="contain"
+          />
+        ) : (
+          <LinearGradient colors={["#2A0F5A", "#0B0518"]} style={StyleSheet.absoluteFill} />
+        )}
+        {channel.number ? (
+          <View style={styles.guideChanNum}>
+            <Text style={styles.guideChanNumTxt}>{channel.number}</Text>
+          </View>
+        ) : null}
+        {isFav ? (
+          <View style={styles.guideChanFav}><Ionicons name="star" size={ms(10)} color="#050614" /></View>
+        ) : null}
+      </View>
+
+      {/* Right: channel name + Now/Next program info */}
+      <View style={styles.guideBody}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Text style={styles.guideChanName} numberOfLines={1}>{channel.title}</Text>
+          <View style={styles.liveDot} />
+          <Text style={styles.guideLiveTxt}>LIVE</Text>
+        </View>
+        {isIptv ? (
+          now ? (
+            <View style={{ marginTop: 6 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Text style={styles.guideNowLabel}>NOW</Text>
+                <Text style={styles.guideNowTitle} numberOfLines={1}>{now.title}</Text>
+                {now.start_ts && now.end_ts ? (
+                  <Text style={styles.guideNowTime}>{fmtTime(now.start_ts)} – {fmtTime(now.end_ts)}</Text>
+                ) : null}
+              </View>
+              {nowPct !== null ? (
+                <View style={styles.guideProgTrack}>
+                  <View style={[styles.guideProgFill, { width: `${nowPct}%` }]} />
+                </View>
+              ) : null}
+              {next ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 }}>
+                  <Text style={styles.guideNextLabel}>NEXT</Text>
+                  <Text style={styles.guideNextTitle} numberOfLines={1}>{next.title}</Text>
+                  {next.start_ts ? <Text style={styles.guideNowTime}>{fmtTime(next.start_ts)}</Text> : null}
+                </View>
+              ) : null}
+            </View>
+          ) : (
+            <Text style={styles.guideNoEpg}>
+              {epgQ.isLoading ? "Loading guide…" : "No guide data"}
+            </Text>
+          )
+        ) : (
+          <Text style={styles.guideNoEpg}>Plex Live — press Select to tune in</Text>
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
+
 const styles = StyleSheet.create({
   jumpBanner: {
     position: "absolute", top: SAFE.top + vs(18), alignSelf: "center",
@@ -636,4 +821,54 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   numpadSecondaryLabel: { color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall },
+
+  // ---- EPG Guide row -------------------------------------------------
+  guideRow: {
+    flexDirection: "row", alignItems: "center",
+    borderRadius: SIZES.radius, borderWidth: 2, borderColor: "rgba(139,92,246,0.20)",
+    backgroundColor: "rgba(28,10,56,0.55)",
+    padding: 10, gap: 12,
+  },
+  guideChanBox: {
+    width: IS_TV ? s(120) : s(90),
+    height: IS_TV ? vs(66) : vs(52),
+    borderRadius: 10, overflow: "hidden",
+    backgroundColor: "#1C0A38", position: "relative",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.06)",
+  },
+  guideChanNum: {
+    position: "absolute", top: 4, left: 4,
+    backgroundColor: "rgba(6,7,20,0.85)",
+    paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4,
+  },
+  guideChanNumTxt: { color: "#fff", fontFamily: "Unbounded_700Bold", fontSize: SIZES.fontTiny },
+  guideChanFav: {
+    position: "absolute", top: 4, right: 4,
+    width: 18, height: 18, borderRadius: 9,
+    backgroundColor: "rgba(250,204,21,0.95)",
+    alignItems: "center", justifyContent: "center",
+  },
+  guideBody: { flex: 1, minWidth: 0 },
+  guideChanName: { color: "#fff", fontFamily: "Unbounded_700Bold", fontSize: SIZES.fontBody, flex: 1 },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.red },
+  guideLiveTxt: { color: colors.red, fontFamily: "Unbounded_800ExtraBold", fontSize: SIZES.fontTiny, letterSpacing: 1.2 },
+  guideNowLabel: {
+    color: "#050614", backgroundColor: colors.cyan,
+    fontFamily: "Unbounded_800ExtraBold", fontSize: SIZES.fontTiny,
+    paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, letterSpacing: 1,
+  },
+  guideNowTitle: { color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall, flex: 1 },
+  guideNowTime: { color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontTiny },
+  guideProgTrack: {
+    height: 3, backgroundColor: "rgba(255,255,255,0.10)",
+    borderRadius: 999, marginTop: 4, overflow: "hidden",
+  },
+  guideProgFill: { height: "100%", backgroundColor: colors.magenta, borderRadius: 999 },
+  guideNextLabel: {
+    color: "#fff", backgroundColor: "rgba(255,255,255,0.12)",
+    fontFamily: "Unbounded_700Bold", fontSize: SIZES.fontTiny,
+    paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, letterSpacing: 1,
+  },
+  guideNextTitle: { color: colors.zinc300, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall, flex: 1 },
+  guideNoEpg: { color: colors.zinc500, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontTiny, marginTop: 4 },
 });

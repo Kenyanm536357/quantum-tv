@@ -122,9 +122,6 @@ export default function LiveTV() {
   const [country, setCountry] = useState<string>("All");
   const [genre, setGenre] = useState<string>("All");
   const [q, setQ] = useState("");
-  // View mode: "grid" is the classic channel-tile layout;
-  // "guide" is a TV-style EPG list showing "Now Playing" per channel.
-  const [viewMode, setViewMode] = useState<"grid" | "guide">("grid");
 
   const openChannel = useCallback((ch: Channel) => {
     recordRecent.mutate(ch);
@@ -227,43 +224,22 @@ export default function LiveTV() {
             )}
           </View>
         </View>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Pressable
-            testID="live-view-toggle"
-            focusable
-            onPress={() => setViewMode((m) => (m === "grid" ? "guide" : "grid"))}
-            style={({ focused }) => [
-              {
-                paddingHorizontal: s(14), paddingVertical: vs(8), borderRadius: 999,
-                flexDirection: "row", alignItems: "center", gap: 6,
-                borderWidth: 2,
-                borderColor: focused ? colors.cyan : "rgba(232,121,249,0.4)",
-                backgroundColor: "rgba(232,121,249,0.15)",
-              },
-            ]}
-          >
-            <Ionicons name={viewMode === "guide" ? "grid-outline" : "list-outline"} size={ms(16)} color="#fff" />
-            <Text style={{ color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall }}>
-              {viewMode === "guide" ? "Grid" : "Guide"}
-            </Text>
-          </Pressable>
-          <Pressable
-            testID="live-jump-btn"
-            focusable
-            onPress={() => setNumpadOpen(true)}
-            style={({ focused }) => [
-              {
-                paddingHorizontal: s(14), paddingVertical: vs(8), borderRadius: 999,
-                flexDirection: "row", alignItems: "center", gap: 6,
-                borderWidth: 2, borderColor: focused ? colors.cyan : "rgba(103,232,249,0.35)",
-                backgroundColor: "rgba(139,92,246,0.20)",
-              },
-            ]}
-          >
-            <Ionicons name="keypad-outline" size={ms(16)} color="#fff" />
-            <Text style={{ color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall }}>Jump</Text>
-          </Pressable>
-        </View>
+        <Pressable
+          testID="live-jump-btn"
+          focusable
+          onPress={() => setNumpadOpen(true)}
+          style={({ focused }) => [
+            {
+              paddingHorizontal: s(14), paddingVertical: vs(8), borderRadius: 999,
+              flexDirection: "row", alignItems: "center", gap: 6,
+              borderWidth: 2, borderColor: focused ? colors.cyan : "rgba(103,232,249,0.35)",
+              backgroundColor: "rgba(139,92,246,0.20)",
+            },
+          ]}
+        >
+          <Ionicons name="keypad-outline" size={ms(16)} color="#fff" />
+          <Text style={{ color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall }}>Jump</Text>
+        </Pressable>
       </View>
 
       {/* Country + Genre filters — two horizontal-scroll chip rows so the
@@ -310,53 +286,12 @@ export default function LiveTV() {
 
       {isLoading && <ActivityIndicator color={colors.cyan} style={{ marginTop: 40 }} />}
 
-      {viewMode === "guide" ? (
-        <FlatList
-          contentContainerStyle={{ paddingHorizontal: SAFE.left, paddingBottom: SIZES.tabBarH + vs(40), paddingTop: vs(6) }}
-          data={list}
-          keyExtractor={(it, i) => `guide-${it.key}-${i}`}
-          initialNumToRender={8}
-          maxToRenderPerBatch={6}
-          windowSize={5}
-          removeClippedSubviews
-          renderItem={({ item, index }) => (
-            <GuideRow
-              channel={item}
-              isFav={favKeys.has(String(item.key))}
-              onOpen={openChannel}
-              onToggleFav={(c) => toggleFav.mutate(c)}
-              hasPreferredFocus={index === 0}
-            />
-          )}
-          ListEmptyComponent={() =>
-            !isLoading && (
-              <View style={{ alignItems: "center", marginTop: 60 }}>
-                <Ionicons name="tv-outline" size={ms(36)} color={colors.zinc500} />
-                <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", marginTop: 10, textAlign: "center", fontSize: SIZES.fontSmall }}>
-                  No channels match your filters.
-                </Text>
-              </View>
-            )
-          }
-          ItemSeparatorComponent={() => <View style={{ height: vs(8) }} />}
-          ListFooterComponent={() =>
-            overflow > 0 ? (
-              <Text style={{ color: colors.zinc500, textAlign: "center", marginTop: vs(16), fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall }}>
-                Showing {MAX_CHANNELS.toLocaleString()} of {(list.length + overflow).toLocaleString()} — search to narrow.
-              </Text>
-            ) : null
-          }
-        />
-      ) : (
       <FlatList
-        contentContainerStyle={{ paddingHorizontal: SAFE.left, paddingBottom: SIZES.tabBarH + vs(40) }}
+        contentContainerStyle={{ paddingHorizontal: SAFE.left, paddingBottom: SIZES.tabBarH + vs(40), paddingTop: vs(6) }}
         data={list}
-        keyExtractor={(it, i) => `${it.key}-${i}`}
-        numColumns={GRID_COLS.channels}
-        columnWrapperStyle={{ gap: SIZES.gap }}
-        ItemSeparatorComponent={() => <View style={{ height: SIZES.gap }} />}
-        initialNumToRender={12}
-        maxToRenderPerBatch={8}
+        keyExtractor={(it, i) => `guide-${it.key}-${i}`}
+        initialNumToRender={8}
+        maxToRenderPerBatch={6}
         windowSize={5}
         removeClippedSubviews
         ListHeaderComponent={
@@ -382,16 +317,15 @@ export default function LiveTV() {
               />
               {(favItems.length > 0 || recentItems.length > 0) && (
                 <Text style={{ color: colors.zinc400, fontFamily: "Unbounded_700Bold", fontSize: SIZES.fontH2, letterSpacing: 0.3, marginTop: vs(10), marginBottom: vs(8) }}>
-                  All Channels
+                  Guide
                 </Text>
               )}
             </View>
           ) : null
         }
         renderItem={({ item, index }) => (
-          <ChannelCard
-            item={item}
-            index={index}
+          <GuideRow
+            channel={item}
             isFav={favKeys.has(String(item.key))}
             onOpen={openChannel}
             onToggleFav={(c) => toggleFav.mutate(c)}
@@ -401,13 +335,14 @@ export default function LiveTV() {
         ListEmptyComponent={() =>
           !isLoading && (
             <View style={{ alignItems: "center", marginTop: 60 }}>
-              <Ionicons name="radio-outline" size={ms(36)} color={colors.zinc500} />
+              <Ionicons name="tv-outline" size={ms(36)} color={colors.zinc500} />
               <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", marginTop: 10, textAlign: "center", fontSize: SIZES.fontSmall }}>
                 No channels match your filters.{"\n"}Try switching country or genre, or clear the search.
               </Text>
             </View>
           )
         }
+        ItemSeparatorComponent={() => <View style={{ height: vs(8) }} />}
         ListFooterComponent={() =>
           overflow > 0 ? (
             <Text style={{ color: colors.zinc500, textAlign: "center", marginTop: vs(16), fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall }}>
@@ -416,7 +351,6 @@ export default function LiveTV() {
           ) : null
         }
       />
-      )}
 
       {/* Floating channel-number typing overlay (visible while user is typing) */}
       {jumpBuf.length > 0 && !numpadOpen && (

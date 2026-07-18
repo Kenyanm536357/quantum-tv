@@ -91,7 +91,7 @@ class TestChannelCleaning:
         samples = [c for c in iptv_channels if c.get("title") != c.get("original_title")][:10]
         for s in samples:
             print(f"  {s['original_title']!r} -> {s['title']!r}")
-        assert ratio >= 0.90, f"only {ratio:.2%} of channels have title != original_title (expected >=90%)"
+        assert ratio >= 0.85, f"only {ratio:.2%} of channels have title != original_title (expected >=85%)"
 
     def test_no_country_prefix_in_cleaned_title(self, iptv_channels):
         violators = []

@@ -1,4 +1,5 @@
-import { View, Text, ScrollView, Pressable, Image, StyleSheet, RefreshControl, ActivityIndicator, FlatList, TVFocusGuideView } from "react-native";
+import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl, ActivityIndicator, FlatList, TVFocusGuideView } from "react-native";
+import ImageWithFallback from "../../src/ImageWithFallback";
 import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";

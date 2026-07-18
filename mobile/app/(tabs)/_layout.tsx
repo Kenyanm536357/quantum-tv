@@ -2,7 +2,8 @@ import { Tabs } from "expo-router";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet, Platform, Image } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
+import ImageWithFallback from "../../src/ImageWithFallback";
 import { LinearGradient } from "expo-linear-gradient";
 import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { colors, GRADIENTS } from "../../src/api";
@@ -222,19 +223,25 @@ const styles = StyleSheet.create({
   rail: {
     position: "absolute",
     left: 0,
-    top: 0,
-    bottom: 0,
-    borderRightColor: "rgba(139,92,246,0.15)",
+    top: vs(12),
+    bottom: vs(12),
+    // Rounded outer edge — matches the reference and softens the panel so
+    // it doesn't feel like a hard vertical block. Rounded on the RIGHT
+    // side only because the left side is flush against the screen edge.
+    borderTopRightRadius: 28,
+    borderBottomRightRadius: 28,
+    overflow: "hidden",
+    borderRightColor: "rgba(139,92,246,0.25)",
     borderRightWidth: 1,
     backgroundColor: colors.bg,
   },
   railExpanded: {
     backgroundColor: colors.bg,
     shadowColor: colors.purple,
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.5,
     shadowRadius: 30,
     shadowOffset: { width: 8, height: 0 },
-    ...(Platform.OS === "android" ? { elevation: 20 } : null),
+    ...(Platform.OS === "android" ? { elevation: 24 } : null),
   },
   railHeader: { alignItems: "flex-start", paddingHorizontal: 16, paddingVertical: vs(16) },
   railBrand: { color: "#FFFFFF", fontFamily: "Unbounded_800ExtraBold", fontSize: SIZES.fontH2, letterSpacing: 1.2 },
@@ -242,9 +249,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     minHeight: vs(52),
-    borderRadius: 12,
+    borderRadius: 999, // pill shape — matches the branded "chip" aesthetic
     marginHorizontal: 8,
     marginVertical: 3,
+    overflow: "hidden",
   },
   railItemActive: { backgroundColor: "rgba(6,182,212,0.12)" },
   railItemFocused: {

@@ -39,9 +39,9 @@ export default function Player() {
 
   // Surface native player errors (codec unsupported, network drop, …)
   useEffect(() => {
-    const sub = player.addListener("statusChange", (evt: any) => {
-      if (evt?.status === "error") {
-        const msg = evt?.error?.message || "Playback error";
+    const sub = player.addListener("statusChange", (status: string, _oldStatus: string, error: any) => {
+      if (status === "error") {
+        const msg = error?.message || "Playback error";
         setError(msg);
       }
     });

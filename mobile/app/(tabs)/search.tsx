@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { View, Text, FlatList, Pressable, Image, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import ImageWithFallback from "../../src/ImageWithFallback";
 import { useQuery } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";

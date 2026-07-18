@@ -93,18 +93,22 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
         renderItem={({ item, index }: { item: LibItem; index: number }) => {
           const isFav = favSet.has(String(item.rating_key));
           return (
-            <Pressable
-              testID={`grid-${item.rating_key}`}
-              focusable
-              hasTVPreferredFocus={index === 0}
-              style={({ focused }) => [
-                { flex: 1, borderRadius: SIZES.radius },
-                focused && FOCUSED_CARD,
-              ]}
-              onPress={() => openItem(item)}
-              onLongPress={() => toggleFav.mutate(item)}
-            >
-              <View style={{ height: IS_TV ? vs(220) : vs(170), borderRadius: SIZES.radius, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: "rgba(255,255,255,0.05)" }}>
+        <Pressable
+          testID={`grid-${item.rating_key}`}
+          focusable
+          hasTVPreferredFocus={index === 0}
+          style={({ focused }) => [
+            { flex: 1, borderRadius: SIZES.radius, backgroundColor: "transparent" },
+          ]}
+          onPress={() => openItem(item)}
+          onLongPress={() => toggleFav.mutate(item)}
+        >
+          {({ focused }) => (
+            <View>
+              <View style={[
+                { height: IS_TV ? vs(220) : vs(170), borderRadius: SIZES.radius, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 2, borderColor: "rgba(255,255,255,0.05)" },
+                focused && { borderColor: colors.cyan, transform: [{ scale: 1.04 }], shadowColor: colors.cyan, shadowOpacity: 0.6, shadowRadius: 20, elevation: 12 },
+              ]}>
                 {item.thumb ? (
                   <Image source={{ uri: `${BACKEND}${item.thumb}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                 ) : (
@@ -128,12 +132,17 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
                   {item.year ? <Text style={{ color: colors.zinc500, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontTiny, marginTop: 1 }}>{item.year}</Text> : null}
                 </View>
               </View>
+              {/* "Hold to favorite" hint sits OUTSIDE the card so the focus glow
+                  doesn't bleed into it — old layout had the shadow leaking
+                  into the caption strip which looked broken. */}
               {IS_TV ? (
-                <Text style={{ color: colors.zinc500, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontTiny, marginTop: 4, textAlign: "center" }}>
+                <Text style={{ color: colors.zinc500, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontTiny, marginTop: 4, textAlign: "center", opacity: focused ? 0.9 : 0.4 }}>
                   Hold to {isFav ? "unfavorite" : "favorite"}
                 </Text>
               ) : null}
-            </Pressable>
+            </View>
+          )}
+        </Pressable>
           );
         }}
       />

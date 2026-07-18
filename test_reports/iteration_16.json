@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 16 backend testing. New _clean_channel_title helper on /api/livetv/channels verified via 9 new tests + full 31-test regression from iter15. Direct helper unit tests confirm all documented transformations work correctly ('USA - NBC EAST HD' -> 'NBC EAST', 'BEIN SPORTS MAX 1 AR ᴴᴰ' -> 'BEIN SPORTS MAX 1 AR', 'CBS ⁴ᴷ' -> 'CBS', chained 'USA - USA - ESPN HD' -> 'ESPN'). Both `title` (cleaned) and `original_title` (raw) present on every IPTV channel. Country/genre enrichment still intact. Zero leaked Unicode decorators, zero leaked HD/UHD/4K ASCII suffixes, zero leaked USA-/UK-/CA- prefixes in cleaned titles. Full iter15 regression (31/31) still passes — no regressions. GAP FOUND: only 59.07% (3182/5387) of IPTV channels have title != original_title, not the 90% claimed in the review request. Root cause: real provider data contains many country prefixes NOT in the current regex vocabulary (AFG, ARG, BY, CHL, CO, CR, CY, MXC, MNG, UY, VZ) plus genre-style prefixes ('KIDS - JIM JAM', 'KIDS - JUNIOR') and section-header decorations ('##### USA GENERAL #####'). Existing cleaner works correctly on channels that DO match its patterns — the gap is coverage, not correctness.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/livetv/channels", "issue": "_clean_channel_title only touches ~59% of IPTV channels vs the 90% target. Regex misses common ISO3-style country prefixes (AFG, ARG, CHL, MXC, MNG, VZ, UY, CO, CR, CY, BY) and genre prefixes ('KIDS -', section headers '##### ... #####'). Consider expanding _CHANNEL_PREFIX_RE country vocab and/or adding a generic 'up-to-4-letter uppercase token followed by dash/pipe' fallback."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter16_channel_cleaning.py",
+    "/app/test_reports/pytest/iteration_16_regression.xml"
+  ],
+  "action_items": [
+    "Expand _CHANNEL_PREFIX_RE at server.py:1869-1875 to cover 3-letter country codes (AFG, ARG, CHL, MXC, MNG, VZ, UY, CO, CR, CY, BY) and non-country categorical prefixes ('KIDS -', 'ADULT -', etc.) if the goal is 90% coverage on this provider's catalog.",
+    "Consider stripping decorative section-header entries like '##### USA GENERAL #####' entirely (or hiding them from the channel list) — they're navigation dividers in the source M3U, not real channels."
+  ],
+  "critical_code_review_comments": [
+    "Cleaning logic (server.py:1888-1907) is sound and well-commented, always falls back to raw on empty result. Loop-3-times prefix stripping correctly handles chained 'USA - US -' cases.",
+    "server.py is now 2417 lines — still recommend splitting into routers (auth, iptv, plex, admin, livetv) for maintainability. Called out in iter_15 too."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter16_channel_cleaning.py (new)"],
+  "success_rate": {
+    "backend": "97.5% (39/40 — 31/31 regression + 8/9 iter16 with 1 coverage-gap assertion failure)",
+    "frontend": "N/A (skipped per request — mobile-only UI change)"
+  },
+  "test_credentials": "test/Test12345 — working",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter16 backend change is _clean_channel_title (server.py:1869-1907) applied at server.py:1981-1982 in /api/livetv/channels. Every IPTV channel now has BOTH title (cleaned) and original_title (raw). Helper covers: USA/UK/CA/AU/... prefixes, HD/SD/UHD/4K/FHD/8K/HEVC suffixes, Unicode super/subscript decorators (\\u1D00-\\u1D7F, \\u2070-\\u209F etc). Real coverage on live provider (2tvusa.xyz): ~59% of channels changed. Gap: 3-letter country codes (AFG/ARG/CHL/etc) and KIDS-/section-header prefixes NOT covered. Regression suite: /app/backend/tests/test_iter{11,12,13,15}_*.py + test_live_favorites_recent.py all 31/31 pass.",
+  "rca_of_the_issue": "The 90% cleaning-ratio expectation was based on assumption; actual measurement on live IPTV catalog is 59%. Regex _CHANNEL_PREFIX_RE at server.py:1869-1875 enumerates only 25 country tokens (USA, UK, CA, AU, MX, IN, FR, DE, ES, IT, BR, PT, NL, AR, JP, CN, KR, IE, RU, TR, LATINO, SPANISH). Provider uses many more (AFG, ARG, BY, CHL, CO, CR, CY, MXC, MNG, UY, VZ) plus non-country prefixes (KIDS -, ADULT -). Mitigation: broaden the regex or add a generic '^[A-Z]{2,4}\\s*[-|]\\s*' fallback."
+}

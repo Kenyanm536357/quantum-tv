@@ -1861,6 +1861,52 @@ def _classify_live_category(name: Optional[str]) -> dict:
     return {"country": country, "genre": genre}
 
 
+# Strip stylistic noise from IPTV channel titles so older users can read
+# them: country prefixes ("USA -", "US|", "UK-"), HD/UHD/4K suffixes,
+# Unicode super/subscript decorations like "ᴴᴰ", "⁸ᴷ", "⁴ᴷ". Preserves the
+# core channel identity — we keep country info available via the separate
+# `country` field, so it's fine to strip from the display name.
+_CHANNEL_PREFIX_RE = re.compile(
+    r"^(?:"
+    r"(?:USA?|UK|GB|CA|CAN|AU|MX|IN|FR|DE|ES|IT|BR|PT|NL|AR|JP|CN|KR|IE|RU|TR|LATINO|SPANISH)"
+    r"\s*[|:\-•·]+"
+    r"\s*)+",
+    re.IGNORECASE,
+)
+_CHANNEL_SUFFIX_RE = re.compile(
+    r"\s*[|:\-•·]?\s*(?:FHD|UHD|4K|8K|HD|SD|HEVC|H265|H\.?265)\s*$",
+    re.IGNORECASE,
+)
+# Unicode small-caps / superscript / subscript decorations providers use to
+# stamp quality on names (ᴴᴰ ⁴ᴷ ⁸ᴷ ᶠᴴᴰ etc). Range covers super/subscript,
+# modifier letters, and mathematical alphanumeric symbols used for these.
+_UNICODE_DECOR_RE = re.compile(
+    "[\u1D00-\u1D7F\u1D80-\u1DBF\u2070-\u209F\u2100-\u214F\U0001D400-\U0001D7FF]"
+)
+
+
+def _clean_channel_title(raw: Optional[str]) -> str:
+    """Return a shorter, cleaner channel name for display.
+
+    Kept safe for scanning by older users: strips country prefixes and
+    quality-tag suffixes (both ASCII and Unicode-stylized). Falls back to
+    the raw name if the cleaning would leave us with nothing.
+    """
+    if not raw:
+        return ""
+    s = str(raw)
+    # Iterate a couple of times to catch chained prefixes like "USA - US -".
+    for _ in range(3):
+        new = _CHANNEL_PREFIX_RE.sub("", s).strip()
+        if new == s:
+            break
+        s = new
+    s = _UNICODE_DECOR_RE.sub("", s)
+    s = _CHANNEL_SUFFIX_RE.sub("", s)
+    s = re.sub(r"\s{2,}", " ", s).strip(" -|:•·")
+    return s or (raw.strip() if raw else "")
+
+
 
 @api.get("/livetv/channels")
 async def live_channels(user: dict = Depends(get_current_user)):
@@ -1932,7 +1978,8 @@ async def live_channels(user: dict = Depends(get_current_user)):
                 cid = str(s.get("category_id") or "")
                 cat = cat_by_id.get(cid) or {"name": None, "country": "Other", "genre": "General"}
                 out.append({
-                    "title": s.get("name"),
+                    "title": _clean_channel_title(s.get("name")),
+                    "original_title": s.get("name"),
                     "number": s.get("num"),
                     "logo": logo,
                     "key": f"iptv-live-{sid}",

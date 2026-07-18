@@ -1866,15 +1866,25 @@ def _classify_live_category(name: Optional[str]) -> dict:
 # Unicode super/subscript decorations like "ᴴᴰ", "⁸ᴷ", "⁴ᴷ". Preserves the
 # core channel identity — we keep country info available via the separate
 # `country` field, so it's fine to strip from the display name.
+# Prefer explicit country tokens; fall back to a generic short-uppercase
+# token pattern so oddball ISO codes (AFG, ARG, CHL, VZ, ...) also get
+# stripped.
 _CHANNEL_PREFIX_RE = re.compile(
     r"^(?:"
-    r"(?:USA?|UK|GB|CA|CAN|AU|MX|IN|FR|DE|ES|IT|BR|PT|NL|AR|JP|CN|KR|IE|RU|TR|LATINO|SPANISH)"
-    r"\s*[|:\-•·]+"
+    r"(?:USA?|UK|GB|CA|CAN|AU|MX|MXC|IN|FR|DE|ES|IT|BR|PT|NL|AR|JP|CN|KR|IE|RU|TR|"
+    r"LATINO|SPANISH|AFG|ARG|CHL|COL|CO|CRI|CR|CY|CYP|BOL|BOL|BY|PER|URY|UY|VEN|VZ|"
+    r"KIDS|ADULT|MUSIC|MOVIES|MOVIE|MOVIES4U|SPORTS|SPORT|NEWS|24[/ ]?7)"
+    r"\s*[|:\-–—•·]+"
     r"\s*)+",
     re.IGNORECASE,
 )
+# Generic fallback: any 2-5 letter uppercase token followed by a separator,
+# e.g. "MNG - ", "CHL | ". Only strips a single leading occurrence.
+_CHANNEL_PREFIX_GENERIC_RE = re.compile(r"^[A-Z]{2,5}\s*[|:\-–—•·]+\s*")
+# Bracketed prefix like "[US]", "(UK)", "{USA}"
+_CHANNEL_PREFIX_BRACKET_RE = re.compile(r"^[\[\(\{][^\]\)\}]{1,8}[\]\)\}]\s*[|:\-–—•·]*\s*")
 _CHANNEL_SUFFIX_RE = re.compile(
-    r"\s*[|:\-•·]?\s*(?:FHD|UHD|4K|8K|HD|SD|HEVC|H265|H\.?265)\s*$",
+    r"\s*[|:\-•·]?\s*(?:FHD|UHD|4K|8K|HD|SD|HEVC|H265|H\.?265|RAW|LIVE|PPV)\s*$",
     re.IGNORECASE,
 )
 # Unicode small-caps / superscript / subscript decorations providers use to
@@ -1883,6 +1893,14 @@ _CHANNEL_SUFFIX_RE = re.compile(
 _UNICODE_DECOR_RE = re.compile(
     "[\u1D00-\u1D7F\u1D80-\u1DBF\u2070-\u209F\u2100-\u214F\U0001D400-\U0001D7FF]"
 )
+# Section-divider "channels" like "##### USA GENERAL #####" — these are
+# navigation headers in the source M3U, not playable channels. Detected so
+# the caller can hide them entirely.
+_CHANNEL_DIVIDER_RE = re.compile(r"^\s*[#=\*·•\-—_]{3,}.*[#=\*·•\-—_]{3,}\s*$")
+
+
+def _is_divider_channel(name: Optional[str]) -> bool:
+    return bool(name and _CHANNEL_DIVIDER_RE.match(name))
 
 
 def _clean_channel_title(raw: Optional[str]) -> str:
@@ -1895,14 +1913,26 @@ def _clean_channel_title(raw: Optional[str]) -> str:
     if not raw:
         return ""
     s = str(raw)
+    # Strip bracketed prefix once.
+    s = _CHANNEL_PREFIX_BRACKET_RE.sub("", s).strip()
     # Iterate a couple of times to catch chained prefixes like "USA - US -".
-    for _ in range(3):
+    for _ in range(4):
         new = _CHANNEL_PREFIX_RE.sub("", s).strip()
+        if new == s:
+            # Also try the generic fallback for weird 3-4 letter codes.
+            new2 = _CHANNEL_PREFIX_GENERIC_RE.sub("", s).strip()
+            if new2 == s:
+                break
+            s = new2
+        else:
+            s = new
+    s = _UNICODE_DECOR_RE.sub("", s)
+    # Strip quality suffix up to 2 times ("... HD FHD")
+    for _ in range(2):
+        new = _CHANNEL_SUFFIX_RE.sub("", s).strip()
         if new == s:
             break
         s = new
-    s = _UNICODE_DECOR_RE.sub("", s)
-    s = _CHANNEL_SUFFIX_RE.sub("", s)
     s = re.sub(r"\s{2,}", " ", s).strip(" -|:•·")
     return s or (raw.strip() if raw else "")
 
@@ -1970,6 +2000,11 @@ async def live_channels(user: dict = Depends(get_current_user)):
             for s in raw or []:
                 sid = s.get("stream_id")
                 if not sid:
+                    continue
+                raw_name = s.get("name") or ""
+                # Skip section-divider entries like "##### USA GENERAL #####" —
+                # they aren't playable channels, they're M3U group headers.
+                if _is_divider_channel(raw_name):
                     continue
                 logo_raw = s.get("stream_icon") or None
                 # Route http logos through our logo proxy so browsers on

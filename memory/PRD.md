@@ -26,6 +26,14 @@
 - ✅ Metro bundle export succeeded (2.05 MB → Hermes bytecode 1.83 MB). qemu-user-static re-installed in container to run x86_64 hermesc on ARM64.
 - ✅ **OTA pushed**: branch `firetv`, runtime 1.0.13, update ID `019f7a97-eb08-7b6e-a65f-65621f2a3017`, group `a08036f4-2fe2-4cee-a558-5e56ff01064d`. Fire TV app will pick up the fix on next launch (force-close + reopen to force an update check).
 
+## 2026-02 — Updates Toast + Live TV Polish (OTA)
+- ✅ **`/app/mobile/src/UpdatesToast.tsx`**: new component wired into `app/_layout.tsx`. On mount + on `AppState` "active", it silently calls `Updates.checkForUpdateAsync()`. When an OTA is available it fades in a cyan banner top-right with "Install" (calls `fetchUpdateAsync` + `reloadAsync`) and "Later" buttons. TV-focusable, no-op in dev.
+- ✅ **Live TV left column overhaul** (`livetv.tsx`): removed the always-visible heart-outline icon that was crowding the channel number. Now shows the channel number as a bold pill next to a larger logo box; heart appears only when favorited as a small magenta corner badge on the logo (no more visual interference with channel names/numbers).
+- ✅ **Hold-to-Favorite feedback**: long-pressing any program block (or the "No guide data" / "Plex Live" placeholder) toggles favorite state AND surfaces a "Added to / Removed from Favorites" toast at the bottom of the screen for 1.8s.
+- ✅ **Smoother scrolling**: added `getItemLayout` (rows are constant ROW_H), bumped `initialNumToRender` 8→12, `maxToRenderPerBatch` 5→8, `windowSize` 5→7. FlatList no longer has to measure each row → instant `scrollToIndex` and steadier fling.
+- ✅ **OTA pushed**: branch `firetv`, runtime 1.0.13, update ID `019f7ab4-f6ec-7e36-99b3-5c7e38aa47dd`, group `9e9975c3-8414-4f59-93dd-f23df0f60400`.
+
+
 ## Implemented (IPTV Live TV merge into user players — 2026-07-01)
 - ✅ **IPTV proxy stack** (server.py): three new endpoints — `/api/iptv/p/{kind}/{id}.{ext}` (manifest rewrite), `/api/iptv/pass?k=` (Fernet-encrypted upstream segment passthrough), `/api/iptv/logo?u=` (HTTPS logo proxy). Users never see the IPTV origin or credentials.
 - ✅ **Live TV merge**: `/api/livetv/channels` now returns Plex + IPTV channels in one array, each item tagged `source: "plex" | "iptv"`. IPTV keys use `iptv-live-<streamId>`.

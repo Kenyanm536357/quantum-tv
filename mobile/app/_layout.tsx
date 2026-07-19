@@ -7,6 +7,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts, Unbounded_400Regular, Unbounded_700Bold, Unbounded_800ExtraBold } from "@expo-google-fonts/unbounded";
 import { Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold } from "@expo-google-fonts/outfit";
 import { ErrorBoundary } from "../src/ErrorBoundary";
+import UpdatesToast from "../src/UpdatesToast";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -27,6 +28,7 @@ export default function RootLayout() {
         <QueryClientProvider client={qc}>
           <StatusBar style="light" />
           <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#0B0518" } }} />
+          <UpdatesToast />
         </QueryClientProvider>
       </SafeAreaProvider>
     </ErrorBoundary>

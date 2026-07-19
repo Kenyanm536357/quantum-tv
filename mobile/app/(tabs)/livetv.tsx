@@ -126,6 +126,18 @@ export default function LiveTV() {
     router.push({ pathname: "/player/[rk]", params: { rk: String(ch.key), title: ch.title } });
   }, [recordRecent, router]);
 
+  // Small ephemeral toast shown when a channel is favorited/unfavorited via hold-to-favorite.
+  const [favToast, setFavToast] = useState<{ title: string; on: boolean } | null>(null);
+  const favToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleToggleFav = useCallback((ch: Channel) => {
+    const willBeFav = !favKeys.has(String(ch.key));
+    toggleFav.mutate(ch);
+    setFavToast({ title: ch.title || "Channel", on: willBeFav });
+    if (favToastTimer.current) clearTimeout(favToastTimer.current);
+    favToastTimer.current = setTimeout(() => setFavToast(null), 1800);
+  }, [favKeys, toggleFav]);
+  useEffect(() => () => { if (favToastTimer.current) clearTimeout(favToastTimer.current); }, []);
+
   // ---- Filters + search ----
   const [country, setCountry] = useState<string>("All");
   const [genre, setGenre] = useState<string>("All");
@@ -267,10 +279,11 @@ export default function LiveTV() {
             <FlatList
               data={list}
               keyExtractor={(it, i) => `guide-${it.key}-${i}`}
-              initialNumToRender={8}
-              maxToRenderPerBatch={5}
-              windowSize={5}
+              initialNumToRender={12}
+              maxToRenderPerBatch={8}
+              windowSize={7}
               removeClippedSubviews
+              getItemLayout={(_, index) => ({ length: ROW_H, offset: ROW_H * index, index })}
               contentContainerStyle={{ paddingBottom: SIZES.tabBarH + vs(20) }}
               renderItem={({ item, index }) => (
                 <GuideRow
@@ -279,7 +292,7 @@ export default function LiveTV() {
                   timelineEnd={timelineEnd}
                   isFav={favKeys.has(String(item.key))}
                   onOpen={openChannel}
-                  onToggleFav={(c) => toggleFav.mutate(c)}
+                  onToggleFav={handleToggleFav}
                   onFocusProgram={(p) => setFocused({ channel: item, program: p })}
                   onFocusChannel={() => setFocused((f) => ({ channel: item, program: f?.program ?? null }))}
                   hasPreferredFocus={index === 0}
@@ -303,6 +316,19 @@ export default function LiveTV() {
             <Text style={styles.jumpBannerNum}>{jumpBuf}</Text>
           </View>
         )}
+
+        {/* Hold-to-favorite feedback toast */}
+        {favToast ? (
+          <View pointerEvents="none" style={styles.favToast} testID="fav-toast">
+            <View style={[styles.favToastDot, { backgroundColor: favToast.on ? colors.magenta : "rgba(255,255,255,0.15)" }]}>
+              <Ionicons name={favToast.on ? "heart" : "heart-dislike-outline"} size={ms(14)} color="#fff" />
+            </View>
+            <View>
+              <Text style={styles.favToastLabel}>{favToast.on ? "ADDED TO FAVORITES" : "REMOVED FROM FAVORITES"}</Text>
+              <Text style={styles.favToastTitle} numberOfLines={1}>{favToast.title}</Text>
+            </View>
+          </View>
+        ) : null}
 
         <NumpadOverlay
           open={numpadOpen}
@@ -410,22 +436,28 @@ function GuideRow({
 
   return (
     <View style={styles.row}>
-      {/* Left column: heart + channel # + logo */}
+      {/* Left column: channel # (top), logo (below); heart badge only when fav */}
       <View style={styles.leftCol}>
-        <View style={{ width: 34, alignItems: "center" }}>
-          <Ionicons name={isFav ? "heart" : "heart-outline"} size={ms(15)} color={isFav ? colors.magenta : colors.zinc500} />
-          <Text style={styles.channelNum} numberOfLines={1}>{channel.number ?? "—"}</Text>
-        </View>
-        <View style={styles.channelLogoBox}>
-          {channel.logo ? (
-            <Image
-              source={{ uri: channel.logo.startsWith("http") ? channel.logo : `${BACKEND}${channel.logo}` }}
-              style={{ width: "100%", height: "100%" }}
-              resizeMode="contain"
-            />
-          ) : (
-            <Text style={styles.channelInitial} numberOfLines={1}>{channel.title.slice(0, 4)}</Text>
-          )}
+        <View style={styles.channelStack}>
+          <Text style={styles.channelNum} numberOfLines={1}>
+            {channel.number ?? "—"}
+          </Text>
+          <View style={styles.channelLogoBox}>
+            {channel.logo ? (
+              <Image
+                source={{ uri: channel.logo.startsWith("http") ? channel.logo : `${BACKEND}${channel.logo}` }}
+                style={{ width: "100%", height: "100%" }}
+                resizeMode="contain"
+              />
+            ) : (
+              <Text style={styles.channelInitial} numberOfLines={1}>{channel.title.slice(0, 4)}</Text>
+            )}
+            {isFav ? (
+              <View style={styles.favBadge} pointerEvents="none">
+                <Ionicons name="heart" size={ms(10)} color="#fff" />
+              </View>
+            ) : null}
+          </View>
         </View>
       </View>
 
@@ -730,15 +762,36 @@ const styles = StyleSheet.create({
   leftCol: {
     width: LEFT_COL_W,
     paddingLeft: SAFE.left,
-    flexDirection: "row", alignItems: "center", gap: 6,
+    flexDirection: "row", alignItems: "center",
     borderRightWidth: 1, borderRightColor: "rgba(139,92,246,0.15)",
+    paddingRight: 8,
   },
-  channelNum: { color: colors.zinc400, fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall, marginTop: 1 },
+  channelStack: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },
+  channelNum: {
+    color: colors.zinc300,
+    fontFamily: "Unbounded_700Bold",
+    fontSize: ms(11),
+    letterSpacing: 0.4,
+    width: ms(34),
+    textAlign: "right",
+  },
   channelLogoBox: {
-    flex: 1, height: ROW_H - vs(12), borderRadius: 6,
+    flex: 1, height: ROW_H - vs(14), borderRadius: 6,
     backgroundColor: "rgba(28,10,56,0.55)",
     alignItems: "center", justifyContent: "center",
-    marginRight: 8, padding: 4,
+    padding: 4,
+    position: "relative",
+    overflow: "hidden",
+  },
+  favBadge: {
+    position: "absolute",
+    top: 2, right: 2,
+    width: ms(16), height: ms(16),
+    borderRadius: 999,
+    backgroundColor: colors.magenta,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: colors.magenta, shadowOpacity: 0.6, shadowRadius: 3,
+    elevation: 3,
   },
   channelInitial: { color: "#fff", fontFamily: "Unbounded_700Bold", fontSize: SIZES.fontTiny, textAlign: "center" },
   timeline: {
@@ -782,6 +835,43 @@ const styles = StyleSheet.create({
   },
   jumpBannerLabel: { color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall, letterSpacing: 1.5, textTransform: "uppercase" },
   jumpBannerNum: { color: "#fff", fontFamily: "Unbounded_800ExtraBold", fontSize: ms(28), letterSpacing: 2 },
+
+  // ---- Hold-to-favorite feedback toast ----
+  favToast: {
+    position: "absolute",
+    bottom: SIZES.tabBarH + vs(24),
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "rgba(6,7,20,0.96)",
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: colors.magenta,
+    paddingHorizontal: s(14),
+    paddingVertical: vs(8),
+    shadowColor: colors.magenta,
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
+    elevation: 8,
+    maxWidth: "80%",
+  },
+  favToastDot: {
+    width: ms(26), height: ms(26), borderRadius: 999,
+    alignItems: "center", justifyContent: "center",
+  },
+  favToastLabel: {
+    color: colors.zinc400,
+    fontFamily: "Outfit_500Medium",
+    fontSize: ms(9),
+    letterSpacing: 1.5,
+  },
+  favToastTitle: {
+    color: "#fff",
+    fontFamily: "Unbounded_700Bold",
+    fontSize: ms(13),
+    marginTop: 1,
+  },
 
   // ---- Filter modal ----
   modalBackdrop: { flex: 1, backgroundColor: "rgba(6,7,20,0.85)", alignItems: "center", justifyContent: "center", padding: 24 },

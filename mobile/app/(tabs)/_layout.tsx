@@ -2,7 +2,7 @@ import { Tabs } from "expo-router";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform, Image } from "react-native";
 import ImageWithFallback from "../../src/ImageWithFallback";
 import { LinearGradient } from "expo-linear-gradient";
 import { BottomTabBarProps } from "@react-navigation/bottom-tabs";

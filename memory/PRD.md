@@ -19,6 +19,13 @@
 - `/app/frontend/` — **React (CRA + Tailwind)** admin web console on port 3000. Pages: Dashboard, Users, Plex Servers, Activity, Settings, Login.
 - `/app/mobile/` — **Expo Router (TypeScript)** native mobile app. Pages: Login (Plex PIN), Browse (continue + recent + featured), Live TV grid, Movies, Series, Search, More (profile + server picker + disconnect), Player (`expo-video`).
 
+
+## 2026-02 — Fire TV Image Import Hotfix (OTA)
+- 🐛 **Root cause**: v1.0.13e crashed on load (ErrorBoundary caught "Property 'Image' doesn't exist"). Five files rendered `<Image>` from React Native but their react-native import destructure was missing `Image`.
+- ✅ Fix applied to: `app/(tabs)/search.tsx`, `app/(tabs)/_layout.tsx`, `app/(tabs)/more.tsx`, `app/(tabs)/browse.tsx`, `src/ListScreen.tsx`.
+- ✅ Metro bundle export succeeded (2.05 MB → Hermes bytecode 1.83 MB). qemu-user-static re-installed in container to run x86_64 hermesc on ARM64.
+- ✅ **OTA pushed**: branch `firetv`, runtime 1.0.13, update ID `019f7a97-eb08-7b6e-a65f-65621f2a3017`, group `a08036f4-2fe2-4cee-a558-5e56ff01064d`. Fire TV app will pick up the fix on next launch (force-close + reopen to force an update check).
+
 ## Implemented (IPTV Live TV merge into user players — 2026-07-01)
 - ✅ **IPTV proxy stack** (server.py): three new endpoints — `/api/iptv/p/{kind}/{id}.{ext}` (manifest rewrite), `/api/iptv/pass?k=` (Fernet-encrypted upstream segment passthrough), `/api/iptv/logo?u=` (HTTPS logo proxy). Users never see the IPTV origin or credentials.
 - ✅ **Live TV merge**: `/api/livetv/channels` now returns Plex + IPTV channels in one array, each item tagged `source: "plex" | "iptv"`. IPTV keys use `iptv-live-<streamId>`.

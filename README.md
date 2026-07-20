@@ -1,39 +1,20 @@
-**Welcome to your Base44 project** 
+QuantumTV — Version 1.0.13 (Beta)
+QuantumTV is a modern entertainment application designed to bring channels, shows, series, and movies together in one unified, easy‑to‑navigate experience. Built for speed, simplicity, and cross‑device compatibility, QuantumTV focuses on delivering smooth performance and a clean, intuitive interface.
 
-**About**
+About This Release — v1.0.13 (Beta)
+Version 1.0.13 is a beta update that introduces several improvements focused on UI refinement, performance, and overall usability. This build is part of an ongoing effort to polish the app’s visual layout, streamline navigation, and enhance responsiveness across supported devices.
 
-View and Edit  your app on [Base44.com](http://Base44.com) 
+What’s New in 1.0.13
+UI Enhancements: Updated interface elements for a cleaner, more modern look.
 
-This project contains everything you need to run your app locally.
+Improved Alignment & Organization: Better spacing, layout consistency, and visual structure throughout the app.
 
-**Edit the code in your local development environment**
+Speed Optimizations: Faster loading, smoother transitions, and reduced interface lag.
 
-Any change pushed to the repo will also be reflected in the Base44 Builder.
+General Stability Improvements: Minor fixes and refinements to improve the overall experience.
 
-**Prerequisites:** 
+Development Status
+QuantumTV remains in active development, and this beta release reflects the latest progress toward a more polished and reliable viewing platform. Additional updates will continue to refine the UI, improve performance, and expand functionality.
 
-1. Clone the repository using the project's Git URL 
-2. Navigate to the project directory
-3. Install dependencies: `npm install`
-4. Create an `.env.local` file and set the right environment variables
-
-```
-VITE_BASE44_APP_ID=your_app_id
-VITE_BASE44_APP_BASE_URL=your_backend_url
-
-e.g.
-VITE_BASE44_APP_ID=cbef744a8545c389ef439ea6
-VITE_BASE44_APP_BASE_URL=https://my-to-do-list-81bfaad7.base44.app
-```
-
-Run the app: `npm run dev`
-
-**Publish your changes**
-
-Open [Base44.com](http://Base44.com) and click on Publish.
-
-**Docs & Support**
-
-Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
-
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+Support & Feedback
+Community feedback is extremely valuable during the beta phase. If you’d like to support development, share ideas, or report issues, feel free to get involved. Your input helps shape the future of QuantumTV.

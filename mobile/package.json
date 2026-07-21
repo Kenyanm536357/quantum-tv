@@ -8,7 +8,7 @@
     "android": "expo run:android",
     "web": "expo start --web",
     "build:firetv": "eas build -p android --profile firetv",
-    "postinstall": "bash scripts/fix-hermesc.sh"
+    "postinstall": "node scripts/fix-hermesc-wrapper.js"
   },
   "dependencies": {
     "@expo-google-fonts/outfit": "^0.2.3",

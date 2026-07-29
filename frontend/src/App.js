@@ -2,14 +2,13 @@ import React, { useEffect, useState } from "react";
 import { Routes, Route, Navigate, useLocation, useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  LayoutDashboard, Users, Server, Settings, Activity, LogOut, Tv,
+  LayoutDashboard, Users, Settings, Activity, LogOut, Tv,
   Smartphone, Download, MonitorPlay, Menu, X, AlertTriangle, Cable,
 } from "lucide-react";
 import { IS_PRODUCTION_BACKEND, PRODUCTION_URL } from "./api";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import UsersPage from "./pages/Users";
-import Servers from "./pages/Servers";
 import SettingsPage from "./pages/Settings";
 import ActivityPage from "./pages/Activity";
 import MobilePreview from "./pages/MobilePreview";
@@ -22,7 +21,6 @@ import Iptv from "./pages/Iptv";
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, testid: "nav-dashboard" },
   { to: "/users", label: "Subscribers", icon: Users, testid: "nav-users" },
-  { to: "/servers", label: "Plex Servers", icon: Server, testid: "nav-servers" },
   { to: "/iptv", label: "IPTV Provider", icon: Cable, testid: "nav-iptv" },
   { to: "/preview", label: "App Preview", icon: Smartphone, testid: "nav-preview" },
   { to: "/tv-preview", label: "Fire TV Preview", icon: MonitorPlay, testid: "nav-tv-preview" },
@@ -208,7 +206,6 @@ export default function App() {
       <Route path="/watch/*" element={<Watch />} />
       <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
       <Route path="/users" element={<RequireAuth><UsersPage /></RequireAuth>} />
-      <Route path="/servers" element={<RequireAuth><Servers /></RequireAuth>} />
       <Route path="/activity" element={<RequireAuth><ActivityPage /></RequireAuth>} />
       <Route path="/preview" element={<RequireAuth><MobilePreview /></RequireAuth>} />
       <Route path="/tv-preview" element={<RequireAuth><FireTVPreview /></RequireAuth>} />

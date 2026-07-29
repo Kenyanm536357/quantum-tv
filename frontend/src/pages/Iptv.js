@@ -39,7 +39,7 @@ export default function Iptv() {
       <div>
         <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">External</div>
         <h1 className="font-heading text-2xl sm:text-3xl font-bold mt-1">IPTV Provider</h1>
-        <p className="text-zinc-400 text-sm mt-2">Connect any Xtream Codes line to stream live channels + movies in the Quantum TV apps alongside Plex.</p>
+        <p className="text-zinc-400 text-sm mt-2">Connect any Xtream Codes line to stream live channels and movies in the Quantum TV apps.</p>
       </div>
 
       {cfg?.configured ? (
@@ -73,7 +73,7 @@ export default function Iptv() {
             <ChannelCount kind="vod" />
           </div>
           <div className="text-xs text-zinc-500">
-            Channels are merged into <span className="text-cyan-300">/watch/live</span> for end users. Stream URLs are server-built so subscriber credentials never leak to the client.
+            Stream URLs are server-proxied so subscriber credentials never reach the client.
           </div>
         </div>
       ) : (

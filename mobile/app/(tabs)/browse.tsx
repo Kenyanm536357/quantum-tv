@@ -20,6 +20,8 @@ type BrowseItem = {
   type?: string;
   number?: number | string;
   source?: string;
+  genre?: string;
+  category_name?: string;
 };
 
 type BrowseRow = { id: string; title: string; kind: "poster" | "live"; items: BrowseItem[] };
@@ -193,11 +195,12 @@ export default function Browse() {
   const { requiresPin } = useParentalGate();
 
   const rawRows = data?.rows || [];
-  // When parental lock is active, strip adult rows and adult items within rows
+  // When parental lock is active, strip adult rows and adult items within rows.
+  // Items use genre/category_name (now included in backend response) rather than title.
   const rows = requiresPin
     ? rawRows
         .filter((r) => !isAdultCategory(r.title, r.id))
-        .map((r) => ({ ...r, items: r.items.filter((item) => !isAdultCategory(item.title, "")) }))
+        .map((r) => ({ ...r, items: r.items.filter((item) => !isAdultCategory(item.genre, item.category_name)) }))
         .filter((r) => r.items.length > 0)
     : rawRows;
   const featured = rows.find((r) => r.id === "continue")?.items?.[0] || rows.find((r) => r.id === "recent")?.items?.[0] || rows.find((r) => r.kind === "poster")?.items?.[0];

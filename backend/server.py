@@ -488,7 +488,7 @@ async def iptv_vod_streams(category_id: Optional[str] = None, _: dict = Depends(
     raw = await _iptv_get("get_vod_streams", params)
     cfg = await db.settings.find_one({"id": "iptv_config"})
     out = []
-    for s in (raw or [])[:500]:  # cap for first page
+    for s in (raw or []):
         ext = s.get("container_extension") or "mp4"
         thumb_raw = s.get("stream_icon")
         out.append({
@@ -503,6 +503,30 @@ async def iptv_vod_streams(category_id: Optional[str] = None, _: dict = Depends(
             "category_id": s.get("category_id"),
             "source": "iptv",
             "stream_url": _iptv_stream_url(cfg, "movie", s.get("stream_id"), ext),
+        })
+    return {"items": out, "total": len(out)}
+
+
+@api.get("/iptv/series/streams")
+async def iptv_series_streams(category_id: Optional[str] = None, _: dict = Depends(get_current_user)):
+    """Return all IPTV TV series from the Xtream Codes provider."""
+    params = {"category_id": category_id} if category_id else None
+    raw = await _iptv_get("get_series", params)
+    out = []
+    for s in (raw or []):
+        thumb_raw = s.get("cover")
+        release = str(s.get("release_date") or "")
+        out.append({
+            "rating_key": f"iptv-series-{s.get('series_id')}",
+            "stream_id": s.get("series_id"),
+            "title": s.get("name"),
+            "type": "show",
+            "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
+            "year": release[:4] if release else None,
+            "rating": s.get("rating"),
+            "audience_rating": s.get("rating"),
+            "category_id": s.get("category_id"),
+            "source": "iptv",
         })
     return {"items": out, "total": len(out)}
 
@@ -1265,38 +1289,94 @@ async def me(user: dict = Depends(get_current_user)):
 async def _iptv_item_meta(rating_key: str, user: dict) -> Optional[dict]:
     """Fetch IPTV metadata for an iptv-<kind>-<id> rating key.
 
-    Note: fetches the full stream list each call. Callers that need multiple
-    items (e.g. _enrich_keys) should consider batching to reduce redundant
-    network requests in the future.
+    Supported key formats:
+      iptv-live-{stream_id}
+      iptv-movie-{stream_id}
+      iptv-series-{series_id}
+      iptv-season-{series_id}:{season_num}   (for children listing — not played directly)
+      iptv-ep-{episode_id}-{ext}             (individual series episode)
     """
     if not str(rating_key).startswith("iptv-"):
         return None
     try:
-        _, kind, sid = str(rating_key).split("-", 2)
-        sid_int = int(sid)
-    except (ValueError, TypeError):
+        _, kind, rest = str(rating_key).split("-", 2)
+    except ValueError:
         return None
-    try:
-        action = "get_live_streams" if kind == "live" else "get_vod_streams"
-        raw = await _iptv_get(action)
-        hit = next((s for s in (raw or []) if int(s.get("stream_id", -1)) == sid_int), None)
-    except Exception:
-        hit = None
-    title = (hit or {}).get("name") or ("Live Channel" if kind == "live" else "Movie")
-    thumb_raw = (hit or {}).get("stream_icon")
-    thumb = f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None
-    return {
-        "rating_key": rating_key,
-        "title": title,
-        "type": "live" if kind == "live" else "movie",
-        "thumb": thumb,
-        "art": None,
-        "year": (hit or {}).get("year"),
-        "summary": None,
-        "audience_rating": (hit or {}).get("rating"),
-        "in_watchlist": str(rating_key) in [str(x) for x in (user.get("watchlist") or [])],
-        "in_favorites": str(rating_key) in [str(x) for x in (user.get("favorites") or [])],
-    }
+
+    in_wl = str(rating_key) in [str(x) for x in (user.get("watchlist") or [])]
+    in_fav = str(rating_key) in [str(x) for x in (user.get("favorites") or [])]
+
+    if kind in ("live", "movie"):
+        try:
+            sid_int = int(rest)
+        except (ValueError, TypeError):
+            return None
+        try:
+            action = "get_live_streams" if kind == "live" else "get_vod_streams"
+            raw = await _iptv_get(action)
+            hit = next((s for s in (raw or []) if int(s.get("stream_id", -1)) == sid_int), None)
+        except Exception:
+            hit = None
+        title = (hit or {}).get("name") or ("Live Channel" if kind == "live" else "Movie")
+        thumb_raw = (hit or {}).get("stream_icon")
+        thumb = f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None
+        return {
+            "rating_key": rating_key,
+            "title": title,
+            "type": "live" if kind == "live" else "movie",
+            "thumb": thumb,
+            "art": None,
+            "year": (hit or {}).get("year"),
+            "summary": None,
+            "audience_rating": (hit or {}).get("rating"),
+            "in_watchlist": in_wl,
+            "in_favorites": in_fav,
+        }
+
+    if kind == "series":
+        try:
+            sid_int = int(rest)
+        except (ValueError, TypeError):
+            return None
+        try:
+            raw = await _iptv_get("get_series")
+            hit = next((s for s in (raw or []) if int(s.get("series_id", -1)) == sid_int), None)
+        except Exception:
+            hit = None
+        title = (hit or {}).get("name") or "TV Show"
+        thumb_raw = (hit or {}).get("cover")
+        thumb = f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None
+        release = str((hit or {}).get("release_date") or "")
+        return {
+            "rating_key": rating_key,
+            "title": title,
+            "type": "show",
+            "thumb": thumb,
+            "art": thumb,
+            "year": release[:4] if release else None,
+            "summary": (hit or {}).get("plot"),
+            "audience_rating": (hit or {}).get("rating"),
+            "in_watchlist": in_wl,
+            "in_favorites": in_fav,
+        }
+
+    if kind == "ep":
+        # iptv-ep-{episode_id}-{ext} — lightweight stub for player title display
+        ep_parts = rest.rsplit("-", 1)
+        return {
+            "rating_key": rating_key,
+            "title": "Episode",
+            "type": "episode",
+            "thumb": None,
+            "art": None,
+            "year": None,
+            "summary": None,
+            "audience_rating": None,
+            "in_watchlist": in_wl,
+            "in_favorites": in_fav,
+        }
+
+    return None
 
 
 @api.get("/metadata/{rating_key}")
@@ -1309,7 +1389,71 @@ async def metadata_detail(rating_key: str, user: dict = Depends(get_current_user
 
 @api.get("/metadata/{rating_key}/children")
 async def metadata_children(rating_key: str, user: dict = Depends(get_current_user)):
-    # IPTV does not expose a children hierarchy — return empty list.
+    """Return seasons for a series, or episodes for a season."""
+    if not str(rating_key).startswith("iptv-"):
+        return {"items": []}
+    try:
+        _, kind, rest = str(rating_key).split("-", 2)
+    except ValueError:
+        return {"items": []}
+
+    if kind == "series":
+        # Return all seasons for this series
+        try:
+            series_id = int(rest)
+            info = await _iptv_get("get_series_info", {"series_id": series_id})
+            episodes_by_season: dict = (info or {}).get("episodes", {}) or {}
+            seasons = []
+            for season_num in sorted(episodes_by_season.keys(), key=lambda x: int(x) if str(x).isdigit() else 0):
+                eps = episodes_by_season[season_num]
+                seasons.append({
+                    "rating_key": f"iptv-season-{series_id}:{season_num}",
+                    "title": f"Season {season_num}",
+                    "type": "season",
+                    "index": int(season_num) if str(season_num).isdigit() else 0,
+                    "leaf_count": len(eps),
+                    "parent_index": None,
+                    "duration": None,
+                    "view_offset": None,
+                })
+            return {"items": seasons}
+        except Exception as e:
+            log.warning("series_info fetch failed for %s: %s", rating_key, e)
+            return {"items": []}
+
+    if kind == "season":
+        # rest = "{series_id}:{season_num}"
+        try:
+            series_id_str, season_num = rest.split(":", 1)
+            series_id = int(series_id_str)
+            info = await _iptv_get("get_series_info", {"series_id": series_id})
+            episodes_by_season: dict = (info or {}).get("episodes", {}) or {}
+            eps = episodes_by_season.get(season_num, [])
+            items = []
+            for ep in eps:
+                ext = (ep.get("container_extension") or "mp4").strip(".").lower()
+                ep_id = ep.get("id")
+                ep_num = ep.get("episode_num") or 0
+                ep_title = (ep.get("title") or "").strip() or f"Episode {ep_num}"
+                ep_info = ep.get("info") or {}
+                thumb_raw = ep_info.get("movie_image") or ep_info.get("cover_big") or ""
+                items.append({
+                    "rating_key": f"iptv-ep-{ep_id}-{ext}",
+                    "title": ep_title,
+                    "type": "episode",
+                    "index": ep_num,
+                    "parent_index": int(season_num) if str(season_num).isdigit() else 0,
+                    "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
+                    "duration": ep_info.get("duration_secs"),
+                    "view_offset": None,
+                    "leaf_count": None,
+                })
+            return {"items": items}
+        except Exception as e:
+            log.warning("season episodes fetch failed for %s: %s", rating_key, e)
+            return {"items": []}
+
+    # live / movie / ep have no children
     return {"items": []}
 
 
@@ -1370,6 +1514,8 @@ async def browse_rows(user: dict = Depends(get_current_user), per_row: int = 20,
                         "type": "live",
                         "number": c.get("number"),
                         "source": c.get("source"),
+                        "genre": c.get("genre"),
+                        "category_name": c.get("category_name"),
                     }
                     for c in top_live
                 ],
@@ -1394,28 +1540,45 @@ async def browse_rows(user: dict = Depends(get_current_user), per_row: int = 20,
 
 
 @api.get("/search")
-async def search(q: str, user: dict = Depends(get_current_user), limit: int = 30):
-    """Search IPTV live channels and VOD by title."""
+async def search(q: str, user: dict = Depends(get_current_user), limit: int = 50):
+    """Search IPTV live channels, VOD movies, and series by title."""
     needle = (q or "").strip().lower()
     if not needle:
         return {"items": []}
 
     results = []
+
+    # Live channels (include genre/category_name for parental filtering)
     try:
         raw_live = await _iptv_get("get_live_streams")
+        cat_by_id: dict[str, dict] = {}
+        try:
+            raw_cats = await _iptv_get("get_live_categories")
+            for c in raw_cats or []:
+                cid = str(c.get("category_id") or "")
+                name = str(c.get("category_name") or "").strip()
+                cls = _classify_live_category(name)
+                cat_by_id[cid] = {"name": name, "genre": cls["genre"]}
+        except Exception:
+            pass
         for s in (raw_live or []):
             if needle in (s.get("name") or "").lower():
                 thumb_raw = s.get("stream_icon")
+                cid = str(s.get("category_id") or "")
+                cat = cat_by_id.get(cid) or {}
                 results.append({
                     "rating_key": f"iptv-live-{s.get('stream_id')}",
                     "title": s.get("name"),
                     "type": "live",
                     "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
                     "year": None,
+                    "genre": cat.get("genre"),
+                    "category_name": cat.get("name"),
                 })
     except Exception:
         pass
 
+    # VOD movies
     try:
         raw_vod = await _iptv_get("get_vod_streams")
         for s in (raw_vod or []):
@@ -1428,6 +1591,27 @@ async def search(q: str, user: dict = Depends(get_current_user), limit: int = 30
                     "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
                     "year": s.get("year"),
                     "audience_rating": s.get("rating"),
+                    "genre": s.get("genre"),
+                    "category_name": None,
+                })
+    except Exception:
+        pass
+
+    # Series
+    try:
+        raw_series = await _iptv_get("get_series")
+        for s in (raw_series or []):
+            if needle in (s.get("name") or "").lower():
+                thumb_raw = s.get("cover")
+                results.append({
+                    "rating_key": f"iptv-series-{s.get('series_id')}",
+                    "title": s.get("name"),
+                    "type": "show",
+                    "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
+                    "year": str(s.get("release_date") or "")[:4] or None,
+                    "audience_rating": s.get("rating"),
+                    "genre": s.get("genre"),
+                    "category_name": None,
                 })
     except Exception:
         pass
@@ -1638,13 +1822,23 @@ async def stream_url(rating_key: str, request: Request, user: dict = Depends(get
     if not str(rating_key).startswith("iptv-"):
         raise HTTPException(404, "Stream not found")
     try:
-        _, kind, sid = rating_key.split("-", 2)
+        _, kind, rest = rating_key.split("-", 2)
     except ValueError:
         raise HTTPException(400, "bad iptv key")
-    if kind not in {"live", "movie", "series"}:
+
+    if kind == "ep":
+        # iptv-ep-{episode_id}-{ext}  e.g. iptv-ep-98765-mp4
+        ep_parts = rest.rsplit("-", 1)
+        if len(ep_parts) != 2:
+            raise HTTPException(400, "bad episode key")
+        sid, ext = ep_parts
+        proxy_kind = "series"
+    elif kind in {"live", "movie", "series"}:
+        sid = rest
+        ext = "m3u8" if kind == "live" else "mp4"
+        proxy_kind = kind
+    else:
         raise HTTPException(400, "bad iptv kind")
-    # Live → m3u8 for HLS.js / expo-video; VOD → mp4 direct
-    ext = "m3u8" if kind == "live" else "mp4"
     stream_token = create_jwt(
         {"sub": user["id"], "role": "user", "username": user.get("username")},
         expires_hours=6,
@@ -1652,7 +1846,7 @@ async def stream_url(rating_key: str, request: Request, user: dict = Depends(get
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
     origin = f"{proto}://{host}"
-    url = f"{origin}/api/iptv/p/{kind}/{sid}.{ext}?t={quote(stream_token)}"
+    url = f"{origin}/api/iptv/p/{proxy_kind}/{sid}.{ext}?t={quote(stream_token)}"
     return {"url": url, "type": "hls" if kind == "live" else "direct"}
 
 

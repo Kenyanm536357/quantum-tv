@@ -190,7 +190,12 @@ export default function LiveTV() {
   const [filterOpen, setFilterOpen] = useState(false);
 
   const { list, counts, countries, genres } = useMemo(() => {
-    const all: Channel[] = data?.channels || [];
+    const allChannels: Channel[] = data?.channels || [];
+    // When parental lock is active, fully hide adult channels so they don't
+    // appear in the guide list, counts, or filter dropdowns.
+    const all = requiresPin
+      ? allChannels.filter((c) => !isAdultCategory(c.genre, c.category_name))
+      : allChannels;
     const countryCounts = new Map<string, number>();
     const genreCounts = new Map<string, number>();
     for (const c of all) {
@@ -205,7 +210,7 @@ export default function LiveTV() {
     if (country !== "All") filtered = filtered.filter((x) => (x.country || "Other") === country);
     if (genre !== "All") filtered = filtered.filter((x) => (x.genre || "General") === genre);
     return { list: filtered.slice(0, MAX_CHANNELS), counts: { all: all.length }, countries, genres };
-  }, [data, country, genre]);
+  }, [data, country, genre, requiresPin]);
 
   // ---- Time slots (updates every minute) ----
   // Anchor at the last :00 or :30 boundary; render VISIBLE_SLOTS slots

@@ -8,6 +8,7 @@ import { useRouter } from "expo-router";
 import client, { BACKEND, colors } from "../../src/api";
 import BrandBackground from "../../src/BrandBackground";
 import { SAFE, SIZES, IS_TV, s, vs, ms, FOCUSED_CARD } from "../../src/responsive";
+import { useParentalGate, isAdultCategory } from "../../src/useParentalGate";
 
 type BrowseItem = {
   rating_key: string;
@@ -189,7 +190,16 @@ export default function Browse() {
     queryKey: ["browse-rows"],
     queryFn: async () => (await client.get("/browse/rows?per_row=20")).data as { rows: BrowseRow[] },
   });
-  const rows = data?.rows || [];
+  const { requiresPin } = useParentalGate();
+
+  const rawRows = data?.rows || [];
+  // When parental lock is active, strip adult rows and adult items within rows
+  const rows = requiresPin
+    ? rawRows
+        .filter((r) => !isAdultCategory(r.title, r.id))
+        .map((r) => ({ ...r, items: r.items.filter((item) => !isAdultCategory(item.title, "")) }))
+        .filter((r) => r.items.length > 0)
+    : rawRows;
   const featured = rows.find((r) => r.id === "continue")?.items?.[0] || rows.find((r) => r.id === "recent")?.items?.[0] || rows.find((r) => r.kind === "poster")?.items?.[0];
   // Fallback featured: if only Live TV is populated, use its top item
   const heroItem = featured || rows[0]?.items?.[0];

@@ -9,6 +9,7 @@ import client, { BACKEND, colors } from "../../src/api";
 import BrandBackground from "../../src/BrandBackground";
 import TVTextInput from "../../src/TVTextInput";
 import { IS_TV, SAFE, SIZES, vs, ms, s as scale } from "../../src/responsive";
+import { useParentalGate, isAdultCategory } from "../../src/useParentalGate";
 
 export default function Search() {
   const router = useRouter();
@@ -18,6 +19,13 @@ export default function Search() {
     queryKey: ["search", q],
     queryFn: async () => (await client.get(`/search?q=${encodeURIComponent(q)}`)).data,
   });
+  const { requiresPin } = useParentalGate();
+
+  const allItems: any[] = data?.items || [];
+  // When parental lock is active, hide adult content from search results
+  const items = requiresPin
+    ? allItems.filter((item) => !isAdultCategory(item.genre, item.category_name ?? item.category))
+    : allItems;
 
   const openItem = (item: any) => {
     const isShow = (item.type || "").toLowerCase() === "show";
@@ -60,7 +68,7 @@ export default function Search() {
         {isFetching && <ActivityIndicator color={colors.cyan} style={{ marginTop: 24 }} />}
         <FlatList
           contentContainerStyle={{ paddingHorizontal: SAFE.left, paddingBottom: SIZES.tabBarH + vs(40), paddingTop: vs(20) }}
-          data={data?.items || []}
+          data={items}
           keyExtractor={(it) => String(it.rating_key)}
           renderItem={({ item }) => (
             <Pressable

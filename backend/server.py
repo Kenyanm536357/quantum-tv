@@ -1176,22 +1176,68 @@ async def admin_activity(admin: dict = Depends(get_current_admin), limit: int = 
 class SettingsBody(BaseModel):
     service_name: Optional[str] = None
     motd: Optional[str] = None
+    parental_pin: Optional[str] = None          # "1234" to set, "" to clear
+    parental_pin_enabled: Optional[bool] = None
 
 
 @api.get("/admin/settings")
 async def admin_get_settings(admin: dict = Depends(get_current_admin)):
     s = await db.settings.find_one({"id": "global"}) or {}
-    return {"service_name": s.get("service_name", "Quantum TV"), "motd": s.get("motd", "")}
+    return {
+        "service_name": s.get("service_name", "Quantum TV"),
+        "motd": s.get("motd", ""),
+        "parental_pin_enabled": s.get("parental_pin_enabled", False),
+        "parental_pin_set": bool(s.get("parental_pin_hash")),
+    }
 
 
 @api.put("/admin/settings")
 async def admin_update_settings(body: SettingsBody, admin: dict = Depends(get_current_admin)):
-    update = {k: v for k, v in body.model_dump().items() if v is not None}
+    update: dict = {}
+    if body.service_name is not None:
+        update["service_name"] = body.service_name
+    if body.motd is not None:
+        update["motd"] = body.motd
+    if body.parental_pin_enabled is not None:
+        update["parental_pin_enabled"] = body.parental_pin_enabled
+    if body.parental_pin is not None:
+        if body.parental_pin == "":
+            update["parental_pin_hash"] = None
+        elif len(body.parental_pin) == 4 and body.parental_pin.isdigit():
+            update["parental_pin_hash"] = hash_password(body.parental_pin)
+        else:
+            raise HTTPException(400, "PIN must be exactly 4 digits")
     if not update:
         return {"ok": True}
     update["updated_at"] = now_iso()
     await db.settings.update_one({"id": "global"}, {"$set": update, "$setOnInsert": {"id": "global"}}, upsert=True)
     return {"ok": True}
+
+
+# ---- Parental controls (user-accessible) ----
+
+class PinVerifyBody(BaseModel):
+    pin: str
+
+
+@api.get("/settings/parental")
+async def get_parental_settings(user: dict = Depends(get_current_user)):
+    """Return whether parental lock is enabled (no sensitive data exposed)."""
+    s = await db.settings.find_one({"id": "global"}) or {}
+    return {
+        "enabled": s.get("parental_pin_enabled", False),
+        "pin_set": bool(s.get("parental_pin_hash")),
+    }
+
+
+@api.post("/settings/parental/verify")
+async def verify_parental_pin(body: PinVerifyBody, user: dict = Depends(get_current_user)):
+    """Verify a PIN against the stored hash. Returns {valid: bool}."""
+    s = await db.settings.find_one({"id": "global"}) or {}
+    pin_hash = s.get("parental_pin_hash")
+    if not pin_hash:
+        return {"valid": True}
+    return {"valid": verify_password(body.pin, pin_hash)}
 
 
 @api.get("/admin/servers")

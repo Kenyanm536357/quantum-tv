@@ -7,13 +7,11 @@ import { useQuery } from "@tanstack/react-query";
 import client, { colors } from "../../src/api";
 import BrandBackground from "../../src/BrandBackground";
 import { SAFE, SIZES, IS_TV, vs, ms } from "../../src/responsive";
+import { PARENTAL_UNLOCKED_KEY, PARENTAL_UNLOCK_TTL } from "../../src/useParentalGate";
 
 // ============================================================
 // Settings screen — account info, sign out, parental controls
 // ============================================================
-
-const PARENTAL_UNLOCKED_KEY = "qtv_parental_unlocked";
-const PARENTAL_UNLOCK_TTL = 15 * 60 * 1000; // 15 minutes
 
 function PinModal({
   visible,

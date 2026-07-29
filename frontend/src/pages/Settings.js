@@ -192,7 +192,7 @@ export default function SettingsPage() {
           </div>
           {pinMsg && <p className="text-xs mt-2 text-cyan-400">{pinMsg}</p>}
           <p className="text-xs text-zinc-500 mt-2">
-            This PIN will be required on the mobile app to access channels categorised as adult content.
+            This PIN will be required on the mobile app to access channels categorized as adult content.
           </p>
         </div>
       </div>

@@ -191,7 +191,7 @@ export default function Browse() {
   });
   const rows = data?.rows || [];
   const featured = rows.find((r) => r.id === "continue")?.items?.[0] || rows.find((r) => r.id === "recent")?.items?.[0] || rows.find((r) => r.kind === "poster")?.items?.[0];
-  // Fallback featured: if only Live TV is populated (no Plex), use its top item
+  // Fallback featured: if only Live TV is populated, use its top item
   const heroItem = featured || rows[0]?.items?.[0];
 
   const refresh = async () => {
@@ -226,7 +226,7 @@ export default function Browse() {
           <View style={{ alignItems: "center", marginTop: vs(60), paddingHorizontal: SAFE.left }}>
             <Ionicons name="cloud-offline-outline" size={40} color={colors.zinc500} />
             <Text style={{ color: colors.zinc400, marginTop: 10, textAlign: "center", fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall }}>
-              No content yet. Ask the admin to connect a Plex server or IPTV line.
+              No content yet. Ask the admin to connect an IPTV line.
             </Text>
           </View>
         ) : (

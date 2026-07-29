@@ -79,7 +79,7 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
         <View style={{ alignItems: "center", padding: 40 }}>
           <Ionicons name="alert-circle-outline" size={ms(36)} color={colors.zinc500} />
           <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", marginTop: 10, textAlign: "center", fontSize: SIZES.fontSmall }}>
-            No {label.toLowerCase()} library found on your Plex server.
+            No {label.toLowerCase()} library available.
           </Text>
         </View>
       )}

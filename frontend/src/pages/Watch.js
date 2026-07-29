@@ -417,7 +417,7 @@ function LiveTV() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const [sort, setSort] = React.useState("channel:asc");
-  const [source, setSource] = React.useState("all"); // all | plex | iptv
+  const [source, setSource] = React.useState("all"); // all | iptv
   const [q, setQ] = React.useState("");
   const { data, isLoading } = useQuery({
     queryKey: ["live"],
@@ -484,7 +484,6 @@ function LiveTV() {
     const list = data?.channels || [];
     return {
       all: list.length,
-      plex: list.filter((c) => c.source === "plex").length,
       iptv: list.filter((c) => c.source === "iptv").length,
     };
   }, [data]);
@@ -515,11 +514,10 @@ function LiveTV() {
       </div>
 
       {/* Source filter chips + search */}
-      {(counts.plex > 0 || counts.iptv > 0) && (
+      {counts.iptv > 0 && (
         <div className="mb-4 sm:mb-5 flex items-center gap-2 flex-wrap">
           {[
             { id: "all", label: `All (${counts.all.toLocaleString()})` },
-            counts.plex > 0 && { id: "plex", label: `Plex (${counts.plex.toLocaleString()})` },
             counts.iptv > 0 && { id: "iptv", label: `IPTV (${counts.iptv.toLocaleString()})` },
           ].filter(Boolean).map((opt) => {
             const active = source === opt.id;

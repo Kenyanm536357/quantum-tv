@@ -29,7 +29,7 @@ type Channel = {
   original_title?: string;
   number?: number | string;
   logo?: string;
-  source?: "plex" | "iptv";
+  source?: "iptv";
   category_id?: string | number;
   category_name?: string;
   country?: string;
@@ -394,7 +394,7 @@ function HeroPanel({ channel, program }: { channel: Channel | null; program: Pro
           <Text style={styles.heroDesc} numberOfLines={3}>{program.description}</Text>
         ) : (
           <Text style={[styles.heroDesc, { color: colors.zinc500 }]} numberOfLines={2}>
-            {channel?.source === "iptv" ? "No guide data available for this channel." : "Plex Live — press Select to tune in."}
+            No guide data available for this channel.
           </Text>
         )}
       </View>
@@ -461,9 +461,9 @@ function GuideRow({
         </View>
       </View>
 
-      {/* Right: program blocks OR a "select to tune" placeholder */}
+      {/* Right: program blocks OR a "no guide data" placeholder */}
       <View style={styles.timeline}>
-        {isIptv && visiblePrograms.length === 0 ? (
+        {visiblePrograms.length === 0 ? (
           <NoDataBlock
             channel={channel}
             timelineStart={timelineStart}
@@ -473,18 +473,6 @@ function GuideRow({
             onToggleFav={onToggleFav}
             onFocus={() => { onFocusChannel(); onFocusProgram(null); }}
             hasPreferredFocus={hasPreferredFocus}
-          />
-        ) : !isIptv ? (
-          <NoDataBlock
-            channel={channel}
-            timelineStart={timelineStart}
-            timelineEnd={timelineEnd}
-            isLoading={false}
-            onOpen={onOpen}
-            onToggleFav={onToggleFav}
-            onFocus={() => { onFocusChannel(); onFocusProgram(null); }}
-            hasPreferredFocus={hasPreferredFocus}
-            plexLabel
           />
         ) : (
           visiblePrograms.map((p, i) => (
@@ -542,9 +530,9 @@ function ProgramBlock({
   );
 }
 
-// Placeholder block used when a channel has no EPG (or is Plex Live).
+// Placeholder block used when a channel has no EPG data.
 function NoDataBlock({
-  channel, timelineStart, timelineEnd, isLoading, onOpen, onToggleFav, onFocus, hasPreferredFocus, plexLabel,
+  channel, timelineStart, timelineEnd, isLoading, onOpen, onToggleFav, onFocus, hasPreferredFocus,
 }: {
   channel: Channel;
   timelineStart: number; timelineEnd: number;
@@ -553,7 +541,6 @@ function NoDataBlock({
   onToggleFav: (c: Channel) => void;
   onFocus: () => void;
   hasPreferredFocus?: boolean;
-  plexLabel?: boolean;
 }) {
   const width = Math.round(((timelineEnd - timelineStart) / 60) * PX_PER_MIN);
   return (
@@ -570,7 +557,7 @@ function NoDataBlock({
       ]}
     >
       <Text style={[styles.progTitle, { color: colors.zinc500 }]} numberOfLines={1}>
-        {isLoading ? "Loading guide…" : plexLabel ? "Plex Live — Select to tune in" : "No guide data"}
+        {isLoading ? "Loading guide…" : "No guide data"}
       </Text>
     </Pressable>
   );

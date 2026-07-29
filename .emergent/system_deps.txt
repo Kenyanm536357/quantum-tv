@@ -1,1 +1,2 @@
 cron=3.0pl1-162
+qemu-user-static=1:7.2+dfsg-7+deb12u18+b3

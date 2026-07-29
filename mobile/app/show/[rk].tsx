@@ -23,7 +23,7 @@ type MetaItem = {
   view_offset?: number;
 };
 
-// A Plex show has two levels of children:
+// A show has two levels of children:
 //   show -> seasons -> episodes
 // We fetch seasons on mount, then lazily fetch episodes for whichever
 // season the user has selected. This keeps the initial payload small

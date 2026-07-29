@@ -26,6 +26,18 @@
 - ✅ Metro bundle export succeeded (2.05 MB → Hermes bytecode 1.83 MB). qemu-user-static re-installed in container to run x86_64 hermesc on ARM64.
 - ✅ **OTA pushed**: branch `firetv`, runtime 1.0.13, update ID `019f7a97-eb08-7b6e-a65f-65621f2a3017`, group `a08036f4-2fe2-4cee-a558-5e56ff01064d`. Fire TV app will pick up the fix on next launch (force-close + reopen to force an update check).
 
+## 2026-02 — Plex Removal Cleanup + Prod Redeploy
+- Merged the GitHub Copilot PR "video-and-movies-from-xtreme-code" (deleted 973 lines / kept 190 — Plex integration removed from backend and web admin).
+- ✅ Deleted orphaned `frontend/src/pages/Servers.js` (76 lines) — its backend routes are gone.
+- ✅ Cleaned `frontend/src/pages/Watch.js` — removed the `Plex` source filter chip and the `counts.plex` calculation.
+- ✅ Cleaned `mobile/app/(tabs)/livetv.tsx` — dropped `plexLabel` prop from `NoDataBlock`/`GuideRow`, removed the dead "Plex Live — press Select to tune in" branch, tightened `source?: "iptv"` type.
+- ✅ Rewrote `mobile/app/(tabs)/more.tsx` — removed the "Plex Servers" section, the `useQuery(["servers"])`, and the `selectServer()` handler. Renamed "Disconnect" → "Sign Out".
+- ✅ Cleaned `mobile/app/(tabs)/browse.tsx`, `mobile/src/LibraryGrid.tsx`, `mobile/app/show/[rk].tsx` — removed the last stale Plex mentions in labels/comments.
+- ✅ Trimmed `backend/.env` — removed `PLEX_PRODUCT`, `PLEX_VERSION`, `PLEX_PLATFORM`, `PLEX_CLIENT_IDENTIFIER`.
+- ✅ Backend smoke test: `/api/admin/login` returns 200; `/api/admin/stats` returns 200; `/api/admin/plex/*` returns 404 (confirmed removal).
+- ✅ **Mobile OTA pushed**: branch `firetv`, runtime 1.0.13, update ID `019faba5-f413-752e-9b8b-430c6328e7fb`, group `cd3f0174-db1d-4506-a354-65004f5587d0`.
+- ✅ **Production deploy dispatched** to deployer agent (job `d2e14d17-6b11-4163-bb6a-1f196bc41173`) — https://quantumtv.app.
+
 ## 2026-02 — Updates Toast + Live TV Polish (OTA)
 - ✅ **`/app/mobile/src/UpdatesToast.tsx`**: new component wired into `app/_layout.tsx`. On mount + on `AppState` "active", it silently calls `Updates.checkForUpdateAsync()`. When an OTA is available it fades in a cyan banner top-right with "Install" (calls `fetchUpdateAsync` + `reloadAsync`) and "Later" buttons. TV-focusable, no-op in dev.
 - ✅ **Live TV left column overhaul** (`livetv.tsx`): removed the always-visible heart-outline icon that was crowding the channel number. Now shows the channel number as a bold pill next to a larger logo box; heart appears only when favorited as a small magenta corner badge on the logo (no more visual interference with channel names/numbers).

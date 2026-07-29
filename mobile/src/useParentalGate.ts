@@ -17,33 +17,41 @@ import client from "./api";
 
 export const PARENTAL_UNLOCKED_KEY = "qtv_parental_unlocked";
 export const PARENTAL_UNLOCK_TTL = 15 * 60 * 1000; // 15 minutes
+/** Device preference: adult channels are OFF by default until the user enables them. */
+export const ADULT_CHANNELS_ENABLED_KEY = "qtv_adult_channels_enabled";
 
 /** Returns true if a channel genre/category string looks like adult content. */
-export function isAdultCategory(genre?: string, category?: string): boolean {
-  const haystack = `${genre || ""} ${category || ""}`.toLowerCase();
+export function isAdultCategory(genre?: string, category?: string, title?: string): boolean {
+  const haystack = `${genre || ""} ${category || ""} ${title || ""}`.toLowerCase();
   return (
     haystack.includes("adult") ||
     haystack.includes("xxx") ||
     haystack.includes("18+") ||
     haystack.includes("erotic") ||
-    haystack.includes("x-rated")
+    haystack.includes("x-rated") ||
+    haystack.includes("porn")
   );
 }
 
 export function useParentalGate() {
   const [sessionUnlocked, setSessionUnlocked] = useState(false);
+  const [adultChannelsEnabled, setAdultChannelsEnabledState] = useState(false);
   const checkedRef = useRef(false);
 
-  // Check stored unlock timestamp on mount
+  // Check stored unlock timestamp + adult visibility preference on mount
   useEffect(() => {
     if (checkedRef.current) return;
     checkedRef.current = true;
-    AsyncStorage.getItem(PARENTAL_UNLOCKED_KEY).then((val) => {
-      if (val) {
-        const ts = parseInt(val, 10);
+    AsyncStorage.multiGet([PARENTAL_UNLOCKED_KEY, ADULT_CHANNELS_ENABLED_KEY]).then((pairs) => {
+      const map = Object.fromEntries(pairs);
+      const unlockVal = map[PARENTAL_UNLOCKED_KEY];
+      if (unlockVal) {
+        const ts = parseInt(unlockVal, 10);
         if (Date.now() - ts < PARENTAL_UNLOCK_TTL) setSessionUnlocked(true);
         else AsyncStorage.removeItem(PARENTAL_UNLOCKED_KEY);
       }
+      // Default OFF unless explicitly set to "1"
+      setAdultChannelsEnabledState(map[ADULT_CHANNELS_ENABLED_KEY] === "1");
     });
   }, []);
 
@@ -56,12 +64,31 @@ export function useParentalGate() {
 
   const enabled = parentalQ.data?.enabled ?? false;
   const pinSet = parentalQ.data?.pin_set ?? false;
-  const requiresPin = enabled && pinSet && !sessionUnlocked;
+  // Always require a gate for adult content unless the user has enabled adult
+  // channels on this device AND (if admin PIN lock is on) the session is unlocked.
+  const requiresPin = !adultChannelsEnabled || (enabled && pinSet && !sessionUnlocked);
 
   const setUnlocked = useCallback(async () => {
     await AsyncStorage.setItem(PARENTAL_UNLOCKED_KEY, String(Date.now()));
     setSessionUnlocked(true);
   }, []);
 
-  return { requiresPin, sessionUnlocked, setUnlocked };
+  const setAdultChannelsEnabled = useCallback(async (on: boolean) => {
+    await AsyncStorage.setItem(ADULT_CHANNELS_ENABLED_KEY, on ? "1" : "0");
+    setAdultChannelsEnabledState(on);
+    if (!on) {
+      await AsyncStorage.removeItem(PARENTAL_UNLOCKED_KEY);
+      setSessionUnlocked(false);
+    }
+  }, []);
+
+  return {
+    requiresPin,
+    sessionUnlocked,
+    setUnlocked,
+    adultChannelsEnabled,
+    setAdultChannelsEnabled,
+    pinLockEnabled: enabled,
+    pinSet,
+  };
 }

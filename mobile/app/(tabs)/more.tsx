@@ -1,16 +1,21 @@
-import { useEffect, useState, useCallback } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, Alert, Image, Modal, TextInput, ActivityIndicator } from "react-native";
+import React, { useEffect, useState, useCallback, type ReactNode } from "react";
+import { View, Text, Pressable, StyleSheet, ScrollView, Alert, Image, Modal, ActivityIndicator } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import client, { colors } from "../../src/api";
 import BrandBackground from "../../src/BrandBackground";
-import { SAFE, SIZES, IS_TV, vs, ms } from "../../src/responsive";
-import { PARENTAL_UNLOCKED_KEY, PARENTAL_UNLOCK_TTL } from "../../src/useParentalGate";
+import { SAFE, SIZES, IS_TV, vs, ms, s } from "../../src/responsive";
+import {
+  PARENTAL_UNLOCKED_KEY,
+  PARENTAL_UNLOCK_TTL,
+  ADULT_CHANNELS_ENABLED_KEY,
+} from "../../src/useParentalGate";
+import { checkDownloadAndApply, getOtaInfo } from "../../src/ota";
 
 // ============================================================
-// Settings screen — account info, sign out, parental controls
+// Settings — clean categorized layout (adult channels OFF by default)
 // ============================================================
 
 function PinModal({
@@ -79,27 +84,101 @@ function PinModal({
   );
 }
 
+function TogglePill({ on }: { on: boolean }) {
+  return (
+    <View style={[styles.toggleTrack, on && styles.toggleTrackOn]}>
+      <View style={[styles.toggleThumb, on && styles.toggleThumbOn]} />
+    </View>
+  );
+}
+
+function SettingRow({
+  icon,
+  iconColor,
+  iconBg,
+  title,
+  subtitle,
+  right,
+  onPress,
+  danger,
+  testID,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  iconColor: string;
+  iconBg: string;
+  title: string;
+  subtitle?: string;
+  right?: ReactNode;
+  onPress?: () => void;
+  danger?: boolean;
+  testID?: string;
+}) {
+  return (
+    <Pressable
+      testID={testID}
+      focusable={!!onPress}
+      disabled={!onPress}
+      onPress={onPress}
+      style={({ focused }) => [
+        styles.row,
+        focused && styles.rowFocused,
+        danger && focused && styles.rowDangerFocused,
+      ]}
+    >
+      <View style={[styles.rowIcon, { backgroundColor: iconBg }]}>
+        <Ionicons name={icon} size={ms(18)} color={iconColor} />
+      </View>
+      <View style={styles.rowTextWrap}>
+        <Text style={[styles.rowTitle, danger && { color: "#fca5a5" }]} numberOfLines={1}>{title}</Text>
+        {subtitle ? <Text style={styles.rowSub} numberOfLines={2}>{subtitle}</Text> : null}
+      </View>
+      {right}
+    </Pressable>
+  );
+}
+
+function CategoryCard({ kicker, title, children }: { kicker: string; title: string; children: ReactNode }) {
+  return (
+    <View style={styles.category}>
+      <View style={styles.categoryHead}>
+        <Text style={styles.categoryKicker}>{kicker}</Text>
+        <Text style={styles.categoryTitle}>{title}</Text>
+      </View>
+      <View style={styles.categoryBody}>{children}</View>
+    </View>
+  );
+}
+
 export default function Settings() {
   const router = useRouter();
+  const qc = useQueryClient();
   const [user, setUser] = useState<any>(null);
 
-  // Parental controls state
   const [pinModalVisible, setPinModalVisible] = useState(false);
-  const [pinModalMode, setPinModalMode] = useState<"unlock" | "set">("unlock");
+  const [pinModalMode, setPinModalMode] = useState<"unlock" | "enable-adult">("unlock");
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinVerifying, setPinVerifying] = useState(false);
   const [parentalUnlocked, setParentalUnlocked] = useState(false);
+  const [adultEnabled, setAdultEnabled] = useState(false);
+  const [busyAdult, setBusyAdult] = useState(false);
+  const [otaBusy, setOtaBusy] = useState(false);
+  const [otaMsg, setOtaMsg] = useState<string | null>(null);
+  const otaInfo = getOtaInfo();
 
-  useEffect(() => { AsyncStorage.getItem("qtv_user").then((str) => setUser(str ? JSON.parse(str) : null)); }, []);
-
-  // Check if parental lock session is still active
   useEffect(() => {
-    AsyncStorage.getItem(PARENTAL_UNLOCKED_KEY).then((val) => {
-      if (val) {
-        const ts = parseInt(val, 10);
+    AsyncStorage.getItem("qtv_user").then((str) => setUser(str ? JSON.parse(str) : null));
+  }, []);
+
+  useEffect(() => {
+    AsyncStorage.multiGet([PARENTAL_UNLOCKED_KEY, ADULT_CHANNELS_ENABLED_KEY]).then((pairs) => {
+      const map = Object.fromEntries(pairs);
+      const unlockVal = map[PARENTAL_UNLOCKED_KEY];
+      if (unlockVal) {
+        const ts = parseInt(unlockVal, 10);
         if (Date.now() - ts < PARENTAL_UNLOCK_TTL) setParentalUnlocked(true);
         else AsyncStorage.removeItem(PARENTAL_UNLOCKED_KEY);
       }
+      setAdultEnabled(map[ADULT_CHANNELS_ENABLED_KEY] === "1");
     });
   }, []);
 
@@ -115,173 +194,428 @@ export default function Settings() {
   const disconnect = async () => {
     Alert.alert("Sign Out", "Sign out and remove this account from this device?", [
       { text: "Cancel" },
-      { text: "Sign Out", style: "destructive", onPress: async () => {
-        await AsyncStorage.removeItem("qtv_token");
-        await AsyncStorage.removeItem("qtv_user");
-        await AsyncStorage.removeItem(PARENTAL_UNLOCKED_KEY);
-        router.replace("/login");
-      } },
+      {
+        text: "Sign Out",
+        style: "destructive",
+        onPress: async () => {
+          await AsyncStorage.multiRemove(["qtv_token", "qtv_user", PARENTAL_UNLOCKED_KEY]);
+          router.replace("/login");
+        },
+      },
     ]);
   };
+
+  const applyAdultEnabled = useCallback(async (on: boolean) => {
+    setBusyAdult(true);
+    try {
+      await AsyncStorage.setItem(ADULT_CHANNELS_ENABLED_KEY, on ? "1" : "0");
+      setAdultEnabled(on);
+      if (!on) {
+        await AsyncStorage.removeItem(PARENTAL_UNLOCKED_KEY);
+        setParentalUnlocked(false);
+      }
+      qc.invalidateQueries({ queryKey: ["live"] });
+      qc.invalidateQueries({ queryKey: ["live-favorites"] });
+      qc.invalidateQueries({ queryKey: ["live-recent"] });
+    } finally {
+      setBusyAdult(false);
+    }
+  }, [qc]);
 
   const handlePinSubmit = useCallback(async (pin: string) => {
     setPinVerifying(true);
     setPinError(null);
     try {
-      const { data } = await client.post("/settings/parental/verify", { pin });
-      if (data.valid) {
-        await AsyncStorage.setItem(PARENTAL_UNLOCKED_KEY, String(Date.now()));
-        setParentalUnlocked(true);
-        setPinModalVisible(false);
-      } else {
-        setPinError("Incorrect PIN. Try again.");
+      if (parentalEnabled && pinSet) {
+        const { data } = await client.post("/settings/parental/verify", { pin });
+        if (!data.valid) {
+          setPinError("Incorrect PIN. Try again.");
+          return;
+        }
+      } else if (pin.length !== 4) {
+        setPinError("Enter a 4-digit PIN.");
+        return;
       }
+
+      await AsyncStorage.setItem(PARENTAL_UNLOCKED_KEY, String(Date.now()));
+      setParentalUnlocked(true);
+      if (pinModalMode === "enable-adult") {
+        await applyAdultEnabled(true);
+      }
+      setPinModalVisible(false);
     } catch {
       setPinError("Could not verify PIN. Check connection.");
     } finally {
       setPinVerifying(false);
     }
-  }, []);
+  }, [parentalEnabled, pinSet, pinModalMode, applyAdultEnabled]);
 
   const lockParental = useCallback(async () => {
     await AsyncStorage.removeItem(PARENTAL_UNLOCKED_KEY);
     setParentalUnlocked(false);
   }, []);
 
+  const onToggleAdult = useCallback(async () => {
+    if (busyAdult) return;
+    if (adultEnabled) {
+      await applyAdultEnabled(false);
+      return;
+    }
+    // Require PIN only when the service has an admin PIN configured.
+    if (parentalEnabled && pinSet) {
+      setPinModalMode("enable-adult");
+      setPinError(null);
+      setPinModalVisible(true);
+      return;
+    }
+    Alert.alert(
+      "Show adult channels?",
+      "Adult channels are hidden by default. Turn them on for this device?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Turn On", style: "destructive", onPress: () => { applyAdultEnabled(true); } },
+      ],
+    );
+  }, [adultEnabled, busyAdult, applyAdultEnabled, parentalEnabled, pinSet]);
+
+  const adultStatus = adultEnabled
+    ? parentalEnabled && pinSet
+      ? parentalUnlocked
+        ? "Visible · session unlocked"
+        : "Visible · PIN required to open"
+      : "Visible in Live TV"
+    : "Hidden by default";
+
   return (
     <BrandBackground>
-    <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={{
-        paddingLeft: SAFE.left,
-        paddingRight: SAFE.right,
-        paddingTop: SAFE.top + vs(20),
-        paddingBottom: SIZES.tabBarH + vs(40),
-      }}
-    >
-      {/* Header */}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: vs(20) }}>
-        <Image
-          source={require("../../assets/logo.png")}
-          style={{ width: IS_TV ? ms(48) : ms(38), height: IS_TV ? ms(48) : ms(38), borderRadius: ms(10) }}
-          resizeMode="contain"
-        />
-        <View style={{ flex: 1 }}>
-          <Text style={styles.kicker}>ACCOUNT</Text>
-          <Text style={styles.pageTitle}>Settings</Text>
-        </View>
-      </View>
-
-      {/* Profile card */}
-      <View style={styles.profile}>
-        <Image source={{ uri: user?.avatar || "https://i.pravatar.cc/200" }} style={styles.avatar} />
-        <View style={{ marginLeft: 14, flex: 1 }}>
-          <Text style={styles.name}>{user?.username || "—"}</Text>
-          <Text style={styles.email}>{user?.email || ""}</Text>
-        </View>
-      </View>
-
-      {/* Parental Controls section */}
-      <Text style={styles.sectionHeader}>PARENTAL CONTROLS</Text>
-      <View style={styles.sectionCard}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: vs(10) }}>
-          <View style={[styles.sectionIconBox, { backgroundColor: parentalEnabled ? "rgba(139,92,246,0.25)" : "rgba(255,255,255,0.06)" }]}>
-            <Ionicons name={parentalEnabled ? "lock-closed" : "lock-open-outline"} size={ms(18)} color={parentalEnabled ? colors.purple : colors.zinc500} />
-          </View>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingLeft: SAFE.left,
+          paddingRight: SAFE.right,
+          paddingTop: SAFE.top + vs(16),
+          paddingBottom: SIZES.tabBarH + vs(48),
+          maxWidth: IS_TV ? s(980) : undefined,
+        }}
+      >
+        <View style={styles.header}>
+          <Image
+            source={require("../../assets/logo.png")}
+            style={styles.headerLogo}
+            resizeMode="contain"
+          />
           <View style={{ flex: 1 }}>
-            <Text style={styles.sectionLabel}>Adult Channel Lock</Text>
-            <Text style={styles.sectionMeta}>
-              {parentalQ.isLoading
-                ? "Loading…"
+            <Text style={styles.kicker}>ACCOUNT & PREFERENCES</Text>
+            <Text style={styles.pageTitle}>Settings</Text>
+            <Text style={styles.pageHint}>Quick controls for your account, channels, and privacy.</Text>
+          </View>
+        </View>
+
+        <CategoryCard kicker="01" title="Account">
+          <View style={styles.profile}>
+            <Image source={{ uri: user?.avatar || "https://i.pravatar.cc/200" }} style={styles.avatar} />
+            <View style={{ marginLeft: 14, flex: 1 }}>
+              <Text style={styles.name}>{user?.username || "Guest"}</Text>
+              <Text style={styles.email}>{user?.email || "Signed in on this device"}</Text>
+            </View>
+            <View style={styles.badge}>
+              <Text style={styles.badgeTxt}>ACTIVE</Text>
+            </View>
+          </View>
+        </CategoryCard>
+
+        <CategoryCard kicker="02" title="Content & Privacy">
+          <SettingRow
+            testID="toggle-adult-channels"
+            icon={adultEnabled ? "eye-outline" : "eye-off-outline"}
+            iconColor={adultEnabled ? colors.cyan : colors.zinc400}
+            iconBg={adultEnabled ? "rgba(103,232,249,0.16)" : "rgba(255,255,255,0.06)"}
+            title="Adult channels"
+            subtitle={adultStatus}
+            onPress={onToggleAdult}
+            right={
+              busyAdult || parentalQ.isLoading
+                ? <ActivityIndicator size="small" color={colors.cyan} />
+                : <TogglePill on={adultEnabled} />
+            }
+          />
+          <View style={styles.divider} />
+          <SettingRow
+            icon={parentalEnabled ? "shield-checkmark" : "shield-outline"}
+            iconColor={parentalEnabled ? colors.purple : colors.zinc400}
+            iconBg={parentalEnabled ? "rgba(139,92,246,0.18)" : "rgba(255,255,255,0.06)"}
+            title="PIN protection"
+            subtitle={
+              parentalQ.isLoading
+                ? "Checking…"
                 : parentalEnabled
                   ? pinSet
-                    ? parentalUnlocked ? "Unlocked for this session" : "PIN required to access adult channels"
-                    : "Enabled — no PIN set (contact admin)"
-                  : "Disabled — all channels accessible"}
-            </Text>
-          </View>
-          {parentalQ.isLoading && <ActivityIndicator size="small" color={colors.cyan} />}
-        </View>
+                    ? "Admin PIN lock is active on this service"
+                    : "Enabled — ask your admin to set a PIN"
+                  : "No service-wide PIN required"
+            }
+          />
+          {parentalEnabled && pinSet ? (
+            <>
+              <View style={styles.divider} />
+              {parentalUnlocked ? (
+                <SettingRow
+                  icon="lock-closed-outline"
+                  iconColor={colors.purple}
+                  iconBg="rgba(139,92,246,0.18)"
+                  title="Lock adult content now"
+                  subtitle="Require PIN again on this device"
+                  onPress={lockParental}
+                  right={<Ionicons name="chevron-forward" size={ms(16)} color={colors.zinc500} />}
+                />
+              ) : (
+                <SettingRow
+                  icon="lock-open-outline"
+                  iconColor={colors.cyan}
+                  iconBg="rgba(103,232,249,0.14)"
+                  title="Unlock with PIN"
+                  subtitle="Temporary unlock for this session"
+                  onPress={() => {
+                    setPinModalMode("unlock");
+                    setPinError(null);
+                    setPinModalVisible(true);
+                  }}
+                  right={<Ionicons name="chevron-forward" size={ms(16)} color={colors.zinc500} />}
+                />
+              )}
+            </>
+          ) : null}
+          <Text style={styles.note}>
+            Adult channels stay hidden until you turn them on here. You can turn them off anytime.
+          </Text>
+        </CategoryCard>
 
-        {parentalEnabled && pinSet && (
-          parentalUnlocked ? (
-            <Pressable
-              focusable
-              onPress={lockParental}
-              style={({ focused }) => [styles.actionBtn, focused && styles.actionBtnFocused]}
-            >
-              <Ionicons name="lock-closed-outline" size={ms(16)} color={colors.purple} />
-              <Text style={[styles.actionBtnTxt, { color: colors.purple }]}>Lock Now</Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              focusable
-              onPress={() => { setPinModalMode("unlock"); setPinError(null); setPinModalVisible(true); }}
-              style={({ focused }) => [styles.actionBtn, focused && styles.actionBtnFocused]}
-            >
-              <Ionicons name="lock-open-outline" size={ms(16)} color={colors.cyan} />
-              <Text style={[styles.actionBtnTxt, { color: colors.cyan }]}>Unlock with PIN</Text>
-            </Pressable>
-          )
-        )}
+        <CategoryCard kicker="03" title="App">
+          <SettingRow
+            icon="tv-outline"
+            iconColor={colors.cyan}
+            iconBg="rgba(103,232,249,0.14)"
+            title="Playback source"
+            subtitle="Xtream / IPTV live & VOD"
+          />
+          <View style={styles.divider} />
+          <SettingRow
+            icon="information-circle-outline"
+            iconColor={colors.zinc300}
+            iconBg="rgba(255,255,255,0.06)"
+            title="Version"
+            subtitle={`Quantum TV 1.0.14 · runtime ${otaInfo.runtimeVersion || "n/a"}`}
+          />
+          <View style={styles.divider} />
+          <SettingRow
+            icon="cloud-download-outline"
+            iconColor={colors.cyan}
+            iconBg="rgba(103,232,249,0.14)"
+            title="App update"
+            subtitle={
+              otaMsg
+                || (!otaInfo.enabled
+                  ? "OTA disabled on this build"
+                  : otaInfo.isEmbeddedLaunch
+                    ? `Embedded build · channel ${otaInfo.channel || "production"}`
+                    : `OTA active · ${(otaInfo.updateId || "").slice(0, 8) || "bundle"}`)
+            }
+            onPress={async () => {
+              if (otaBusy) return;
+              setOtaBusy(true);
+              setOtaMsg("Checking…");
+              const res = await checkDownloadAndApply({
+                apply: true,
+                onStatus: setOtaMsg,
+              });
+              if (!res.applied) {
+                setOtaMsg(res.message);
+                setOtaBusy(false);
+              }
+            }}
+            right={
+              otaBusy
+                ? <ActivityIndicator size="small" color={colors.cyan} />
+                : <Ionicons name="refresh" size={ms(16)} color={colors.zinc400} />
+            }
+          />
+        </CategoryCard>
 
-        <Text style={styles.sectionNote}>
-          The PIN is set and managed by the service administrator. Contact your admin to change or reset it.
-        </Text>
-      </View>
+        <CategoryCard kicker="04" title="Session">
+          <SettingRow
+            testID="disconnect-btn"
+            icon="log-out-outline"
+            iconColor="#fca5a5"
+            iconBg="rgba(239,68,68,0.12)"
+            title="Sign out"
+            subtitle="Remove this account from the device"
+            onPress={disconnect}
+            danger
+            right={<Ionicons name="chevron-forward" size={ms(16)} color="#fca5a5" />}
+          />
+        </CategoryCard>
+      </ScrollView>
 
-      {/* Sign out */}
-      <Pressable
-        testID="disconnect-btn"
-        onPress={disconnect}
-        focusable
-        style={({ focused }) => [styles.disconnect, focused && styles.disconnectFocused]}
-      >
-        <Ionicons name="log-out-outline" size={ms(18)} color="#fca5a5" />
-        <Text style={{ color: "#fca5a5", fontFamily: "Unbounded_700Bold", marginLeft: 8, fontSize: SIZES.fontBody }}>Sign Out</Text>
-      </Pressable>
-    </ScrollView>
-
-    {/* PIN entry modal */}
-    <PinModal
-      visible={pinModalVisible}
-      title={pinModalMode === "unlock" ? "Unlock Adult Content" : "Change PIN"}
-      onSubmit={pinVerifying ? () => {} : handlePinSubmit}
-      onDismiss={() => { setPinModalVisible(false); setPinError(null); }}
-      error={pinError}
-    />
+      <PinModal
+        visible={pinModalVisible}
+        title={pinModalMode === "enable-adult" ? "Enable Adult Channels" : "Unlock Adult Content"}
+        onSubmit={pinVerifying ? () => {} : handlePinSubmit}
+        onDismiss={() => { setPinModalVisible(false); setPinError(null); }}
+        error={pinError}
+      />
     </BrandBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  kicker: { color: colors.zinc500, letterSpacing: 2, textTransform: "uppercase", fontSize: SIZES.fontSmall, fontFamily: "Outfit_400Regular" },
-  pageTitle: { color: "#fff", fontFamily: "Unbounded_800ExtraBold", fontSize: SIZES.fontTitle, marginTop: 4, marginBottom: vs(20) },
-  profile: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(13,14,35,0.6)", padding: 16, borderRadius: 18, borderWidth: 1, borderColor: "rgba(255,255,255,0.06)" },
-  avatar: { width: IS_TV ? 72 : 56, height: IS_TV ? 72 : 56, borderRadius: 36, borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: s(14),
+    marginBottom: vs(18),
+  },
+  headerLogo: {
+    width: IS_TV ? ms(52) : ms(40),
+    height: IS_TV ? ms(52) : ms(40),
+    borderRadius: ms(12),
+  },
+  kicker: {
+    color: colors.zinc500,
+    letterSpacing: 2.2,
+    textTransform: "uppercase",
+    fontSize: SIZES.fontSmall,
+    fontFamily: "Outfit_400Regular",
+  },
+  pageTitle: {
+    color: "#fff",
+    fontFamily: "Unbounded_800ExtraBold",
+    fontSize: SIZES.fontTitle,
+    marginTop: 2,
+  },
+  pageHint: {
+    color: colors.zinc400,
+    fontFamily: "Outfit_400Regular",
+    fontSize: SIZES.fontSmall,
+    marginTop: 4,
+    maxWidth: s(520),
+  },
+
+  category: { marginBottom: vs(16) },
+  categoryHead: { marginBottom: vs(8), paddingHorizontal: 2 },
+  categoryKicker: {
+    color: colors.cyan,
+    fontFamily: "Unbounded_700Bold",
+    fontSize: SIZES.fontTiny,
+    letterSpacing: 1.5,
+    marginBottom: 2,
+  },
+  categoryTitle: {
+    color: "#fff",
+    fontFamily: "Unbounded_700Bold",
+    fontSize: SIZES.fontH2,
+  },
+  categoryBody: {
+    backgroundColor: "rgba(13,14,35,0.72)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    overflow: "hidden",
+  },
+
+  profile: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: s(14),
+    paddingVertical: vs(14),
+  },
+  avatar: {
+    width: IS_TV ? 72 : 56,
+    height: IS_TV ? 72 : 56,
+    borderRadius: 36,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
   name: { color: "#fff", fontFamily: "Unbounded_700Bold", fontSize: SIZES.fontH2 },
   email: { color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall, marginTop: 2 },
-
-  sectionHeader: { color: colors.zinc500, letterSpacing: 2, textTransform: "uppercase", fontSize: SIZES.fontSmall, fontFamily: "Outfit_400Regular", marginTop: vs(28), marginBottom: vs(8) },
-  sectionCard: { backgroundColor: "rgba(13,14,35,0.6)", padding: 16, borderRadius: 18, borderWidth: 1, borderColor: "rgba(255,255,255,0.06)", marginBottom: vs(8) },
-  sectionIconBox: { width: ms(36), height: ms(36), borderRadius: 999, alignItems: "center", justifyContent: "center" },
-  sectionLabel: { color: "#fff", fontFamily: "Unbounded_700Bold", fontSize: SIZES.fontBody },
-  sectionMeta: { color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall, marginTop: 2 },
-  sectionNote: { color: colors.zinc500, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontTiny, marginTop: vs(8), lineHeight: SIZES.fontTiny * 1.5 },
-  actionBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.10)", backgroundColor: "rgba(255,255,255,0.04)", marginTop: vs(4) },
-  actionBtnFocused: { borderColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: 0.4, shadowRadius: 8, elevation: 6 },
-  actionBtnTxt: { fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontBody },
-
-  disconnect: {
-    marginTop: 28,
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    padding: 16,
-    borderRadius: 14, borderWidth: 2, borderColor: "rgba(252,165,165,0.3)",
-    backgroundColor: "rgba(239,68,68,0.05)",
+  badge: {
+    paddingHorizontal: s(10),
+    paddingVertical: vs(4),
+    borderRadius: 999,
+    backgroundColor: "rgba(103,232,249,0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(103,232,249,0.35)",
   },
-  disconnectFocused: {
-    borderColor: "#fca5a5",
-    shadowColor: "#fca5a5", shadowOpacity: 0.6, shadowRadius: 18, elevation: 10,
+  badgeTxt: {
+    color: colors.cyan,
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: SIZES.fontTiny,
+    letterSpacing: 1,
+  },
+
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: s(12),
+    paddingHorizontal: s(14),
+    paddingVertical: vs(13),
+    minHeight: IS_TV ? vs(64) : vs(56),
+  },
+  rowFocused: { backgroundColor: "rgba(103,232,249,0.08)" },
+  rowDangerFocused: { backgroundColor: "rgba(239,68,68,0.10)" },
+  rowIcon: {
+    width: ms(40),
+    height: ms(40),
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rowTextWrap: { flex: 1, minWidth: 0 },
+  rowTitle: { color: "#fff", fontFamily: "Unbounded_700Bold", fontSize: SIZES.fontBody },
+  rowSub: {
+    color: colors.zinc400,
+    fontFamily: "Outfit_400Regular",
+    fontSize: SIZES.fontSmall,
+    marginTop: 2,
+    lineHeight: SIZES.fontSmall * 1.35,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    marginLeft: s(14) + ms(40) + s(12),
+  },
+  note: {
+    color: colors.zinc500,
+    fontFamily: "Outfit_400Regular",
+    fontSize: SIZES.fontTiny,
+    lineHeight: SIZES.fontTiny * 1.5,
+    paddingHorizontal: s(14),
+    paddingTop: vs(4),
+    paddingBottom: vs(12),
+  },
+
+  toggleTrack: {
+    width: ms(46),
+    height: ms(26),
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  toggleTrackOn: {
+    backgroundColor: "rgba(103,232,249,0.28)",
+    borderColor: "rgba(103,232,249,0.55)",
+  },
+  toggleThumb: {
+    width: ms(20),
+    height: ms(20),
+    borderRadius: 999,
+    backgroundColor: "#d4d4d8",
+  },
+  toggleThumbOn: {
+    alignSelf: "flex-end",
+    backgroundColor: colors.cyan,
   },
 });
 

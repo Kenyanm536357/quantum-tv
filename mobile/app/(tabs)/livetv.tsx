@@ -46,7 +46,10 @@ type Program = {
   end?: string | null;
 };
 
-const MAX_CHANNELS = 400;
+// Keep the full Xtream line available. Older builds hard-capped at 400,
+// which hid most of a 5,000+ channel provider lineup.
+const MAX_CHANNELS = 20000;
+const CHANNEL_REFRESH_MS = 10 * 60 * 1000; // periodic full reload every 10 min
 const SLOT_MIN = 30;             // minutes per time slot
 const VISIBLE_SLOTS = 4;         // slots visible in the timeline area
 const NUM_BUFFER_TIMEOUT_MS = 2200;
@@ -83,9 +86,14 @@ export default function LiveTV() {
   const router = useRouter();
   const qc = useQueryClient();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, refetch, dataUpdatedAt } = useQuery({
     queryKey: ["live"],
     queryFn: async () => (await client.get("/livetv/channels")).data as { channels: Channel[] },
+    // Always prefer a fresh full channel dump; Xtream lines change often.
+    staleTime: 60 * 1000,
+    refetchInterval: CHANNEL_REFRESH_MS,
+    refetchOnWindowFocus: true,
+    refetchIntervalInBackground: false,
   });
   const favQ = useQuery({
     queryKey: ["live-favorites"],
@@ -122,8 +130,8 @@ export default function LiveTV() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["live-recent"] }),
   });
 
-  // ---- Parental gate ----
-  const { requiresPin, setUnlocked } = useParentalGate();
+  // ---- Parental gate (adult channels hidden unless enabled in Settings) ----
+  const { requiresPin, setUnlocked, adultChannelsEnabled } = useParentalGate();
   const [pinModalVisible, setPinModalVisible] = useState(false);
   const [pinBuffer, setPinBuffer] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
@@ -136,7 +144,7 @@ export default function LiveTV() {
   }, [recordRecent, router]);
 
   const openChannel = useCallback((ch: Channel) => {
-    const adult = isAdultCategory(ch.genre, ch.category_name);
+    const adult = isAdultCategory(ch.genre, ch.category_name, ch.title);
     if (adult && requiresPin) {
       pendingChannelRef.current = ch;
       setPinBuffer("");
@@ -190,27 +198,27 @@ export default function LiveTV() {
   const [filterOpen, setFilterOpen] = useState(false);
 
   const { list, counts, countries, genres } = useMemo(() => {
-    const allChannels: Channel[] = data?.channels || [];
-    // When parental lock is active, fully hide adult channels so they don't
-    // appear in the guide list, counts, or filter dropdowns.
-    const all = requiresPin
-      ? allChannels.filter((c) => !isAdultCategory(c.genre, c.category_name))
-      : allChannels;
-    const countryCounts = new Map<string, number>();
-    const genreCounts = new Map<string, number>();
-    for (const c of all) {
-      const co = c.country || "Other";
-      const ge = c.genre || "General";
-      countryCounts.set(co, (countryCounts.get(co) || 0) + 1);
-      genreCounts.set(ge, (genreCounts.get(ge) || 0) + 1);
-    }
-    const countries = Array.from(countryCounts.entries()).sort((a, b) => b[1] - a[1]);
-    const genres = Array.from(genreCounts.entries()).sort((a, b) => b[1] - a[1]);
-    let filtered = all;
-    if (country !== "All") filtered = filtered.filter((x) => (x.country || "Other") === country);
-    if (genre !== "All") filtered = filtered.filter((x) => (x.genre || "General") === genre);
-    return { list: filtered.slice(0, MAX_CHANNELS), counts: { all: all.length }, countries, genres };
-  }, [data, country, genre, requiresPin]);
+      const raw: Channel[] = data?.channels || [];
+      // Adult channels stay hidden while the parental gate is active
+      // (default OFF until enabled in Settings / unlocked with PIN).
+      const all = requiresPin
+        ? raw.filter((c) => !isAdultCategory(c.genre, c.category_name, c.title))
+        : raw;
+      const countryCounts = new Map<string, number>();
+      const genreCounts = new Map<string, number>();
+      for (const c of all) {
+        const co = c.country || "Other";
+        const ge = c.genre || "General";
+        countryCounts.set(co, (countryCounts.get(co) || 0) + 1);
+        genreCounts.set(ge, (genreCounts.get(ge) || 0) + 1);
+      }
+      const countries = Array.from(countryCounts.entries()).sort((a, b) => b[1] - a[1]);
+      const genres = Array.from(genreCounts.entries()).sort((a, b) => b[1] - a[1]);
+      let filtered = all;
+      if (country !== "All") filtered = filtered.filter((x) => (x.country || "Other") === country);
+      if (genre !== "All") filtered = filtered.filter((x) => (x.genre || "General") === genre);
+      return { list: filtered.slice(0, MAX_CHANNELS), counts: { all: all.length }, countries, genres };
+    }, [data, country, genre, requiresPin]);
 
   // ---- Time slots (updates every minute) ----
   // Anchor at the last :00 or :30 boundary; render VISIBLE_SLOTS slots
@@ -278,8 +286,18 @@ export default function LiveTV() {
             <Text style={styles.topNavCount}>
               {list.length.toLocaleString()} of {counts.all.toLocaleString()} channels
               {activeFilterCount ? ` · ${activeFilterCount} filter${activeFilterCount > 1 ? "s" : ""}` : ""}
+              {isFetching ? " · refreshing…" : dataUpdatedAt ? " · auto-sync on" : ""}
             </Text>
           </View>
+          <Pressable
+            testID="live-refresh-btn"
+            focusable
+            onPress={() => refetch()}
+            style={({ focused }) => [styles.topNavBtn, focused && { borderColor: colors.cyan }]}
+          >
+            <Ionicons name={isFetching ? "sync" : "refresh-outline"} size={ms(16)} color="#fff" />
+            <Text style={styles.topNavBtnTxt}>{isFetching ? "Sync" : "Reload"}</Text>
+          </Pressable>
           <Pressable
             testID="live-filter-btn"
             focusable

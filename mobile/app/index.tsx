@@ -7,6 +7,11 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../src/api";
 import { ms, vs, IS_TV } from "../src/responsive";
+import {
+  OTA_CHECK_TIMEOUT_MS,
+  checkDownloadAndApply,
+  withTimeout,
+} from "../src/ota";
 
 // ============================================================
 // Startup screen — shows loading messages while silently
@@ -16,14 +21,21 @@ import { ms, vs, IS_TV } from "../src/responsive";
 
 type Phase = "loading" | "update-prompt" | "updating" | "ready";
 
+const STARTUP_HARD_TIMEOUT_MS = 9000;
+
 export default function Index() {
   const [token, setToken] = useState<string | null | undefined>(undefined);
   const [phase, setPhase] = useState<Phase>("loading");
   const [msg, setMsg] = useState("Channels ready for you");
   const [installing, setInstalling] = useState(false);
+  const phaseRef = useRef<Phase>("loading");
 
   const dotAnim = useRef(new Animated.Value(0)).current;
   const msgAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
 
   // Animated pulsing dots
   useEffect(() => {
@@ -53,44 +65,60 @@ export default function Index() {
       fadeInMsg();
     }, 1300);
 
+    // Never leave the user stuck on the loading splash if OTA hangs.
+    const hardTimeout = setTimeout(() => {
+      if (cancelled) return;
+      if (phaseRef.current === "loading") {
+        setPhase("ready");
+      }
+    }, STARTUP_HARD_TIMEOUT_MS);
+
     const t2 = setTimeout(async () => {
       if (cancelled) return;
-      // Silently check for OTA update
+      // Silently check for OTA update with a hard timeout so startup cannot hang.
       if (Updates.isEnabled) {
         try {
-          const result = await Updates.checkForUpdateAsync();
+          const result = await withTimeout(
+            Updates.checkForUpdateAsync(),
+            OTA_CHECK_TIMEOUT_MS,
+            "checkForUpdateAsync",
+          );
           if (!cancelled && result.isAvailable) {
             setPhase("update-prompt");
             return;
           }
         } catch {
-          // offline or not configured — ignore
+          // offline, timeout, or not configured — continue into app
         }
       }
-      if (!cancelled) setPhase("ready");
-    }, 2200);
+      if (!cancelled && phaseRef.current === "loading") setPhase("ready");
+    }, 1800);
 
     return () => {
       cancelled = true;
       clearTimeout(t1);
       clearTimeout(t2);
+      clearTimeout(hardTimeout);
     };
   }, [fadeInMsg]);
 
   // Read auth token once
   useEffect(() => {
-    AsyncStorage.getItem("qtv_token").then(setToken);
+    AsyncStorage.getItem("qtv_token")
+      .then(setToken)
+      .catch(() => setToken(null));
   }, []);
 
   const handleUpdateNow = useCallback(async () => {
     if (installing) return;
     setInstalling(true);
     setPhase("updating");
-    try {
-      await Updates.fetchUpdateAsync();
-      await Updates.reloadAsync();
-    } catch {
+    // Download then hard-reload so the next JS boot uses the new bundle.
+    const result = await checkDownloadAndApply({ apply: true });
+    if (!result.applied) {
       setInstalling(false);
+      // If download succeeded but reload failed, still enter app; next cold
+      // start with ON_LOAD should pick up the pending bundle.
       setPhase("ready");
     }
   }, [installing]);

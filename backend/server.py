@@ -298,7 +298,9 @@ async def _iptv_get(action: Optional[str] = None, params: Optional[dict] = None)
         qp["action"] = action
     if params:
         qp.update(params)
-    async with httpx.AsyncClient(timeout=20.0) as c:
+    # Full live/VOD dumps can be large (5k+ channels) — allow a longer read timeout.
+    timeout = httpx.Timeout(connect=15.0, read=90.0, write=30.0, pool=15.0)
+    async with httpx.AsyncClient(timeout=timeout) as c:
         r = await c.get(f"{base}/player_api.php", params=qp)
         r.raise_for_status()
         return r.json()
@@ -1210,7 +1212,8 @@ async def admin_get_settings(admin: dict = Depends(get_current_admin)):
     return {
         "service_name": s.get("service_name", "Quantum TV"),
         "motd": s.get("motd", ""),
-        "parental_pin_enabled": s.get("parental_pin_enabled", False),
+        # Adult content is locked by default unless an admin explicitly disables it.
+        "parental_pin_enabled": s.get("parental_pin_enabled", True),
         "parental_pin_set": bool(s.get("parental_pin_hash")),
     }
 
@@ -1249,7 +1252,8 @@ async def get_parental_settings(user: dict = Depends(get_current_user)):
     """Return whether parental lock is enabled (no sensitive data exposed)."""
     s = await db.settings.find_one({"id": "global"}) or {}
     return {
-        "enabled": s.get("parental_pin_enabled", False),
+        # Default ON so adult content stays protected until configured.
+        "enabled": s.get("parental_pin_enabled", True),
         "pin_set": bool(s.get("parental_pin_hash")),
     }
 
@@ -1817,7 +1821,7 @@ async def live_channels(user: dict = Depends(get_current_user)):
 
 @api.get("/stream/{rating_key}")
 async def stream_url(rating_key: str, request: Request, user: dict = Depends(get_current_user),
-                    direct: bool = True, max_bitrate: int = 8000):
+                    direct: bool = True, external: bool = False, max_bitrate: int = 8000):
     # IPTV stream resolution. Rating keys are minted as iptv-<kind>-<id>.
     if not str(rating_key).startswith("iptv-"):
         raise HTTPException(404, "Stream not found")
@@ -1839,6 +1843,24 @@ async def stream_url(rating_key: str, request: Request, user: dict = Depends(get
         proxy_kind = kind
     else:
         raise HTTPException(400, "bad iptv kind")
+
+    cfg = await db.settings.find_one({"id": "iptv_config"})
+    if not cfg or not cfg.get("password_enc"):
+        raise HTTPException(503, "IPTV is not configured")
+
+    # External players (VLC / MX / Kodi on Fire TV) work much more reliably on
+    # the provider's direct Xtream URL than on our auth-proxied m3u8.
+    if external or direct:
+        if kind == "live":
+            # Prefer HLS for broad player support; many lines also expose .ts.
+            url = _iptv_stream_url(cfg, "live", sid, "m3u8")
+            return {"url": url, "type": "hls", "mode": "provider-direct"}
+        # VOD / series: use mp4 by default (container may vary; players still handle it)
+        vod_kind = proxy_kind if kind == "ep" else kind
+        url = _iptv_stream_url(cfg, vod_kind, sid, "mp4")
+        return {"url": url, "type": "direct", "mode": "provider-direct"}
+
+    # App-proxied URL (kept for in-app / web playback paths)
     stream_token = create_jwt(
         {"sub": user["id"], "role": "user", "username": user.get("username")},
         expires_hours=6,
@@ -1847,7 +1869,7 @@ async def stream_url(rating_key: str, request: Request, user: dict = Depends(get
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
     origin = f"{proto}://{host}"
     url = f"{origin}/api/iptv/p/{proxy_kind}/{sid}.{ext}?t={quote(stream_token)}"
-    return {"url": url, "type": "hls" if kind == "live" else "direct"}
+    return {"url": url, "type": "hls" if kind == "live" else "direct", "mode": "proxy"}
 
 
 # ============================================================

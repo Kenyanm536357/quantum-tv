@@ -1,0 +1,13 @@
+.git/
+.vs/
+**/.vs/
+node_modules/
+**/node_modules/
+mobile/android/
+mobile/dist-android-export/
+mobile/dist-android-external-only/
+mobile/dist-android-startup/
+mobile/dist-android-usa-player/
+backend/storage/*.apk
+*.apk
+*.log

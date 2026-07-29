@@ -4,41 +4,63 @@ import * as Updates from "expo-updates";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "./api";
 import { ms, s, vs, SAFE, IS_TV } from "./responsive";
+import {
+  OTA_CHECK_TIMEOUT_MS,
+  checkDownloadAndApply,
+  withTimeout,
+} from "./ota";
+
+const PERIODIC_CHECK_MS = 5 * 60 * 1000; // backup agent every 5 minutes
 
 /**
- * UpdatesToast — checks for OTA updates on mount and whenever the app
- * returns to the foreground. If a new update is available, shows a
- * focusable banner at the top-right offering "Install Now" (fetches +
- * reloads) or "Later" (dismiss until next resume).
- * Silent no-op in dev builds (Updates disabled) so it never crashes.
+ * UpdatesToast — backup agent that periodically checks the Expo update
+ * service in the background (on mount, on foreground resume, and on an
+ * interval). Never blocks navigation. Shows a focusable banner only when
+ * an update is confirmed available.
  */
 export default function UpdatesToast() {
   const [available, setAvailable] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [statusText, setStatusText] = useState("A newer build of Quantum TV is ready.");
+  const checkingRef = useRef(false);
   const opacity = useRef(new Animated.Value(0)).current;
 
   const check = useCallback(async () => {
     // Skip in Expo Go / dev — Updates.checkForUpdateAsync throws there.
-    if (!Updates.isEnabled) return;
+    if (!Updates.isEnabled || checkingRef.current || installing) return;
+    checkingRef.current = true;
     try {
-      const res = await Updates.checkForUpdateAsync();
+      const res = await withTimeout(
+        Updates.checkForUpdateAsync(),
+        OTA_CHECK_TIMEOUT_MS,
+        "checkForUpdateAsync",
+      );
       if (res.isAvailable) {
         setAvailable(true);
         setDismissed(false);
+        setStatusText("A newer build of Quantum TV is ready.");
       }
     } catch {
-      /* swallow — offline, no eas config, etc. */
+      /* timeout / offline / no eas config — silent backup check */
+    } finally {
+      checkingRef.current = false;
     }
-  }, []);
+  }, [installing]);
 
-  // Initial check + on foreground resume
+  // Initial check + periodic backup agent + foreground resume
   useEffect(() => {
     check();
+    const interval = setInterval(() => {
+      check();
+    }, PERIODIC_CHECK_MS);
     const sub = AppState.addEventListener("change", (s: AppStateStatus) => {
       if (s === "active") check();
     });
-    return () => sub.remove();
+    return () => {
+      clearInterval(interval);
+      sub.remove();
+    };
   }, [check]);
 
   // Fade the banner in / out based on visibility
@@ -53,12 +75,14 @@ export default function UpdatesToast() {
   const install = useCallback(async () => {
     if (installing) return;
     setInstalling(true);
-    try {
-      await Updates.fetchUpdateAsync();
-      await Updates.reloadAsync();
-    } catch {
+    setStatusText("Downloading & restarting…");
+    const result = await checkDownloadAndApply({
+      apply: true,
+      onStatus: (msg) => setStatusText(msg),
+    });
+    if (!result.applied) {
       setInstalling(false);
-      setAvailable(false);
+      setStatusText(result.message || "Update failed. Try again.");
     }
   }, [installing]);
 
@@ -75,7 +99,7 @@ export default function UpdatesToast() {
             Update available
           </Text>
           <Text style={styles.body} numberOfLines={2}>
-            {installing ? "Downloading & restarting…" : "A newer build of Quantum TV is ready."}
+            {statusText}
           </Text>
         </View>
         <Pressable

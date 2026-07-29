@@ -14,7 +14,7 @@ export default function SettingsPage() {
     motd: "",
     allow_new_signups: true,
     require_invite: false,
-    parental_pin_enabled: false,
+    parental_pin_enabled: true,
   });
   const [newPin, setNewPin] = useState("");
   const [showPin, setShowPin] = useState(false);
@@ -128,7 +128,7 @@ export default function SettingsPage() {
             <div>
               <div className="text-sm">Adult channel lock</div>
               <div className="text-xs text-zinc-500">
-                {form.parental_pin_enabled ? "Enabled — PIN required on device" : "Disabled — all channels visible"}
+                {form.parental_pin_enabled ? "Enabled — PIN required to show adult channels" : "Disabled — device can reveal adult channels without PIN"}
               </div>
             </div>
           </div>

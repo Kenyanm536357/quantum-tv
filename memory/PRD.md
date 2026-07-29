@@ -26,6 +26,14 @@
 - ✅ Metro bundle export succeeded (2.05 MB → Hermes bytecode 1.83 MB). qemu-user-static re-installed in container to run x86_64 hermesc on ARM64.
 - ✅ **OTA pushed**: branch `firetv`, runtime 1.0.13, update ID `019f7a97-eb08-7b6e-a65f-65621f2a3017`, group `a08036f4-2fe2-4cee-a558-5e56ff01064d`. Fire TV app will pick up the fix on next launch (force-close + reopen to force an update check).
 
+## 2026-02 — Switched OTA Channel: firetv → production
+- ✅ **Channel migration**: `eas.json` `firetv` build profile now targets `channel: "production"` (was `"firetv"`); added a new `build:production` npm script alongside the legacy `build:firetv`.
+- ✅ **`production` profile completed**: added `distribution: "internal"`, `env.EXPO_PUBLIC_BACKEND_URL=https://quantumtv.app`, and `android.buildType/gradleCommand` so a `--profile production` build produces a signed APK targeting prod backend.
+- ✅ **`app.json`** `versionCode` bumped 26 → 27 (required so Android will install a newly-built APK over an existing 1.0.13e install). `version` kept at `1.0.13` so `runtimeVersion.policy: "appVersion"` continues to match existing installs.
+- ✅ **Seeded production OTA branch**: published current code (Plex removed, UpdatesToast, hold-to-fav toast, smoother EPG scroll) to `--branch production`. Update ID `019fabbe-9659-7c42-89d2-e5baf7eaffc7`, group `90cecee3-363f-471d-a6af-9975eb17333e`.
+- ⚠️ **APK rebuild blocked**: EAS Free-plan monthly Android build quota exhausted — next build available Aug 1, 2026 (~3 days). User can wait or upgrade at https://expo.dev/accounts/kenyanm/settings/billing.
+- ℹ️ Going forward: OTAs use `npx eas-cli update --branch production` and full APK builds use `npm run build:production` (or `npx eas-cli build --platform android --profile production`).
+
 ## 2026-02 — Plex Removal Cleanup + Prod Redeploy
 - Merged the GitHub Copilot PR "video-and-movies-from-xtreme-code" (deleted 973 lines / kept 190 — Plex integration removed from backend and web admin).
 - ✅ Deleted orphaned `frontend/src/pages/Servers.js` (76 lines) — its backend routes are gone.

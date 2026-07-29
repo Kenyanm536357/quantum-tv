@@ -213,7 +213,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="watchlist" options={{ title: "Watchlist", tabBarIcon: ({ color, size }) => <Ionicons name="bookmark-outline" size={size ?? SIZES.iconMd} color={color} /> }} />
       <Tabs.Screen name="favorites" options={{ title: "Favorites", tabBarIcon: ({ color, size }) => <Ionicons name="heart-outline"    size={size ?? SIZES.iconMd} color={color} /> }} />
       <Tabs.Screen name="search"    options={{ title: "Search",    tabBarIcon: ({ color, size }) => <Ionicons name="search-outline"   size={size ?? SIZES.iconMd} color={color} /> }} />
-      <Tabs.Screen name="more"      options={{ title: "More",      tabBarIcon: ({ color, size }) => <Ionicons name="menu-outline"     size={size ?? SIZES.iconMd} color={color} /> }} />
+      <Tabs.Screen name="more"      options={{ title: "Settings",  tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size ?? SIZES.iconMd} color={color} /> }} />
     </Tabs>
   );
 }

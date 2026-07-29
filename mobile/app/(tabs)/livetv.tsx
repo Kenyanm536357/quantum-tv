@@ -9,6 +9,7 @@ import { useRouter } from "expo-router";
 import client, { BACKEND, colors } from "../../src/api";
 import BrandBackground from "../../src/BrandBackground";
 import { SAFE, SIZES, IS_TV, vs, ms, s, SCREEN_W } from "../../src/responsive";
+import { useParentalGate, isAdultCategory } from "../../src/useParentalGate";
 
 // ============================================================
 // Live TV — Cable-guide-style EPG grid
@@ -90,7 +91,7 @@ export default function LiveTV() {
     queryKey: ["live-favorites"],
     queryFn: async () => (await client.get("/me/live/favorites")).data as { items: Channel[] },
   });
-  const recentQ = useQuery({
+  useQuery({
     queryKey: ["live-recent"],
     queryFn: async () => (await client.get("/me/live/recent")).data as { items: Channel[] },
   });
@@ -121,10 +122,55 @@ export default function LiveTV() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["live-recent"] }),
   });
 
-  const openChannel = useCallback((ch: Channel) => {
+  // ---- Parental gate ----
+  const { requiresPin, setUnlocked } = useParentalGate();
+  const [pinModalVisible, setPinModalVisible] = useState(false);
+  const [pinBuffer, setPinBuffer] = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [pinVerifying, setPinVerifying] = useState(false);
+  const pendingChannelRef = useRef<Channel | null>(null);
+
+  const doOpenChannel = useCallback((ch: Channel) => {
     recordRecent.mutate(ch);
     router.push({ pathname: "/player/[rk]", params: { rk: String(ch.key), title: ch.title } });
   }, [recordRecent, router]);
+
+  const openChannel = useCallback((ch: Channel) => {
+    const adult = isAdultCategory(ch.genre, ch.category_name);
+    if (adult && requiresPin) {
+      pendingChannelRef.current = ch;
+      setPinBuffer("");
+      setPinError(null);
+      setPinModalVisible(true);
+    } else {
+      doOpenChannel(ch);
+    }
+  }, [requiresPin, doOpenChannel]);
+
+  const handlePinDigit = useCallback((d: number) => setPinBuffer((p) => (p.length < 4 ? p + String(d) : p)), []);
+  const handlePinErase = useCallback(() => setPinBuffer((p) => p.slice(0, -1)), []);
+  const handlePinSubmit = useCallback(async (pin: string) => {
+    if (pin.length !== 4) return;
+    setPinVerifying(true);
+    setPinError(null);
+    try {
+      const { data: res } = await client.post("/settings/parental/verify", { pin });
+      if (res.valid) {
+        await setUnlocked();
+        setPinModalVisible(false);
+        if (pendingChannelRef.current) doOpenChannel(pendingChannelRef.current);
+        pendingChannelRef.current = null;
+      } else {
+        setPinError("Incorrect PIN. Try again.");
+        setPinBuffer("");
+      }
+    } catch {
+      setPinError("Could not verify PIN.");
+      setPinBuffer("");
+    } finally {
+      setPinVerifying(false);
+    }
+  }, [setUnlocked, doOpenChannel]);
 
   // Small ephemeral toast shown when a channel is favorited/unfavorited via hold-to-favorite.
   const [favToast, setFavToast] = useState<{ title: string; on: boolean } | null>(null);
@@ -347,6 +393,56 @@ export default function LiveTV() {
           genre={genre} setGenre={setGenre}
           countries={countries} genres={genres}
         />
+
+        {/* Parental PIN modal for adult channels */}
+        <Modal transparent visible={pinModalVisible} animationType="fade" onRequestClose={() => setPinModalVisible(false)}>
+          <View style={styles.pinBackdrop}>
+            <View style={styles.pinCard}>
+              <View style={styles.pinIconBox}>
+                <Ionicons name="lock-closed" size={ms(24)} color="#050614" />
+              </View>
+              <Text style={styles.pinTitle}>Adult Content Locked</Text>
+              <Text style={styles.pinSub}>Enter your 4-digit PIN to continue</Text>
+              <View style={styles.pinDotRow}>
+                {[0,1,2,3].map((i) => (
+                  <View key={i} style={[styles.pinDot, pinBuffer.length > i && styles.pinDotFilled]} />
+                ))}
+              </View>
+              {pinError ? <Text style={styles.pinError}>{pinError}</Text> : null}
+              <View style={styles.pinNumGrid}>
+                {[1,2,3,4,5,6,7,8,9].map((d) => (
+                  <Pressable key={d} focusable hasTVPreferredFocus={d === 5}
+                    onPress={() => handlePinDigit(d)}
+                    style={({ focused }) => [styles.pinNumKey, focused && styles.pinNumKeyFocused]}
+                  >
+                    <Text style={styles.pinNumLabel}>{d}</Text>
+                  </Pressable>
+                ))}
+                <Pressable focusable onPress={handlePinErase} style={({ focused }) => [styles.pinNumKey, focused && styles.pinNumKeyFocused]}>
+                  <Ionicons name="backspace-outline" size={ms(18)} color="#fff" />
+                </Pressable>
+                <Pressable focusable onPress={() => handlePinDigit(0)} style={({ focused }) => [styles.pinNumKey, focused && styles.pinNumKeyFocused]}>
+                  <Text style={styles.pinNumLabel}>0</Text>
+                </Pressable>
+                <Pressable
+                  focusable
+                  onPress={() => !pinVerifying && handlePinSubmit(pinBuffer)}
+                  style={({ focused }) => [styles.pinNumKey, { backgroundColor: pinBuffer.length === 4 ? colors.cyan : "rgba(255,255,255,0.06)" }, focused && styles.pinNumKeyFocused]}
+                >
+                  {pinVerifying
+                    ? <ActivityIndicator size="small" color="#050614" />
+                    : <Ionicons name="checkmark" size={ms(18)} color={pinBuffer.length === 4 ? "#050614" : colors.zinc500} />
+                  }
+                </Pressable>
+              </View>
+              <Pressable focusable onPress={() => { setPinModalVisible(false); pendingChannelRef.current = null; }}
+                style={({ focused }) => [styles.pinCancelBtn, focused && { borderColor: colors.cyan }]}
+              >
+                <Text style={styles.pinCancelTxt}>Cancel</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
       </View>
     </BrandBackground>
   );
@@ -910,4 +1006,33 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   numpadSecondaryLabel: { color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall },
+
+  // ---- Parental PIN modal ----
+  pinBackdrop: { flex: 1, backgroundColor: "rgba(6,7,20,0.92)", alignItems: "center", justifyContent: "center", padding: ms(20) },
+  pinCard: {
+    backgroundColor: "#150826", borderRadius: 24, padding: ms(24),
+    borderWidth: 1, borderColor: "rgba(139,92,246,0.35)",
+    maxWidth: ms(360), width: "100%", alignItems: "center",
+    shadowColor: colors.purple, shadowOpacity: 0.5, shadowRadius: 30, elevation: 20,
+  },
+  pinIconBox: {
+    width: ms(56), height: ms(56), borderRadius: 999, backgroundColor: colors.purple,
+    alignItems: "center", justifyContent: "center", marginBottom: vs(12),
+  },
+  pinTitle: { color: "#fff", fontFamily: "Unbounded_800ExtraBold", fontSize: ms(IS_TV ? 18 : 15), textAlign: "center", marginBottom: vs(4) },
+  pinSub: { color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: ms(12), marginBottom: vs(16) },
+  pinDotRow: { flexDirection: "row", gap: ms(16), marginBottom: vs(6) },
+  pinDot: { width: ms(16), height: ms(16), borderRadius: 999, borderWidth: 2, borderColor: "rgba(255,255,255,0.25)", backgroundColor: "transparent" },
+  pinDotFilled: { backgroundColor: colors.cyan, borderColor: colors.cyan },
+  pinError: { color: "#fca5a5", fontFamily: "Outfit_400Regular", fontSize: ms(11), marginBottom: vs(8), textAlign: "center" },
+  pinNumGrid: { flexDirection: "row", flexWrap: "wrap", gap: ms(8), justifyContent: "center", marginTop: vs(10), width: ms(IS_TV ? 220 : 190) },
+  pinNumKey: {
+    width: ms(IS_TV ? 60 : 52), height: ms(IS_TV ? 48 : 42), borderRadius: 12,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.10)",
+    backgroundColor: "rgba(255,255,255,0.06)", alignItems: "center", justifyContent: "center",
+  },
+  pinNumKeyFocused: { borderColor: colors.cyan, backgroundColor: "rgba(103,232,249,0.12)", transform: [{ scale: 1.06 }] },
+  pinNumLabel: { color: "#fff", fontFamily: "Unbounded_700Bold", fontSize: ms(16) },
+  pinCancelBtn: { marginTop: vs(12), paddingHorizontal: ms(24), paddingVertical: vs(8), borderRadius: 999, borderWidth: 1, borderColor: "rgba(255,255,255,0.12)" },
+  pinCancelTxt: { color: colors.zinc300, fontFamily: "Outfit_600SemiBold", fontSize: ms(13) },
 });

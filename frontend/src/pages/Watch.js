@@ -3,7 +3,7 @@ import { Routes, Route, NavLink, useNavigate, useParams, Navigate, Link } from "
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
-  Grid3X3, Radio, Film, Tv2, Search, Bookmark, Heart, User, LogOut, Play,
+  Grid3X3, Radio, Film, Search, Bookmark, Heart, LogOut, Play,
   ChevronLeft, ChevronRight, X, Plus, Check, Loader2, Star,
 } from "lucide-react";
 import api, { ASSET_BASE } from "../api";
@@ -33,7 +33,6 @@ function WatchShell({ children }) {
     { to: "/watch",         label: "Browse",    icon: Grid3X3,  end: true },
     { to: "/watch/live",    label: "Live TV",   icon: Radio },
     { to: "/watch/movies",  label: "Movies",    icon: Film },
-    { to: "/watch/series",  label: "Series",    icon: Tv2 },
     { to: "/watch/watchlist", label: "Watchlist", icon: Bookmark },
     { to: "/watch/favorites", label: "Favorites", icon: Heart },
     { to: "/watch/search",  label: "Search",    icon: Search },
@@ -130,7 +129,7 @@ function MediaCard({ item, size = "md", fluid = false, testid }) {
         className={`rounded-xl overflow-hidden bg-white/[0.04] border border-white/5 relative ${fluid ? "aspect-[2/3]" : ""}`}
       >
         {item.thumb ? (
-          <img src={`${ASSET_BASE}${item.thumb}`} alt={item.title} className="w-full h-full object-cover" />
+          <img src={item.thumb.startsWith("http") ? item.thumb : `${ASSET_BASE}${item.thumb}`} alt={item.title} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-purple-900/40 to-cyan-900/40 flex items-center justify-center">
             <Film className="w-8 h-8 text-zinc-500" />
@@ -233,17 +232,8 @@ function Browse() {
   const onDeck = useQuery({ queryKey: ["ondeck"], queryFn: async () => (await api.get("/continue-watching?limit=20")).data });
   const featured = (onDeck.data?.items?.[0]) || (recent.data?.items?.[0]);
 
-  // Show a friendly "Plex not connected" banner if the server errors
-  const noPlex = recent.error?.response?.status === 503 || onDeck.error?.response?.status === 503;
-
   return (
     <div className="fade-in">
-      {noPlex && (
-        <div className="mb-8 rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-6 text-yellow-200">
-          <div className="font-heading font-bold">Plex isn't connected yet</div>
-          <div className="text-sm mt-1">The admin needs to connect a Plex account in the Control Panel before content can stream.</div>
-        </div>
-      )}
       {featured && <FeaturedHero item={featured} />}
       <Row title="Continue Watching" items={onDeck.data?.items} emptyText="Once you start watching, picks will land here." />
       <Row title="Recently Added" items={recent.data?.items} size="lg" />
@@ -287,7 +277,7 @@ function SortMenu({ options, value, onChange, testidPrefix = "sort" }) {
   );
 }
 
-// Client-side sort helper for lists that don't go through the Plex sort param
+// Client-side sort helper for lists
 const COMPARERS = {
   "addedAt:desc":     (a, b) => (b.added_at || 0) - (a.added_at || 0),
   "addedAt:asc":      (a, b) => (a.added_at || 0) - (b.added_at || 0),
@@ -303,45 +293,44 @@ function applySort(items, key) {
   return cmp ? [...items].sort(cmp) : items;
 }
 
-// ---------- Library grid (movies / shows) ----------
+// ---------- IPTV Movies view ----------
 const SORT_OPTIONS = [
   { id: "addedAt:desc", label: "Newest added" },
   { id: "addedAt:asc", label: "Oldest added" },
-  { id: "originallyAvailableAt:desc", label: "Newest release" },
-  { id: "originallyAvailableAt:asc", label: "Oldest release" },
-  { id: "titleSort:asc", label: "Title A → Z" },
-  { id: "titleSort:desc", label: "Title Z → A" },
-  { id: "audienceRating:desc", label: "Highest rated" },
+  { id: "title:asc", label: "Title A → Z" },
+  { id: "title:desc", label: "Title Z → A" },
+  { id: "year:desc", label: "Newest release" },
+  { id: "year:asc", label: "Oldest release" },
+  { id: "rating:desc", label: "Highest rated" },
 ];
 
-function LibraryView({ type, label }) {
+function IptvMoviesView() {
   const [sort, setSort] = React.useState("addedAt:desc");
-  const libs = useQuery({ queryKey: ["libs"], queryFn: async () => (await api.get("/libraries")).data });
-  const lib = (libs.data?.libraries || []).find((l) => l.type === type);
-  const items = useQuery({
-    enabled: !!lib,
-    queryKey: ["libitems", lib?.key, sort],
-    queryFn: async () => (await api.get(`/libraries/${lib.key}/items?limit=200&sort=${encodeURIComponent(sort)}`)).data,
+  const { data, isLoading } = useQuery({
+    queryKey: ["iptv-vod"],
+    queryFn: async () => (await api.get("/iptv/vod/streams")).data,
+    staleTime: 60_000,
   });
+  const items = applySort(data?.items || [], sort);
   return (
     <div className="fade-in">
       <div className="mb-5 sm:mb-6 flex items-end justify-between gap-3 flex-wrap">
         <div className="min-w-0">
-          <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] sm:tracking-[0.25em] text-zinc-500 font-heading">Library</div>
-          <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-extrabold mt-1">{label}</h1>
-          {lib && <div className="text-zinc-400 text-xs sm:text-sm mt-2">{items.data?.total ?? "—"} titles in {lib.title}</div>}
+          <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] sm:tracking-[0.25em] text-zinc-500 font-heading">IPTV</div>
+          <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-extrabold mt-1">Movies</h1>
+          {data && <div className="text-zinc-400 text-xs sm:text-sm mt-2">{(data.total ?? items.length).toLocaleString()} titles</div>}
         </div>
         <SortMenu options={SORT_OPTIONS} value={sort} onChange={setSort} />
       </div>
-      {libs.isLoading || items.isLoading ? (
+      {isLoading ? (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 sm:gap-4">
           {[...Array(12)].map((_, i) => <div key={i} className="aspect-[2/3] rounded-xl bg-white/[0.03] animate-pulse" />)}
         </div>
-      ) : !lib ? (
-        <div className="text-zinc-400 text-sm sm:text-base">No {label.toLowerCase()} library found on the connected Plex server.</div>
+      ) : items.length === 0 ? (
+        <div className="text-zinc-400 text-sm sm:text-base">No movies available. Connect an IPTV provider in the admin panel.</div>
       ) : (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 sm:gap-4">
-          {(items.data?.items || []).map((it) => <MediaCard key={it.rating_key} item={it} fluid />)}
+          {items.map((it) => <MediaCard key={it.rating_key} item={it} fluid />)}
         </div>
       )}
     </div>
@@ -520,7 +509,6 @@ function LiveTV() {
           <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-extrabold mt-1">All Channels</h1>
           <div className="text-zinc-400 text-xs sm:text-sm mt-2">
             {channels.length.toLocaleString()} channel{channels.length === 1 ? "" : "s"}
-            {counts.iptv > 0 && counts.plex > 0 && ` · ${counts.plex.toLocaleString()} Plex + ${counts.iptv.toLocaleString()} IPTV`}
           </div>
         </div>
         <SortMenu options={LIVE_SORT} value={sort} onChange={setSort} testidPrefix="live-sort" />
@@ -802,138 +790,6 @@ function Player() {
   );
 }
 
-// ---------- Show Detail (Seasons → Episodes) ----------
-function ShowDetail() {
-  const { rk } = useParams();
-  const nav = useNavigate();
-  const [seasonKey, setSeasonKey] = useState(null);
-
-  const show = useQuery({
-    queryKey: ["meta", rk],
-    queryFn: async () => (await api.get(`/metadata/${rk}`)).data,
-  });
-  const seasons = useQuery({
-    queryKey: ["children", rk],
-    queryFn: async () => (await api.get(`/metadata/${rk}/children`)).data,
-    select: (d) => (d?.items || []).filter((s) => s.type === "season"),
-  });
-
-  // Pick the first season by default once seasons load
-  React.useEffect(() => {
-    if (!seasonKey && seasons.data && seasons.data.length > 0) {
-      setSeasonKey(String(seasons.data[0].rating_key));
-    }
-  }, [seasons.data, seasonKey]);
-
-  const episodes = useQuery({
-    queryKey: ["children", seasonKey],
-    queryFn: async () => (await api.get(`/metadata/${seasonKey}/children`)).data,
-    enabled: !!seasonKey,
-    select: (d) => d?.items || [],
-  });
-
-  const m = show.data;
-
-  return (
-    <div className="fade-in" data-testid="show-detail">
-      {/* Backdrop */}
-      <div className="relative -mx-4 sm:-mx-6 -mt-5 sm:-mt-8 mb-6 sm:mb-8 h-[180px] sm:h-[280px] lg:h-[340px] overflow-hidden">
-        {m?.art ? (
-          <img src={`${ASSET_BASE}${m.art}`} alt="" className="absolute inset-0 w-full h-full object-cover" />
-        ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-purple-700 to-cyan-700" />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#060714] via-[#060714]/70 to-transparent" />
-        <button onClick={() => nav(-1)} data-testid="show-back"
-          className="absolute top-3 left-3 sm:top-4 sm:left-4 z-10 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur flex items-center justify-center">
-          <ChevronLeft className="w-5 h-5" />
-        </button>
-        <div className="absolute bottom-4 left-4 right-4 sm:bottom-6 sm:left-8 sm:right-8 max-w-3xl">
-          <h1 className="font-heading text-2xl sm:text-4xl font-extrabold">{m?.title || "—"}</h1>
-          <div className="text-zinc-400 text-xs sm:text-sm mt-1 flex flex-wrap gap-x-3 gap-y-1">
-            {m?.year && <span>{m.year}</span>}
-            {m?.leaf_count && <span>· {m.leaf_count} episodes</span>}
-            {m?.audience_rating && <span>· ★ {m.audience_rating}</span>}
-          </div>
-          {m?.summary && <p className="text-zinc-300 text-xs sm:text-sm mt-2 sm:mt-3 line-clamp-2 sm:line-clamp-3">{m.summary}</p>}
-        </div>
-      </div>
-
-      {/* Season picker */}
-      <div className="mb-5 sm:mb-6">
-        <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] text-zinc-500 font-heading mb-2">Seasons</div>
-        {seasons.isLoading ? (
-          <div className="flex gap-2">{[...Array(4)].map((_, i) => <div key={i} className="h-9 w-20 rounded-full bg-white/[0.03] animate-pulse" />)}</div>
-        ) : (seasons.data || []).length === 0 ? (
-          <div className="text-zinc-500 text-sm">No seasons available for this show.</div>
-        ) : (
-          <div className="flex gap-2 overflow-x-auto scrollbar-thin -mx-4 sm:-mx-2 px-4 sm:px-2 pb-2">
-            {seasons.data.map((s) => {
-              const active = String(s.rating_key) === seasonKey;
-              return (
-                <button
-                  key={s.rating_key}
-                  data-testid={`season-${s.rating_key}`}
-                  onClick={() => setSeasonKey(String(s.rating_key))}
-                  className={`shrink-0 px-4 py-2 rounded-full border text-sm font-medium ${active ? "bg-cyan-500/20 border-cyan-400/50 text-cyan-100" : "bg-white/5 border-white/10 text-zinc-300 hover:bg-white/10"}`}
-                >
-                  {s.title || `Season ${s.index ?? "?"}`}{s.leaf_count ? ` · ${s.leaf_count}` : ""}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Episodes list */}
-      <div>
-        <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] text-zinc-500 font-heading mb-3">Episodes</div>
-        {!seasonKey ? null : episodes.isLoading ? (
-          <div className="space-y-3">{[...Array(4)].map((_, i) => <div key={i} className="h-20 rounded-xl bg-white/[0.03] animate-pulse" />)}</div>
-        ) : (episodes.data || []).length === 0 ? (
-          <div className="text-zinc-500 text-sm">No episodes in this season.</div>
-        ) : (
-          <div className="space-y-2 sm:space-y-3">
-            {episodes.data.map((ep) => (
-              <button
-                key={ep.rating_key}
-                data-testid={`episode-${ep.rating_key}`}
-                onClick={() => nav(`/watch/play/${ep.rating_key}`, { state: { item: ep } })}
-                className="w-full flex gap-3 sm:gap-4 p-2 sm:p-3 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 text-left transition-colors group"
-              >
-                <div className="w-28 sm:w-40 aspect-video rounded-lg overflow-hidden bg-black shrink-0 relative">
-                  {ep.thumb ? (
-                    <img src={`${ASSET_BASE}${ep.thumb}`} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-purple-900/40 to-cyan-900/40" />
-                  )}
-                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-cyan-500/90 flex items-center justify-center">
-                      <Play className="w-4 h-4 sm:w-5 sm:h-5 text-white fill-white" />
-                    </div>
-                  </div>
-                  {ep.duration && (
-                    <div className="absolute bottom-1 right-1 bg-black/70 px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-mono">
-                      {Math.round(ep.duration / 60000)}m
-                    </div>
-                  )}
-                </div>
-                <div className="min-w-0 flex-1 py-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-[10px] sm:text-xs text-cyan-300 shrink-0">S{ep.parent_index ?? "?"}·E{ep.index ?? "?"}</span>
-                    <span className="font-medium text-sm sm:text-base truncate">{ep.title}</span>
-                  </div>
-                  {ep.summary && <p className="text-zinc-400 text-xs sm:text-sm mt-1 line-clamp-2 sm:line-clamp-3">{ep.summary}</p>}
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ---------- Root ----------
 export default function Watch() {
   return (
@@ -942,8 +798,7 @@ export default function Watch() {
         <Routes>
           <Route index element={<Browse />} />
           <Route path="live" element={<LiveTV />} />
-          <Route path="movies" element={<LibraryView type="movie" label="Movies" />} />
-          <Route path="series" element={<LibraryView type="show" label="TV Shows" />} />
+          <Route path="movies" element={<IptvMoviesView />} />
           <Route path="search" element={<SearchPage />} />
           <Route path="watchlist" element={
             <ListPage endpoint="/me/watchlist" title="Watchlist"
@@ -956,7 +811,6 @@ export default function Watch() {
               emptyHint='No favorites yet. Tap the heart on any title to add it.' />
           } />
           <Route path="play/:rk" element={<Player />} />
-          <Route path="show/:rk" element={<ShowDetail />} />
           <Route path="*" element={<Navigate to="/watch" replace />} />
         </Routes>
       </WatchShell>

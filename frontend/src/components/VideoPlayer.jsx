@@ -9,7 +9,7 @@ import { AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
  *   at the URL and the browser handles segment fetching.
  * - On Chrome / Firefox / Edge (desktop + Android), HLS is NOT supported
  *   natively, so we attach hls.js, which buffers segments via MSE.
- * - For non-HLS sources (direct MP4 from Plex), the <video> element handles
+ * - For non-HLS sources (direct MP4 from IPTV VOD), the <video> element handles
  *   the URL natively on every platform.
  *
  * `playsInline` is critical on iPhone — without it the video fullscreens

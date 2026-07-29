@@ -499,7 +499,7 @@ async def iptv_vod_streams(category_id: Optional[str] = None, _: dict = Depends(
             "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
             "year": s.get("year"),
             "rating": s.get("rating"),
-            "audience_rating": s.get("rating"),
+            "audience_rating": s.get("rating"),  # mirrors rating for API schema compatibility
             "category_id": s.get("category_id"),
             "source": "iptv",
             "stream_url": _iptv_stream_url(cfg, "movie", s.get("stream_id"), ext),
@@ -1196,7 +1196,8 @@ async def admin_update_settings(body: SettingsBody, admin: dict = Depends(get_cu
 
 @api.get("/admin/servers")
 async def admin_servers_aggregate(admin: dict = Depends(get_current_admin)):
-    """Kept for backwards-compatibility; Plex is no longer supported."""
+    """Kept for backwards-compatibility; Plex is no longer supported.
+    Deprecated: this endpoint will be removed in a future version."""
     return {"servers": []}
 
 
@@ -1216,7 +1217,12 @@ async def me(user: dict = Depends(get_current_user)):
 
 
 async def _iptv_item_meta(rating_key: str, user: dict) -> Optional[dict]:
-    """Fetch IPTV metadata for an iptv-<kind>-<id> rating key."""
+    """Fetch IPTV metadata for an iptv-<kind>-<id> rating key.
+
+    Note: fetches the full stream list each call. Callers that need multiple
+    items (e.g. _enrich_keys) should consider batching to reduce redundant
+    network requests in the future.
+    """
     if not str(rating_key).startswith("iptv-"):
         return None
     try:

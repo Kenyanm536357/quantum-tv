@@ -129,7 +129,7 @@ function MediaCard({ item, size = "md", fluid = false, testid }) {
         className={`rounded-xl overflow-hidden bg-white/[0.04] border border-white/5 relative ${fluid ? "aspect-[2/3]" : ""}`}
       >
         {item.thumb ? (
-          <img src={item.thumb.startsWith("http") ? item.thumb : `${ASSET_BASE}${item.thumb}`} alt={item.title} className="w-full h-full object-cover" />
+          <img src={item.thumb && item.thumb.startsWith("http") ? item.thumb : item.thumb ? `${ASSET_BASE}${item.thumb}` : undefined} alt={item.title} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-purple-900/40 to-cyan-900/40 flex items-center justify-center">
             <Film className="w-8 h-8 text-zinc-500" />

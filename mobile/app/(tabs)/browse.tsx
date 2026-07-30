@@ -199,8 +199,8 @@ export default function Browse() {
   // Items use genre/category_name (now included in backend response) rather than title.
   const rows = requiresPin
     ? rawRows
-        .filter((r) => !isAdultCategory(r.title, r.id))
-        .map((r) => ({ ...r, items: r.items.filter((item) => !isAdultCategory(item.genre, item.category_name)) }))
+        .filter((r) => !isAdultCategory(r.title, r.id, r.title))
+        .map((r) => ({ ...r, items: r.items.filter((item) => !isAdultCategory(item.genre, item.category_name, item.title)) }))
         .filter((r) => r.items.length > 0)
     : rawRows;
   const featured = rows.find((r) => r.id === "continue")?.items?.[0] || rows.find((r) => r.id === "recent")?.items?.[0] || rows.find((r) => r.kind === "poster")?.items?.[0];

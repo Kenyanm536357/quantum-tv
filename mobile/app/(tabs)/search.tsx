@@ -24,7 +24,7 @@ export default function Search() {
   const allItems: any[] = data?.items || [];
   // When parental lock is active, hide adult content from search results
   const items = requiresPin
-    ? allItems.filter((item) => !isAdultCategory(item.genre, item.category_name ?? item.category))
+    ? allItems.filter((item) => !isAdultCategory(item.genre, item.category_name ?? item.category, item.title))
     : allItems;
 
   const openItem = (item: any) => {

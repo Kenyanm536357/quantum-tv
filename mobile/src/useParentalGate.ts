@@ -39,7 +39,8 @@ export function isAdultCategory(genre?: string, category?: string, title?: strin
     haystack.includes("brazzers") ||
     haystack.includes("bangbros") ||
     haystack.includes("nudity") ||
-    /\b18\s*\+/.test(haystack)
+    /\b18\s*\+/.test(haystack) ||
+    /[\[\(]\s*x{1,3}\s*[\]\)]/i.test(haystack)
   );
 }
 

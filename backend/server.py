@@ -486,7 +486,8 @@ async def iptv_live_streams(category_id: Optional[str] = None, _: dict = Depends
 
 _ADULT_CAT_RE = re.compile(
     r"(?:\b(?:ADULTS?|XXX|EROTIC(?:A)?|PORN(?:O)?|18PLUS|X-RATED|XRATED|"
-    r"PLAYBOY|HUSTLER|PENTHOUSE|BRAZZERS|BANGBROS|NAUGHTY|EXPLICIT|NUDE|NUDITY)\b|18\s*\+)",
+    r"PLAYBOY|HUSTLER|PENTHOUSE|BRAZZERS|BANGBROS|NAUGHTY|EXPLICIT|NUDE|NUDITY)\b|"
+    r"18\s*\+|[\[\(]\s*X{1,3}\s*[\]\)])",
     re.IGNORECASE,
 )
 
@@ -496,29 +497,60 @@ def _is_adult_category_name(name: Optional[str]) -> bool:
     return bool(_ADULT_CAT_RE.search(name or ""))
 
 
+async def _iptv_catalog(action: str, categories_action: str, category_id: Optional[str] = None) -> tuple[list[dict], dict[str, str]]:
+    """Load a complete Xtream VOD/series catalog.
+
+    Some providers return only a partial sample for an unscoped streams request,
+    while IPTV Smarters loads each category. Merge both forms so Quantum TV sees
+    the same full catalog without duplicate stream entries.
+    """
+    raw_cats = await _iptv_get(categories_action)
+    categories = [c for c in (raw_cats or []) if c.get("category_id") is not None]
+    cat_by_id = {
+        str(c.get("category_id")): str(c.get("category_name") or "").strip()
+        for c in categories
+    }
+
+    if category_id:
+        raw = await _iptv_get(action, {"category_id": category_id})
+        return list(raw or []), cat_by_id
+
+    bulk_task = _iptv_get(action)
+    semaphore = asyncio.Semaphore(8)
+
+    async def load_category(cid: str) -> list[dict]:
+        async with semaphore:
+            try:
+                result = await _iptv_get(action, {"category_id": cid})
+                return list(result or [])
+            except Exception as e:
+                log.warning("%s category %s fetch failed: %s", action, cid, e)
+                return []
+
+    bulk, *by_category = await asyncio.gather(
+        bulk_task,
+        *(load_category(str(c.get("category_id"))) for c in categories),
+    )
+    merged: dict[str, dict] = {}
+    for item in list(bulk or []) + [entry for group in by_category for entry in group]:
+        stream_id = item.get("stream_id") or item.get("series_id") or item.get("id")
+        if stream_id is not None:
+            merged[str(stream_id)] = item
+    return list(merged.values()), cat_by_id
+
+
 @api.get("/iptv/vod/streams")
 async def iptv_vod_streams(
     category_id: Optional[str] = None,
     exclude_adult: bool = False,
     _: dict = Depends(get_current_user),
 ):
-    # Build category_id -> name lookup so each movie carries a human-readable label.
-    cat_by_id: dict[str, str] = {}
-    adult_cat_ids: set[str] = set()
     try:
-        raw_cats = await _iptv_get("get_vod_categories")
-        for c in (raw_cats or []):
-            cid = str(c.get("category_id") or "")
-            name = str(c.get("category_name") or "").strip()
-            if cid:
-                cat_by_id[cid] = name
-                if _is_adult_category_name(name):
-                    adult_cat_ids.add(cid)
+        raw, cat_by_id = await _iptv_catalog("get_vod_streams", "get_vod_categories", category_id)
     except Exception as e:
-        log.warning("VOD categories fetch failed: %s", e)
-
-    params = {"category_id": category_id} if category_id else None
-    raw = await _iptv_get("get_vod_streams", params)
+        log.warning("VOD catalog fetch failed: %s", e)
+        raw, cat_by_id = [], {}
+    adult_cat_ids = {cid for cid, name in cat_by_id.items() if _is_adult_category_name(name)}
     cfg = await db.settings.find_one({"id": "iptv_config"})
     out = []
     for s in (raw or []):
@@ -553,23 +585,12 @@ async def iptv_series_streams(
     _: dict = Depends(get_current_user),
 ):
     """Return all IPTV TV series from the Xtream Codes provider."""
-    # Build category_id -> name lookup so each series carries a human-readable label.
-    cat_by_id: dict[str, str] = {}
-    adult_cat_ids: set[str] = set()
     try:
-        raw_cats = await _iptv_get("get_series_categories")
-        for c in (raw_cats or []):
-            cid = str(c.get("category_id") or "")
-            name = str(c.get("category_name") or "").strip()
-            if cid:
-                cat_by_id[cid] = name
-                if _is_adult_category_name(name):
-                    adult_cat_ids.add(cid)
+        raw, cat_by_id = await _iptv_catalog("get_series", "get_series_categories", category_id)
     except Exception as e:
-        log.warning("Series categories fetch failed: %s", e)
-
-    params = {"category_id": category_id} if category_id else None
-    raw = await _iptv_get("get_series", params)
+        log.warning("Series catalog fetch failed: %s", e)
+        raw, cat_by_id = [], {}
+    adult_cat_ids = {cid for cid, name in cat_by_id.items() if _is_adult_category_name(name)}
     out = []
     for s in (raw or []):
         cid = str(s.get("category_id") or "")
@@ -1525,21 +1546,10 @@ async def metadata_children(rating_key: str, user: dict = Depends(get_current_us
 
 @api.get("/recently-added")
 async def recently_added(user: dict = Depends(get_current_user), limit: int = 30):
-    """Return a sample of IPTV VOD movies as the 'recently added' row."""
+    """Return a safe sample of non-adult IPTV VOD for the home screen."""
     try:
-        raw = await _iptv_get("get_vod_streams")
-        items = []
-        for s in (raw or [])[:limit]:
-            thumb_raw = s.get("stream_icon")
-            items.append({
-                "rating_key": f"iptv-movie-{s.get('stream_id')}",
-                "title": s.get("name"),
-                "type": "movie",
-                "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
-                "year": s.get("year"),
-                "audience_rating": s.get("rating"),
-            })
-        return {"items": items}
+        catalog = await iptv_vod_streams(exclude_adult=True, _=user)
+        return {"items": (catalog.get("items") or [])[:limit]}
     except Exception:
         return {"items": []}
 

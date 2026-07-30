@@ -29,7 +29,17 @@ export function isAdultCategory(genre?: string, category?: string, title?: strin
     haystack.includes("18+") ||
     haystack.includes("erotic") ||
     haystack.includes("x-rated") ||
-    haystack.includes("porn")
+    haystack.includes("xrated") ||
+    haystack.includes("porn") ||
+    haystack.includes("18plus") ||
+    haystack.includes("explicit") ||
+    haystack.includes("playboy") ||
+    haystack.includes("hustler") ||
+    haystack.includes("penthouse") ||
+    haystack.includes("brazzers") ||
+    haystack.includes("bangbros") ||
+    haystack.includes("nudity") ||
+    /\b18\s*\+/.test(haystack)
   );
 }
 

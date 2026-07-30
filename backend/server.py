@@ -527,12 +527,26 @@ async def _iptv_catalog(action: str, categories_action: str, category_id: Option
                 log.warning("%s category %s fetch failed: %s", action, cid, e)
                 return []
 
-    bulk, *by_category = await asyncio.gather(
+    # Do not let one slow/unsupported provider response make the entire
+    # Movies or TV Shows page fail. Category results are independently useful.
+    results = await asyncio.gather(
         bulk_task,
         *(load_category(str(c.get("category_id"))) for c in categories),
+        return_exceptions=True,
     )
+    bulk_result = results[0]
+    if isinstance(bulk_result, Exception):
+        log.warning("%s bulk catalog fetch failed: %s", action, bulk_result)
+        bulk: list[dict] = []
+    elif isinstance(bulk_result, list):
+        bulk = bulk_result
+    else:
+        bulk = []
+    by_category = [result for result in results[1:] if isinstance(result, list)]
     merged: dict[str, dict] = {}
-    for item in list(bulk or []) + [entry for group in by_category for entry in group]:
+    for item in bulk + [entry for group in by_category for entry in group]:
+        if not isinstance(item, dict):
+            continue
         stream_id = item.get("stream_id") or item.get("series_id") or item.get("id")
         if stream_id is not None:
             merged[str(stream_id)] = item
@@ -1924,9 +1938,11 @@ async def stream_url(rating_key: str, request: Request, user: dict = Depends(get
     # the provider's direct Xtream URL than on our auth-proxied m3u8.
     if external or direct:
         if kind == "live":
-            # Prefer HLS for broad player support; many lines also expose .ts.
-            url = _iptv_stream_url(cfg, "live", sid, "m3u8")
-            return {"url": url, "type": "hls", "mode": "provider-direct"}
+            # Xtream lines are most consistently playable by Android TV
+            # players through the MPEG transport stream endpoint. Some lines
+            # advertise HLS but do not actually serve the .m3u8 variant.
+            url = _iptv_stream_url(cfg, "live", sid, "ts")
+            return {"url": url, "type": "ts", "mode": "provider-direct"}
         # VOD / series: use mp4 by default (container may vary; players still handle it)
         vod_kind = proxy_kind if kind == "ep" else kind
         url = _iptv_stream_url(cfg, vod_kind, sid, "mp4")

@@ -37,8 +37,10 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["iptv-grid", type, requiresPin],
-    queryFn: async () => (await client.get(fetchUrl)).data as { items: LibItem[]; total: number },
+    queryFn: async () => (await client.get(fetchUrl, { timeout: 180000 })).data as { items: LibItem[]; total: number },
     staleTime: 5 * 60 * 1000,
+    retry: 2,
+    retryDelay: 2000,
   });
 
   // User's saved favorites for the gold-star badge

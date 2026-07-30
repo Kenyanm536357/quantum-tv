@@ -56,10 +56,16 @@ const NUM_BUFFER_TIMEOUT_MS = 2200;
 
 // Timeline layout — everything is derived from SLOT_W so the "NOW" line
 // and program blocks land at consistent pixel positions.
-const LEFT_COL_W = IS_TV ? s(160) : s(120);
-const TIMELINE_W = SCREEN_W - LEFT_COL_W - SAFE.left - SAFE.right;
+// LEFT_COL_W must be large enough so that after paddingLeft: SAFE.left
+// (which includes the side-rail width on TV) there is still enough room
+// for the channel number + logo and the channel name label.
+const LEFT_COL_W = IS_TV
+  ? Math.max(s(200), SAFE.left + s(100))
+  : Math.max(s(130), SAFE.left + s(90));
+const TIMELINE_W = SCREEN_W - LEFT_COL_W - SAFE.right;
 const SLOT_W = Math.max(120, Math.floor(TIMELINE_W / VISIBLE_SLOTS));
-const ROW_H = IS_TV ? vs(58) : vs(46);
+// Taller rows to fit channel number + logo line AND a channel-name line below.
+const ROW_H = IS_TV ? vs(72) : vs(56);
 const HEADER_H = IS_TV ? vs(38) : vs(30);
 const HERO_H = IS_TV ? vs(170) : vs(130);
 const PX_PER_MIN = SLOT_W / SLOT_MIN;
@@ -555,12 +561,10 @@ function GuideRow({
 
   return (
     <View style={styles.row}>
-      {/* Left column: channel # (top), logo (below); heart badge only when fav */}
+      {/* Left column: logo + channel number stacked, with full channel name below */}
       <View style={styles.leftCol}>
-        <View style={styles.channelStack}>
-          <Text style={styles.channelNum} numberOfLines={1}>
-            {channel.number ?? "—"}
-          </Text>
+        {/* Top row: logo/initial box + channel number side by side */}
+        <View style={styles.channelTopRow}>
           <View style={styles.channelLogoBox}>
             {channel.logo ? (
               <Image
@@ -569,7 +573,7 @@ function GuideRow({
                 resizeMode="contain"
               />
             ) : (
-              <Text style={styles.channelInitial} numberOfLines={1}>{channel.title.slice(0, 4)}</Text>
+              <Text style={styles.channelInitial} numberOfLines={1}>{channel.title.slice(0, 3)}</Text>
             )}
             {isFav ? (
               <View style={styles.favBadge} pointerEvents="none">
@@ -577,7 +581,12 @@ function GuideRow({
               </View>
             ) : null}
           </View>
+          <Text style={styles.channelNum} numberOfLines={1}>
+            {channel.number ?? "—"}
+          </Text>
         </View>
+        {/* Channel name — always shown below the logo+number row */}
+        <Text style={styles.channelName} numberOfLines={1}>{channel.title}</Text>
       </View>
 
       {/* Right: program blocks OR a "no guide data" placeholder */}
@@ -868,38 +877,56 @@ const styles = StyleSheet.create({
   leftCol: {
     width: LEFT_COL_W,
     paddingLeft: SAFE.left,
-    flexDirection: "row", alignItems: "center",
+    flexDirection: "column",
+    justifyContent: "center",
     borderRightWidth: 1, borderRightColor: "rgba(139,92,246,0.15)",
-    paddingRight: 8,
+    paddingRight: 6,
+    paddingVertical: 4,
+    gap: 2,
   },
-  channelStack: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },
+  // Top row inside left column: logo box + channel number side by side
+  channelTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 0,
+  },
   channelNum: {
     color: colors.zinc300,
     fontFamily: "Unbounded_700Bold",
-    fontSize: ms(11),
-    letterSpacing: 0.4,
-    width: ms(34),
-    textAlign: "right",
+    fontSize: ms(10),
+    letterSpacing: 0.3,
+    flexShrink: 0,
   },
   channelLogoBox: {
-    flex: 1, height: ROW_H - vs(14), borderRadius: 6,
+    width: IS_TV ? vs(30) : vs(24),
+    height: IS_TV ? vs(30) : vs(24),
+    borderRadius: 5,
     backgroundColor: "rgba(28,10,56,0.55)",
     alignItems: "center", justifyContent: "center",
-    padding: 4,
+    padding: 2,
     position: "relative",
     overflow: "hidden",
+    flexShrink: 0,
+  },
+  channelName: {
+    color: colors.zinc400,
+    fontFamily: "Outfit_500Medium",
+    fontSize: ms(9),
+    letterSpacing: 0.2,
+    flexShrink: 1,
   },
   favBadge: {
     position: "absolute",
-    top: 2, right: 2,
-    width: ms(16), height: ms(16),
+    top: 1, right: 1,
+    width: ms(12), height: ms(12),
     borderRadius: 999,
     backgroundColor: colors.magenta,
     alignItems: "center", justifyContent: "center",
     shadowColor: colors.magenta, shadowOpacity: 0.6, shadowRadius: 3,
     elevation: 3,
   },
-  channelInitial: { color: "#fff", fontFamily: "Unbounded_700Bold", fontSize: SIZES.fontTiny, textAlign: "center" },
+  channelInitial: { color: "#fff", fontFamily: "Unbounded_700Bold", fontSize: ms(7), textAlign: "center" },
   timeline: {
     flex: 1,
     height: ROW_H,

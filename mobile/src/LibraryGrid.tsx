@@ -7,6 +7,7 @@ import { useRouter } from "expo-router";
 import client, { BACKEND, colors } from "./api";
 import BrandBackground from "./BrandBackground";
 import { SAFE, SIZES, GRID_COLS, IS_TV, vs, ms, s, FOCUSED_CARD } from "./responsive";
+import { useParentalGate, isAdultCategory } from "./useParentalGate";
 
 type LibItem = {
   rating_key: string;
@@ -15,6 +16,7 @@ type LibItem = {
   thumb?: string;
   type?: string;
   category_id?: string;
+  category_name?: string;
   leaf_count?: number;
 };
 
@@ -24,12 +26,18 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
 
-  // Route to the correct IPTV endpoint depending on content type
+  // Parental gate — exclude adult content when disabled
+  const { requiresPin } = useParentalGate();
+
+  // Route to the correct IPTV endpoint depending on content type.
+  // Pass exclude_adult=true when adult channels are disabled so the server
+  // pre-filters by category (catches content the client keyword filter misses).
   const endpoint = type === "movie" ? "/iptv/vod/streams" : "/iptv/series/streams";
+  const fetchUrl = `${endpoint}?exclude_adult=${requiresPin ? "true" : "false"}`;
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["iptv-grid", type],
-    queryFn: async () => (await client.get(endpoint)).data as { items: LibItem[]; total: number },
+    queryKey: ["iptv-grid", type, requiresPin],
+    queryFn: async () => (await client.get(fetchUrl)).data as { items: LibItem[]; total: number },
     staleTime: 5 * 60 * 1000,
   });
 
@@ -60,14 +68,20 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
     }
   };
 
-  const allItems: LibItem[] = data?.items || [];
+  // Apply client-side adult filter as a second pass (keyword-based)
+  const allItems: LibItem[] = useMemo(() => {
+    const raw = data?.items || [];
+    if (!requiresPin) return raw;
+    return raw.filter((it) => !isAdultCategory(undefined, it.category_name, it.title));
+  }, [data, requiresPin]);
 
-  // Derive unique categories from loaded items for filter chips
+  // Derive unique categories from loaded items for filter chips (use category_name if available)
   const categories = useMemo(() => {
     const seen = new Set<string>();
     const cats: string[] = ["All"];
     for (const it of allItems) {
-      const c = String(it.category_id || "").trim();
+      // Prefer human-readable category_name; fall back to category_id
+      const c = String(it.category_name || it.category_id || "").trim();
       if (c && !seen.has(c)) { seen.add(c); cats.push(c); }
     }
     return cats;
@@ -76,7 +90,12 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
   // Apply category + search filters
   const filtered = useMemo(() => {
     let list = allItems;
-    if (activeCategory !== "All") list = list.filter((it) => String(it.category_id || "") === activeCategory);
+    if (activeCategory !== "All") {
+      list = list.filter((it) => {
+        const cat = String(it.category_name || it.category_id || "").trim();
+        return cat === activeCategory;
+      });
+    }
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       list = list.filter((it) => (it.title || "").toLowerCase().includes(q));

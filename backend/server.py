@@ -484,13 +484,49 @@ async def iptv_live_streams(category_id: Optional[str] = None, _: dict = Depends
     return {"items": out, "total": len(out)}
 
 
+_ADULT_CAT_RE = re.compile(
+    r"(?:\b(?:ADULTS?|XXX|EROTIC(?:A)?|PORN(?:O)?|18PLUS|X-RATED|XRATED|"
+    r"PLAYBOY|HUSTLER|PENTHOUSE|BRAZZERS|BANGBROS|NAUGHTY|EXPLICIT|NUDE|NUDITY)\b|18\s*\+)",
+    re.IGNORECASE,
+)
+
+
+def _is_adult_category_name(name: Optional[str]) -> bool:
+    """Return True if a VOD/series category name looks like adult content."""
+    return bool(_ADULT_CAT_RE.search(name or ""))
+
+
 @api.get("/iptv/vod/streams")
-async def iptv_vod_streams(category_id: Optional[str] = None, _: dict = Depends(get_current_user)):
+async def iptv_vod_streams(
+    category_id: Optional[str] = None,
+    exclude_adult: bool = False,
+    _: dict = Depends(get_current_user),
+):
+    # Build category_id -> name lookup so each movie carries a human-readable label.
+    cat_by_id: dict[str, str] = {}
+    adult_cat_ids: set[str] = set()
+    try:
+        raw_cats = await _iptv_get("get_vod_categories")
+        for c in (raw_cats or []):
+            cid = str(c.get("category_id") or "")
+            name = str(c.get("category_name") or "").strip()
+            if cid:
+                cat_by_id[cid] = name
+                if _is_adult_category_name(name):
+                    adult_cat_ids.add(cid)
+    except Exception as e:
+        log.warning("VOD categories fetch failed: %s", e)
+
     params = {"category_id": category_id} if category_id else None
     raw = await _iptv_get("get_vod_streams", params)
     cfg = await db.settings.find_one({"id": "iptv_config"})
     out = []
     for s in (raw or []):
+        cid = str(s.get("category_id") or "")
+        cat_name = cat_by_id.get(cid) or None
+        # Skip adult content when requested
+        if exclude_adult and (cid in adult_cat_ids or _is_adult_category_name(cat_name) or _is_adult_category_name(s.get("name"))):
+            continue
         ext = s.get("container_extension") or "mp4"
         thumb_raw = s.get("stream_icon")
         out.append({
@@ -502,7 +538,8 @@ async def iptv_vod_streams(category_id: Optional[str] = None, _: dict = Depends(
             "year": s.get("year"),
             "rating": s.get("rating"),
             "audience_rating": s.get("rating"),  # mirrors rating for API schema compatibility
-            "category_id": s.get("category_id"),
+            "category_id": cid or None,
+            "category_name": cat_name,
             "source": "iptv",
             "stream_url": _iptv_stream_url(cfg, "movie", s.get("stream_id"), ext),
         })
@@ -510,12 +547,36 @@ async def iptv_vod_streams(category_id: Optional[str] = None, _: dict = Depends(
 
 
 @api.get("/iptv/series/streams")
-async def iptv_series_streams(category_id: Optional[str] = None, _: dict = Depends(get_current_user)):
+async def iptv_series_streams(
+    category_id: Optional[str] = None,
+    exclude_adult: bool = False,
+    _: dict = Depends(get_current_user),
+):
     """Return all IPTV TV series from the Xtream Codes provider."""
+    # Build category_id -> name lookup so each series carries a human-readable label.
+    cat_by_id: dict[str, str] = {}
+    adult_cat_ids: set[str] = set()
+    try:
+        raw_cats = await _iptv_get("get_series_categories")
+        for c in (raw_cats or []):
+            cid = str(c.get("category_id") or "")
+            name = str(c.get("category_name") or "").strip()
+            if cid:
+                cat_by_id[cid] = name
+                if _is_adult_category_name(name):
+                    adult_cat_ids.add(cid)
+    except Exception as e:
+        log.warning("Series categories fetch failed: %s", e)
+
     params = {"category_id": category_id} if category_id else None
     raw = await _iptv_get("get_series", params)
     out = []
     for s in (raw or []):
+        cid = str(s.get("category_id") or "")
+        cat_name = cat_by_id.get(cid) or None
+        # Skip adult content when requested
+        if exclude_adult and (cid in adult_cat_ids or _is_adult_category_name(cat_name) or _is_adult_category_name(s.get("name"))):
+            continue
         thumb_raw = s.get("cover")
         release = str(s.get("release_date") or "")
         out.append({
@@ -527,7 +588,8 @@ async def iptv_series_streams(category_id: Optional[str] = None, _: dict = Depen
             "year": release[:4] if release else None,
             "rating": s.get("rating"),
             "audience_rating": s.get("rating"),
-            "category_id": s.get("category_id"),
+            "category_id": cid or None,
+            "category_name": cat_name,
             "source": "iptv",
         })
     return {"items": out, "total": len(out)}
@@ -1665,7 +1727,7 @@ _GENRE_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\b(RELIGION|CHURCH|GOSPEL|CHRIST|FAITH|CATHOLIC|MUSLIM|ISLAM)\b", re.I), "Religion"),
     (re.compile(r"\b(24\s*[\/-]?\s*7|247)\b", re.I), "24/7"),
     (re.compile(r"\b(PPV|PAY\s*PER\s*VIEW|EVENT(?:S)?)\b", re.I), "PPV / Events"),
-    (re.compile(r"\b(ADULT|XXX|EROTIC)\b", re.I), "Adult"),
+    (re.compile(r"(?:\b(?:ADULTS?|XXX|EROTIC(?:A)?|PORN(?:O)?|X-RATED|XRATED|EXPLICIT|NUDE|NUDITY)\b|18\s*\+)", re.I), "Adult"),
     (re.compile(r"\b(ENT(?:ERTAINMENT)?|LIFESTYLE|REALITY|VARIETY)\b", re.I), "Entertainment"),
 ]
 

@@ -3,7 +3,7 @@ import { Routes, Route, NavLink, useNavigate, useParams, Navigate, Link } from "
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
-  Grid3X3, Radio, Film, Search, Bookmark, Heart, LogOut, Play,
+  Grid3X3, Radio, Film, Tv, Search, Bookmark, Heart, LogOut, Play,
   ChevronLeft, ChevronRight, X, Plus, Check, Loader2, Star,
 } from "lucide-react";
 import api, { ASSET_BASE } from "../api";
@@ -33,6 +33,7 @@ function WatchShell({ children }) {
     { to: "/watch",         label: "Browse",    icon: Grid3X3,  end: true },
     { to: "/watch/live",    label: "Live TV",   icon: Radio },
     { to: "/watch/movies",  label: "Movies",    icon: Film },
+    { to: "/watch/shows",   label: "TV Shows",  icon: Tv },
     { to: "/watch/watchlist", label: "Watchlist", icon: Bookmark },
     { to: "/watch/favorites", label: "Favorites", icon: Heart },
     { to: "/watch/search",  label: "Search",    icon: Search },
@@ -328,6 +329,41 @@ function IptvMoviesView() {
         </div>
       ) : items.length === 0 ? (
         <div className="text-zinc-400 text-sm sm:text-base">No movies available. Connect an IPTV provider in the admin panel.</div>
+      ) : (
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 sm:gap-4">
+          {items.map((it) => <MediaCard key={it.rating_key} item={it} fluid />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- IPTV TV Shows view ----------
+function IptvShowsView() {
+  const [sort, setSort] = React.useState("title:asc");
+  const nav = useNavigate();
+  const { data, isLoading } = useQuery({
+    queryKey: ["iptv-series"],
+    queryFn: async () => (await api.get("/iptv/series/streams")).data,
+    staleTime: 60_000,
+  });
+  const items = applySort(data?.items || [], sort);
+  return (
+    <div className="fade-in">
+      <div className="mb-5 sm:mb-6 flex items-end justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] sm:tracking-[0.25em] text-zinc-500 font-heading">IPTV</div>
+          <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-extrabold mt-1">TV Shows</h1>
+          {data && <div className="text-zinc-400 text-xs sm:text-sm mt-2">{(data.total ?? items.length).toLocaleString()} titles</div>}
+        </div>
+        <SortMenu options={SORT_OPTIONS} value={sort} onChange={setSort} />
+      </div>
+      {isLoading ? (
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 sm:gap-4">
+          {[...Array(12)].map((_, i) => <div key={i} className="aspect-[2/3] rounded-xl bg-white/[0.03] animate-pulse" />)}
+        </div>
+      ) : items.length === 0 ? (
+        <div className="text-zinc-400 text-sm sm:text-base">No TV shows available. Connect an IPTV provider in the admin panel.</div>
       ) : (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 sm:gap-4">
           {items.map((it) => <MediaCard key={it.rating_key} item={it} fluid />)}
@@ -797,6 +833,7 @@ export default function Watch() {
           <Route index element={<Browse />} />
           <Route path="live" element={<LiveTV />} />
           <Route path="movies" element={<IptvMoviesView />} />
+          <Route path="shows" element={<IptvShowsView />} />
           <Route path="search" element={<SearchPage />} />
           <Route path="watchlist" element={
             <ListPage endpoint="/me/watchlist" title="Watchlist"

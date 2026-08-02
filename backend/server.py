@@ -2301,4 +2301,44 @@ async def install_landing(request: Request):
 async def startup():
     await db.users.create_index("id", unique=True)
     await db.users.create_index("username", unique=True, sparse=True)
+
+    # Auto-seed Xtream credentials from environment variables if provided and
+    # no IPTV config has been stored yet.  Set IPTV_URL, IPTV_USERNAME, and
+    # IPTV_PASSWORD in the backend .env (or container environment) to have the
+    # provider configured automatically on every fresh deployment.
+    iptv_url = os.environ.get("IPTV_URL", "").strip().rstrip("/")
+    iptv_user = os.environ.get("IPTV_USERNAME", "").strip()
+    iptv_pass = os.environ.get("IPTV_PASSWORD", "").strip()
+    if iptv_url and iptv_user and iptv_pass:
+        existing = await db.settings.find_one({"id": "iptv_config"})
+        if not existing:
+            if not iptv_url.startswith("http"):
+                iptv_url = "http://" + iptv_url
+            try:
+                timeout = httpx.Timeout(connect=15.0, read=30.0, write=15.0, pool=15.0)
+                async with httpx.AsyncClient(timeout=timeout) as c:
+                    r = await c.get(
+                        f"{iptv_url}/player_api.php",
+                        params={"username": iptv_user, "password": iptv_pass},
+                    )
+                    r.raise_for_status()
+                    d = r.json()
+                ui = (d or {}).get("user_info") or {}
+                await db.settings.update_one(
+                    {"id": "iptv_config"},
+                    {"$set": {
+                        "id": "iptv_config",
+                        "url": iptv_url,
+                        "username": iptv_user,
+                        "password_enc": encrypt_token(iptv_pass),
+                        "user_info": ui,
+                        "server_info": (d or {}).get("server_info") or {},
+                        "connected_at": now_iso(),
+                    }},
+                    upsert=True,
+                )
+                log.info("IPTV provider auto-seeded from environment: %s (status=%s)", iptv_url, ui.get("status"))
+            except Exception as e:
+                log.warning("IPTV auto-seed failed (provider unreachable at startup): %s", e)
+
     log.info("Quantum TV API started")

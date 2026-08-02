@@ -1413,9 +1413,14 @@ async def _iptv_item_meta(rating_key: str, user: dict) -> Optional[dict]:
         except (ValueError, TypeError):
             return None
         try:
-            action = "get_live_streams" if kind == "live" else "get_vod_streams"
-            raw = await _iptv_get(action)
-            hit = next((s for s in (raw or []) if int(s.get("stream_id", -1)) == sid_int), None)
+            if kind == "live":
+                raw = await _iptv_get("get_live_streams")
+                hit = next((s for s in (raw or []) if int(s.get("stream_id", -1)) == sid_int), None)
+            else:
+                # Use the full catalog (bulk + per-category) so items only
+                # present in a specific category are still found.
+                raw, _ = await _iptv_catalog("get_vod_streams", "get_vod_categories")
+                hit = next((s for s in (raw or []) if int(s.get("stream_id", -1)) == sid_int), None)
         except Exception:
             hit = None
         title = (hit or {}).get("name") or ("Live Channel" if kind == "live" else "Movie")
@@ -1440,7 +1445,8 @@ async def _iptv_item_meta(rating_key: str, user: dict) -> Optional[dict]:
         except (ValueError, TypeError):
             return None
         try:
-            raw = await _iptv_get("get_series")
+            # Use the full catalog (bulk + per-category) for completeness.
+            raw, _ = await _iptv_catalog("get_series", "get_series_categories")
             hit = next((s for s in (raw or []) if int(s.get("series_id", -1)) == sid_int), None)
         except Exception:
             hit = None
@@ -1574,17 +1580,29 @@ async def on_deck(user: dict = Depends(get_current_user), limit: int = 30):
     return {"items": []}
 
 
+async def _recently_added_series(user: dict, limit: int = 30) -> dict:
+    """Return a safe sample of non-adult IPTV series for the home screen."""
+    try:
+        catalog = await iptv_series_streams(exclude_adult=True, _=user)
+        return {"items": (catalog.get("items") or [])[:limit]}
+    except Exception:
+        return {"items": []}
+
+
 @api.get("/browse/rows")
 async def browse_rows(user: dict = Depends(get_current_user), per_row: int = 20, max_sections: int = 5):
-    """Compose the home screen: live channels row + VOD movies row."""
+    """Compose the home screen: live channels row + VOD movies row + TV Shows row."""
     import asyncio
 
     rows: list[dict] = []
 
     live_task = live_channels(user)
     vod_task = recently_added(user, limit=per_row)
+    series_task = _recently_added_series(user, limit=per_row)
 
-    live_resp, vod_resp = await asyncio.gather(live_task, vod_task, return_exceptions=False)
+    live_resp, vod_resp, series_resp = await asyncio.gather(
+        live_task, vod_task, series_task, return_exceptions=False
+    )
 
     # --- Top Live channels ---------------------------------------------------
     try:
@@ -1625,6 +1643,19 @@ async def browse_rows(user: dict = Depends(get_current_user), per_row: int = 20,
             })
     except Exception as e:
         log.info("VOD row failed: %s", e)
+
+    # --- TV Shows row --------------------------------------------------------
+    try:
+        series_items = (series_resp or {}).get("items", []) or []
+        if series_items:
+            rows.append({
+                "id": "series",
+                "title": "TV Shows",
+                "kind": "poster",
+                "items": series_items[:per_row],
+            })
+    except Exception as e:
+        log.info("Series row failed: %s", e)
 
     return {"rows": rows}
 
@@ -1670,10 +1701,11 @@ async def search(q: str, user: dict = Depends(get_current_user), limit: int = 50
 
     # VOD movies
     try:
-        raw_vod = await _iptv_get("get_vod_streams")
+        raw_vod, vod_cat_by_id = await _iptv_catalog("get_vod_streams", "get_vod_categories")
         for s in (raw_vod or []):
             if needle in (s.get("name") or "").lower():
                 thumb_raw = s.get("stream_icon")
+                cid = str(s.get("category_id") or "")
                 results.append({
                     "rating_key": f"iptv-movie-{s.get('stream_id')}",
                     "title": s.get("name"),
@@ -1682,17 +1714,18 @@ async def search(q: str, user: dict = Depends(get_current_user), limit: int = 50
                     "year": s.get("year"),
                     "audience_rating": s.get("rating"),
                     "genre": s.get("genre"),
-                    "category_name": None,
+                    "category_name": vod_cat_by_id.get(cid) or None,
                 })
     except Exception:
         pass
 
     # Series
     try:
-        raw_series = await _iptv_get("get_series")
+        raw_series, series_cat_by_id = await _iptv_catalog("get_series", "get_series_categories")
         for s in (raw_series or []):
             if needle in (s.get("name") or "").lower():
                 thumb_raw = s.get("cover")
+                cid = str(s.get("category_id") or "")
                 results.append({
                     "rating_key": f"iptv-series-{s.get('series_id')}",
                     "title": s.get("name"),
@@ -1701,7 +1734,7 @@ async def search(q: str, user: dict = Depends(get_current_user), limit: int = 50
                     "year": str(s.get("release_date") or "")[:4] or None,
                     "audience_rating": s.get("rating"),
                     "genre": s.get("genre"),
-                    "category_name": None,
+                    "category_name": series_cat_by_id.get(cid) or None,
                 })
     except Exception:
         pass

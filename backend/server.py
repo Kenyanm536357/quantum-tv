@@ -18,7 +18,7 @@ import hashlib
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional, Any
-from urllib.parse import urlencode, urljoin, urlparse, quote
+from urllib.parse import urlencode, urljoin, urlparse, parse_qs, quote
 
 import httpx
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Response, UploadFile, File, Request
@@ -257,6 +257,116 @@ async def login(body: LoginBody):
     }
 
 
+class IptvSignInBody(BaseModel):
+    mode: str                           # "xtream" | "m3u"
+    url: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    m3u_url: Optional[str] = None
+    device_id: Optional[str] = None
+    device_model: Optional[str] = None
+    device_name: Optional[str] = None
+
+
+def _parse_m3u_credentials(m3u_url: str) -> tuple[str, str, str]:
+    """Extract (base_url, username, password) from an Xtream-style M3U link,
+    e.g. http://host:port/get.php?username=U&password=P&type=m3u_plus."""
+    parsed = urlparse((m3u_url or "").strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(400, "That doesn't look like a valid link.")
+    qs = parse_qs(parsed.query)
+    user = (qs.get("username") or [""])[0]
+    pw = (qs.get("password") or [""])[0]
+    if not user or not pw:
+        raise HTTPException(400, "Couldn't find a username/password in that M3U link. Use Xtream Codes login instead.")
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    return base, user, pw
+
+
+@api.post("/auth/iptv-login")
+async def auth_iptv_login(body: IptvSignInBody):
+    """Alternate Fire Stick sign-in: connect directly with an Xtream Codes
+    login or an M3U playlist link instead of a Quantum TV username/password.
+    Validates the credentials against the provider, makes it the app's
+    active IPTV source, and auto-provisions (or reuses) a Quantum TV
+    account tied to that provider login so devices/subscription still work.
+    """
+    if body.mode == "m3u":
+        url, xt_user, xt_pass = _parse_m3u_credentials(body.m3u_url or "")
+    elif body.mode == "xtream":
+        url, xt_user, xt_pass = body.url or "", body.username or "", body.password or ""
+    else:
+        raise HTTPException(400, "mode must be 'xtream' or 'm3u'")
+
+    ui = await _connect_iptv_provider(url, xt_user, xt_pass)
+
+    # Deterministic account per provider login so re-signing-in reuses the
+    # same device slots instead of spawning a new account each time.
+    account_key = hashlib.sha256(f"{url.rstrip('/')}|{xt_user}".encode()).hexdigest()[:16]
+    username = f"iptv_{account_key}"
+    user = await db.users.find_one({"username": username})
+    now = now_iso()
+    if not user:
+        user = {
+            "id": str(uuid.uuid4()),
+            "account_number": _generate_account_number(),
+            "username": username,
+            "password_hash": None,   # this account can only sign in via iptv-login
+            "display_name": xt_user,
+            "status": "active",
+            "subscription_months": 120,
+            "activated_at": now,
+            "expires_at": _add_months(now, 120),
+            "max_devices": 10,
+            "devices": [],
+            "notes": [],
+            "watchlist": [],
+            "favorites": [],
+            "created_at": now,
+            "updated_at": now,
+            "last_login": None,
+        }
+        await db.users.insert_one(user)
+
+    sub = _subscription_view(user)
+    devices = list(user.get("devices") or [])
+    max_devices = int(user.get("max_devices", 10))
+    dev_id = (body.device_id or "").strip()
+    if dev_id:
+        existing = next((d for d in devices if d.get("id") == dev_id), None)
+        if existing:
+            existing["last_seen"] = now
+            if body.device_model:
+                existing["model"] = body.device_model
+            if body.device_name:
+                existing["name"] = body.device_name
+        elif len(devices) < max_devices:
+            devices.append({
+                "id": dev_id,
+                "model": body.device_model or "Unknown",
+                "name": body.device_name or "Device",
+                "primary": len(devices) == 0,
+                "registered_at": now,
+                "last_seen": now,
+            })
+
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"last_login": now, "devices": devices}},
+    )
+    token = create_jwt({"sub": user["id"], "role": "user", "username": user["username"]})
+    return {
+        "token": token,
+        "role": "user",
+        "username": user["username"],
+        "display_name": user.get("display_name") or user["username"],
+        "avatar": user.get("avatar"),
+        "subscription": sub,
+        "account_number": user.get("account_number"),
+        "provider_status": ui.get("status"),
+    }
+
+
 # Quick endpoint for the mobile app to check its subscription state
 @api.get("/me/subscription")
 async def me_subscription(current: dict = Depends(get_current_user)):
@@ -321,24 +431,31 @@ def _iptv_stream_url(cfg: dict, kind: str, stream_id: int, ext: str = "ts") -> s
     raise HTTPException(400, "Invalid stream kind")
 
 
-@api.post("/admin/iptv/connect")
-async def admin_iptv_connect(body: IptvConnectBody, admin: dict = Depends(get_current_admin)):
-    """Validate Xtream credentials and persist them (password encrypted)."""
-    url = (body.url or "").strip().rstrip("/")
-    if not url.startswith("http"):
-        url = "http://" + url
-    user = (body.username or "").strip()
-    pw = (body.password or "").strip()
-    if not (url and user and pw):
-        raise HTTPException(400, "url, username, password required")
-    # Probe the provider
+async def _probe_xtream(url: str, user: str, pw: str) -> dict:
+    """Hit player_api.php with the given credentials. Returns the parsed JSON
+    or raises HTTPException(502) on network failure."""
     try:
         async with httpx.AsyncClient(timeout=15.0) as c:
             r = await c.get(f"{url}/player_api.php", params={"username": user, "password": pw})
             r.raise_for_status()
-            d = r.json()
+            return r.json()
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(502, f"Could not reach IPTV provider: {e}")
+
+
+async def _connect_iptv_provider(url: str, user: str, pw: str) -> dict:
+    """Validate Xtream credentials, persist them as the app's provider
+    (password encrypted), and return the user_info from the probe."""
+    url = (url or "").strip().rstrip("/")
+    if not url.startswith("http"):
+        url = "http://" + url
+    user = (user or "").strip()
+    pw = (pw or "").strip()
+    if not (url and user and pw):
+        raise HTTPException(400, "url, username, password required")
+    d = await _probe_xtream(url, user, pw)
     ui = (d or {}).get("user_info") or {}
     if str(ui.get("auth", 1)) == "0" or ui.get("status") not in {"Active", "active"}:
         raise HTTPException(401, f"IPTV provider rejected credentials (status={ui.get('status')!r})")
@@ -355,6 +472,13 @@ async def admin_iptv_connect(body: IptvConnectBody, admin: dict = Depends(get_cu
         }},
         upsert=True,
     )
+    return ui
+
+
+@api.post("/admin/iptv/connect")
+async def admin_iptv_connect(body: IptvConnectBody, admin: dict = Depends(get_current_admin)):
+    """Validate Xtream credentials and persist them (password encrypted)."""
+    ui = await _connect_iptv_provider(body.url, body.username, body.password)
     return {"ok": True, "status": ui.get("status"), "exp_date": ui.get("exp_date"),
             "max_connections": ui.get("max_connections"), "active_cons": ui.get("active_cons")}
 

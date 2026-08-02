@@ -42,7 +42,6 @@ export type TVTextInputProps = TextInputProps & {
 const TVTextInput = forwardRef<TextInput, TVTextInputProps>(
   ({ wrapperStyle, left, right, hasTVPreferredFocus, style, ...inputProps }, ref) => {
     const innerRef = useRef<TextInput | null>(null);
-    useImperativeHandle(ref, () => innerRef.current as TextInput);
 
     const focusInput = () => {
       // requestAnimationFrame avoids a race where the Pressable steals focus
@@ -51,6 +50,19 @@ const TVTextInput = forwardRef<TextInput, TVTextInputProps>(
         innerRef.current?.focus();
       });
     };
+
+    // Exposing innerRef.current directly would let callers (e.g. an
+    // onSubmitEditing chain moving to the next field) invoke the raw
+    // TextInput.focus(), which no-ops on TV since the input itself is
+    // non-focusable there. Route ref.focus() through the same rAF-wrapped
+    // path the Pressable uses so "next field" navigation actually works.
+    useImperativeHandle(ref, () => new Proxy({} as TextInput, {
+      get(_target, prop) {
+        if (prop === "focus") return focusInput;
+        const value = (innerRef.current as any)?.[prop];
+        return typeof value === "function" ? value.bind(innerRef.current) : value;
+      },
+    }));
 
     return (
       <Pressable

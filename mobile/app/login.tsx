@@ -183,6 +183,17 @@ function TVPairScreen({ router, onFallback }: { router: any; onFallback: () => v
             <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall }}>Use username instead</Text>
           </Pressable>
         </View>
+
+        <Pressable
+          testID="pair-iptv-login"
+          onPress={() => router.push("/iptv-login")}
+          focusable
+          style={({ focused }) => [
+            { marginTop: vs(18), borderRadius: 999, borderWidth: 2, borderColor: focused ? colors.cyan : "transparent", paddingHorizontal: 22, paddingVertical: 10 },
+          ]}
+        >
+          <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall }}>Sign in with Xtream / M3U link instead</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -320,6 +331,15 @@ export default function Login() {
           </Pressable>
 
           {error && <Text testID="login-error" style={[styles.err, { fontSize: SIZES.fontSmall, marginTop: vs(12) }]}>{error}</Text>}
+
+          <Pressable
+            testID="manual-iptv-login"
+            onPress={() => router.push("/iptv-login")}
+            focusable
+            style={({ focused }) => [{ marginTop: vs(16), alignSelf: "center", borderRadius: 999, borderWidth: 2, borderColor: focused ? colors.cyan : "transparent", paddingHorizontal: 16, paddingVertical: 8 }]}
+          >
+            <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall }}>Sign in with Xtream / M3U link instead</Text>
+          </Pressable>
         </View>
       </View>
       </>

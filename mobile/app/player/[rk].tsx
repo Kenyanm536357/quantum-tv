@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useVideoPlayer, VideoView, type VideoPlayerStatus } from "expo-video";
 import client, { colors } from "../../src/api";
 import { SAFE, SIZES, ms, vs, IS_TV } from "../../src/responsive";
 import {
@@ -13,11 +14,20 @@ import {
 } from "../../src/externalPlayer";
 
 // ============================================================
-// Player — resolves the stream URL from the backend, probes
-// installed external players, then hands the stream off.
+// Player — plays the stream with the built-in high-quality
+// in-app player (expo-video) first. Only if that player reports
+// an error do we fall back to probing/launching an installed
+// external player (VLC, MX Player, etc.) on the device.
 // ============================================================
 
-type Phase = "loading" | "checking-player" | "launching" | "launched" | "no-player" | "error";
+type Phase =
+  | "loading"
+  | "in-app"
+  | "checking-player"
+  | "launching"
+  | "launched"
+  | "no-player"
+  | "error";
 
 export default function Player() {
   const { rk, title } = useLocalSearchParams<{ rk: string; title: string }>();
@@ -25,68 +35,112 @@ export default function Player() {
   const [phase, setPhase] = useState<Phase>("loading");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [url, setUrl] = useState<string | null>(null);
+  const [directUrl, setDirectUrl] = useState<string | null>(null);
   const [retries, setRetries] = useState(0);
   const [players, setPlayers] = useState<PlayerProbe[]>([]);
   const [launchMethod, setLaunchMethod] = useState<string | null>(null);
   const [playerLabel, setPlayerLabel] = useState<string | null>(null);
+  const fellBackRef = useRef(false);
+
+  const player = useVideoPlayer(url ?? null, (p) => {
+    p.play();
+  });
+
+  // Runs the external-player probe/launch flow. Used both as the initial
+  // fallback when the in-app player errors, and when the user manually
+  // asks to switch players.
+  const fallbackToExternal = async (cancelledRef: { current: boolean }) => {
+    try {
+      const { data } = await client.get(`/stream/${rk}`, {
+        params: { direct: "true", external: "true" },
+      });
+      if (cancelledRef.current) return;
+      if (!data?.url || typeof data.url !== "string" || !data.url.length) {
+        setErrorMsg("No stream URL returned by the server.");
+        setPhase("error");
+        return;
+      }
+      const streamUrl = data.url as string;
+      setDirectUrl(streamUrl);
+
+      setPhase("checking-player");
+      const probed = await probeInstalledPlayers();
+      if (cancelledRef.current) return;
+      setPlayers(probed);
+
+      setPhase("launching");
+      const result = await launchExternalPlayer(streamUrl);
+      if (cancelledRef.current) return;
+      if (!result.ok) {
+        setPhase("no-player");
+        return;
+      }
+      setLaunchMethod(result.method);
+      setPlayerLabel(result.playerLabel || null);
+      setPhase("launched");
+    } catch (e: any) {
+      if (cancelledRef.current) return;
+      setErrorMsg(e?.response?.data?.detail || e?.message || "Could not retrieve stream.");
+      setPhase("error");
+    }
+  };
 
   useEffect(() => {
-    let cancelled = false;
+    const cancelledRef = { current: false };
+    fellBackRef.current = false;
     setPhase("loading");
     setErrorMsg(null);
     setUrl(null);
+    setDirectUrl(null);
     setLaunchMethod(null);
     setPlayerLabel(null);
 
     (async () => {
       try {
-        // Prefer direct provider URL for external players (VLC/MX handle Xtream
-        // live .m3u8/.ts best). Fall back is handled server-side.
+        // Built-in player uses the app-proxied URL (works reliably in-app
+        // and keeps auth/HLS-rewriting on our side).
         const { data } = await client.get(`/stream/${rk}`, {
-          params: { direct: "true", external: "true" },
+          params: { direct: "false", external: "false" },
         });
-        if (cancelled) return;
+        if (cancelledRef.current) return;
         if (!data?.url || typeof data.url !== "string" || !data.url.length) {
-          setErrorMsg("No stream URL returned by the server.");
-          setPhase("error");
+          // No proxied URL available — go straight to external player flow.
+          await fallbackToExternal(cancelledRef);
           return;
         }
-        const streamUrl = data.url as string;
-        setUrl(streamUrl);
-
-        setPhase("checking-player");
-        const probed = await probeInstalledPlayers();
-        if (cancelled) return;
-        setPlayers(probed);
-
-        setPhase("launching");
-        const result = await launchExternalPlayer(streamUrl);
-        if (cancelled) return;
-        if (!result.ok) {
-          setPhase("no-player");
-          return;
-        }
-        setLaunchMethod(result.method);
-        setPlayerLabel(result.playerLabel || null);
-        setPhase("launched");
-      } catch (e: any) {
-        if (cancelled) return;
-        setErrorMsg(e?.response?.data?.detail || e?.message || "Could not retrieve stream.");
-        setPhase("error");
+        setUrl(data.url as string);
+        setPhase("in-app");
+      } catch {
+        if (cancelledRef.current) return;
+        // Proxy resolution failed — try the external player flow instead.
+        await fallbackToExternal(cancelledRef);
       }
     })();
 
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
     };
   }, [rk, retries]);
+
+  // If the built-in player reports an error, fall back to an installed
+  // external player exactly once per attempt.
+  useEffect(() => {
+    const sub = player.addListener("statusChange", (status: VideoPlayerStatus) => {
+      if (status === "error" && !fellBackRef.current) {
+        fellBackRef.current = true;
+        const cancelledRef = { current: false };
+        fallbackToExternal(cancelledRef);
+      }
+    });
+    return () => sub.remove();
+  }, [player, rk]);
 
   const retry = () => setRetries((r) => r + 1);
 
   const relaunch = async () => {
-    if (!url) return;
+    if (!directUrl) return;
     setPhase("launching");
-    const result = await launchExternalPlayer(url);
+    const result = await launchExternalPlayer(directUrl);
     if (!result.ok) {
       setPhase("no-player");
       return;
@@ -101,6 +155,17 @@ export default function Player() {
   return (
     <View style={s.root}>
       <LinearGradient colors={["#0B0518", "#170634", "#0B0518"]} style={StyleSheet.absoluteFill} />
+
+      {phase === "in-app" && (
+        <VideoView
+          style={StyleSheet.absoluteFill}
+          player={player}
+          nativeControls
+          allowsFullscreen
+          allowsPictureInPicture
+          contentFit="contain"
+        />
+      )}
 
       <Pressable
         testID="player-back"
@@ -122,6 +187,26 @@ export default function Player() {
       >
         {title}
       </Text>
+
+      {phase === "in-app" && (
+        <Pressable
+          testID="player-switch-external"
+          focusable
+          onPress={() => {
+            const cancelledRef = { current: false };
+            setPhase("checking-player");
+            fallbackToExternal(cancelledRef);
+          }}
+          style={({ focused }) => [
+            s.switchBtn,
+            { bottom: SAFE.bottom + 16, right: SAFE.right + 16 },
+            focused && s.actionBtnFocused,
+          ]}
+        >
+          <Ionicons name="swap-horizontal-outline" size={ms(16)} color={colors.cyan} />
+          <Text style={s.actionBtnTxt}>Use External Player</Text>
+        </Pressable>
+      )}
 
       {(phase === "loading" || phase === "launching" || phase === "checking-player") && (
         <View style={s.center}>
@@ -277,6 +362,19 @@ const s = StyleSheet.create({
     color: "rgba(255,255,255,0.75)",
     fontFamily: "Unbounded_700Bold",
     fontSize: SIZES.fontBody,
+  },
+  switchBtn: {
+    position: "absolute",
+    zIndex: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: vs(10),
+    paddingHorizontal: ms(16),
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(11,5,24,0.7)",
   },
   center: {
     flex: 1,

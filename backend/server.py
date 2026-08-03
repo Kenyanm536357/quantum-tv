@@ -416,6 +416,134 @@ async def _iptv_get(action: Optional[str] = None, params: Optional[dict] = None)
         return r.json()
 
 
+# ---------------------------------------------------------------------------
+# IPTV catalog cache — many Xtream accounts (including ours) allow only ONE
+# concurrent connection. Hitting the provider on every user request (and in
+# parallel across users) causes it to reject/empty-out responses. Instead a
+# single background job refreshes live/VOD/series into Mongo every few
+# minutes, one request at a time, and all user-facing endpoints read from
+# that cache. This is both faster for users and far more reliable.
+# ---------------------------------------------------------------------------
+IPTV_CACHE_REFRESH_SECONDS = 240  # ~4 minutes
+
+
+async def _iptv_cache_set(kind: str, streams: list[dict], cat_by_id: dict[str, str]) -> None:
+    await db.iptv_cache.update_one(
+        {"id": kind},
+        {"$set": {"id": kind, "streams": streams, "cat_by_id": cat_by_id, "updated_at": now_iso()}},
+        upsert=True,
+    )
+
+
+async def _iptv_fetch_full_catalog_serial(action: str, categories_action: str) -> tuple[list[dict], dict[str, str]]:
+    """Sequential (never-concurrent) full VOD/series catalog fetch — safe for
+    single-connection Xtream accounts. Tries the unscoped bulk dump first,
+    then only back-fills categories the bulk response is missing, one at a
+    time with a short pause between requests."""
+    raw_cats = await _iptv_get(categories_action)
+    categories = [c for c in (raw_cats or []) if c.get("category_id") is not None]
+    cat_by_id = {
+        str(c.get("category_id")): str(c.get("category_name") or "").strip()
+        for c in categories
+    }
+
+    merged: dict[str, dict] = {}
+    try:
+        bulk = await _iptv_get(action)
+    except Exception as e:
+        log.warning("%s bulk catalog fetch failed: %s", action, e)
+        bulk = []
+    for item in (bulk or []):
+        if not isinstance(item, dict):
+            continue
+        sid = item.get("stream_id") or item.get("series_id") or item.get("id")
+        if sid is not None:
+            merged[str(sid)] = item
+
+    seen_cids = {str(item.get("category_id")) for item in merged.values()}
+    missing_cids = [str(c.get("category_id")) for c in categories if str(c.get("category_id")) not in seen_cids]
+    for cid in missing_cids:
+        try:
+            result = await _iptv_get(action, {"category_id": cid})
+            for item in (result or []):
+                if not isinstance(item, dict):
+                    continue
+                sid = item.get("stream_id") or item.get("series_id") or item.get("id")
+                if sid is not None:
+                    merged[str(sid)] = item
+        except Exception as e:
+            log.warning("%s category %s fetch failed: %s", action, cid, e)
+        await asyncio.sleep(0.5)  # respect single-connection providers
+    return list(merged.values()), cat_by_id
+
+
+async def _iptv_refresh_all_once() -> None:
+    """One full pass refreshing live/VOD/series caches, strictly serially."""
+    cfg = await db.settings.find_one({"id": "iptv_config"})
+    if not cfg or not cfg.get("password_enc"):
+        return
+
+    try:
+        live_cats_raw = await _iptv_get("get_live_categories")
+        live_cat_by_id = {
+            str(c.get("category_id")): str(c.get("category_name") or "").strip()
+            for c in (live_cats_raw or []) if c.get("category_id") is not None
+        }
+        await asyncio.sleep(0.5)
+        live_streams = await _iptv_get("get_live_streams")
+        await _iptv_cache_set("live", list(live_streams or []), live_cat_by_id)
+        log.info("IPTV cache: refreshed live (%d channels)", len(live_streams or []))
+    except Exception as e:
+        log.warning("IPTV cache: live refresh failed: %s", e)
+    await asyncio.sleep(1)
+
+    try:
+        vod_streams, vod_cats = await _iptv_fetch_full_catalog_serial("get_vod_streams", "get_vod_categories")
+        await _iptv_cache_set("vod", vod_streams, vod_cats)
+        log.info("IPTV cache: refreshed VOD (%d titles)", len(vod_streams))
+    except Exception as e:
+        log.warning("IPTV cache: VOD refresh failed: %s", e)
+    await asyncio.sleep(1)
+
+    try:
+        series_streams, series_cats = await _iptv_fetch_full_catalog_serial("get_series", "get_series_categories")
+        await _iptv_cache_set("series", series_streams, series_cats)
+        log.info("IPTV cache: refreshed series (%d shows)", len(series_streams))
+    except Exception as e:
+        log.warning("IPTV cache: series refresh failed: %s", e)
+
+
+async def _iptv_cache_refresh_loop() -> None:
+    """24/7 background loop — refreshes the IPTV cache every
+    IPTV_CACHE_REFRESH_SECONDS, forever, independent of user traffic."""
+    while True:
+        try:
+            await _iptv_refresh_all_once()
+        except Exception as e:
+            log.warning("IPTV cache refresh loop error: %s", e)
+        await asyncio.sleep(IPTV_CACHE_REFRESH_SECONDS)
+
+
+async def _iptv_cached(kind: str) -> tuple[list[dict], dict[str, str]]:
+    """Read a cached catalog. Falls back to a direct (uncached) fetch only
+    if the cache hasn't been populated yet (e.g. moments after startup,
+    before the first background refresh completes)."""
+    doc = await db.iptv_cache.find_one({"id": kind})
+    if doc and doc.get("streams"):
+        return doc.get("streams") or [], doc.get("cat_by_id") or {}
+    if kind == "live":
+        raw = await _iptv_get("get_live_streams")
+        cats_raw = await _iptv_get("get_live_categories")
+        cat_by_id = {
+            str(c.get("category_id")): str(c.get("category_name") or "").strip()
+            for c in (cats_raw or []) if c.get("category_id") is not None
+        }
+        return list(raw or []), cat_by_id
+    action = "get_vod_streams" if kind == "vod" else "get_series"
+    categories_action = "get_vod_categories" if kind == "vod" else "get_series_categories"
+    return await _iptv_catalog(action, categories_action)
+
+
 def _iptv_stream_url(cfg: dict, kind: str, stream_id: int, ext: str = "ts") -> str:
     """Build the direct stream URL. For live we use /live/<u>/<p>/<id>.ts (most
     compatible); for VOD/series we use the container extension provided by the
@@ -504,6 +632,29 @@ async def admin_iptv_delete(admin: dict = Depends(get_current_admin)):
     return {"ok": True}
 
 
+@api.get("/admin/iptv/cache-status")
+async def admin_iptv_cache_status(admin: dict = Depends(get_current_admin)):
+    """Inspect the background-refreshed IPTV cache (live/VOD/series)."""
+    out = {}
+    for kind in ("live", "vod", "series"):
+        doc = await db.iptv_cache.find_one({"id": kind})
+        out[kind] = {
+            "count": len(doc.get("streams") or []) if doc else 0,
+            "updated_at": doc.get("updated_at") if doc else None,
+        }
+    out["refresh_interval_seconds"] = IPTV_CACHE_REFRESH_SECONDS
+    return out
+
+
+@api.post("/admin/iptv/refresh-cache")
+async def admin_iptv_refresh_cache(admin: dict = Depends(get_current_admin)):
+    """Force an immediate full cache refresh instead of waiting for the
+    next scheduled background pass. Runs the same serialized fetch used by
+    the 24/7 background job."""
+    await _iptv_refresh_all_once()
+    return await admin_iptv_cache_status(admin)
+
+
 @api.get("/iptv/live/categories")
 async def iptv_live_categories(_: dict = Depends(get_current_user)):
     return await _iptv_get("get_live_categories")
@@ -587,8 +738,9 @@ async def livetv_epg(
 
 @api.get("/iptv/live/streams")
 async def iptv_live_streams(category_id: Optional[str] = None, _: dict = Depends(get_current_user)):
-    params = {"category_id": category_id} if category_id else None
-    raw = await _iptv_get("get_live_streams", params)
+    raw, _cats = await _iptv_cached("live")
+    if category_id:
+        raw = [s for s in raw if str(s.get("category_id") or "") == str(category_id)]
     cfg = await db.settings.find_one({"id": "iptv_config"})
     out = []
     for s in (raw or []):
@@ -684,10 +836,12 @@ async def iptv_vod_streams(
     _: dict = Depends(get_current_user),
 ):
     try:
-        raw, cat_by_id = await _iptv_catalog("get_vod_streams", "get_vod_categories", category_id)
+        raw, cat_by_id = await _iptv_cached("vod")
     except Exception as e:
         log.warning("VOD catalog fetch failed: %s", e)
         raw, cat_by_id = [], {}
+    if category_id:
+        raw = [s for s in raw if str(s.get("category_id") or "") == str(category_id)]
     adult_cat_ids = {cid for cid, name in cat_by_id.items() if _is_adult_category_name(name)}
     cfg = await db.settings.find_one({"id": "iptv_config"})
     out = []
@@ -724,10 +878,12 @@ async def iptv_series_streams(
 ):
     """Return all IPTV TV series from the Xtream Codes provider."""
     try:
-        raw, cat_by_id = await _iptv_catalog("get_series", "get_series_categories", category_id)
+        raw, cat_by_id = await _iptv_cached("series")
     except Exception as e:
         log.warning("Series catalog fetch failed: %s", e)
         raw, cat_by_id = [], {}
+    if category_id:
+        raw = [s for s in raw if str(s.get("category_id") or "") == str(category_id)]
     adult_cat_ids = {cid for cid, name in cat_by_id.items() if _is_adult_category_name(name)}
     out = []
     for s in (raw or []):
@@ -1982,21 +2138,13 @@ async def live_channels(user: dict = Depends(get_current_user)):
     # "Country" + "Genre" filter chips without doing name-parsing itself.
     cfg = await db.settings.find_one({"id": "iptv_config"})
     if cfg and cfg.get("password_enc"):
-        # Build the category_id -> {name, country, genre} lookup once.
-        cat_by_id: dict[str, dict] = {}
         try:
-            raw_cats = await _iptv_get("get_live_categories")
-            for c in raw_cats or []:
-                cid = str(c.get("category_id") or "")
-                name = str(c.get("category_name") or "").strip()
-                cls = _classify_live_category(name)
-                cat_by_id[cid] = {"name": name, "country": cls["country"], "genre": cls["genre"]}
-        except Exception as e:
-            log.warning("IPTV categories fetch failed: %s", e)
-
-        try:
-            raw = await _iptv_get("get_live_streams")
-            for s in raw or []:
+            live_raw, live_cats_raw_by_id = await _iptv_cached("live")
+            cat_by_id: dict[str, dict] = {
+                cid: {"name": name, **_classify_live_category(name)}
+                for cid, name in live_cats_raw_by_id.items()
+            }
+            for s in live_raw or []:
                 sid = s.get("stream_id")
                 if not sid:
                     continue
@@ -2425,4 +2573,5 @@ async def install_landing(request: Request):
 async def startup():
     await db.users.create_index("id", unique=True)
     await db.users.create_index("username", unique=True, sparse=True)
+    asyncio.create_task(_iptv_cache_refresh_loop())
     log.info("Quantum TV API started")

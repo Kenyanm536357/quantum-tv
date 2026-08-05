@@ -52,7 +52,7 @@ export default function Player() {
   // asks to switch players.
   const fallbackToExternal = async (cancelledRef: { current: boolean }) => {
     try {
-      const isLiveChannel = String(rk || "").startsWith("iptv-live-");
+      const isLiveChannel = /^(iptv|public)-live-/.test(String(rk || ""));
       const { data } = await client.get(`/stream/${rk}`, {
         // Some providers reject the TV's direct request (HTTP 458). Keep live
         // fallback traffic on the authenticated TS proxy so the provider sees
@@ -142,7 +142,8 @@ export default function Player() {
           setPhase("loading");
           client.get(`/stream/${rk}`, {
             params: { direct: "false", external: "false", live_format: "ts" },
-          }).then(({ data }) => {
+          }).then((response: { data: { url?: unknown } }) => {
+            const { data } = response;
             if (data?.url && typeof data.url === "string") {
               setUrl(data.url);
               setPhase("in-app");

@@ -2179,7 +2179,8 @@ async def live_channels(user: dict = Depends(get_current_user)):
 
 @api.get("/stream/{rating_key}")
 async def stream_url(rating_key: str, request: Request, user: dict = Depends(get_current_user),
-                    direct: bool = True, external: bool = False, max_bitrate: int = 8000):
+                    direct: bool = True, external: bool = False, live_format: str = "m3u8",
+                    max_bitrate: int = 8000):
     # IPTV stream resolution. Rating keys are minted as iptv-<kind>-<id>.
     if not str(rating_key).startswith("iptv-"):
         raise HTTPException(404, "Stream not found")
@@ -2201,6 +2202,9 @@ async def stream_url(rating_key: str, request: Request, user: dict = Depends(get
         proxy_kind = kind
     else:
         raise HTTPException(400, "bad iptv kind")
+
+    if kind == "live" and live_format not in {"m3u8", "ts"}:
+        raise HTTPException(400, "bad live format")
 
     cfg = await db.settings.find_one({"id": "iptv_config"})
     if not cfg or not cfg.get("password_enc"):
@@ -2228,8 +2232,10 @@ async def stream_url(rating_key: str, request: Request, user: dict = Depends(get
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
     origin = f"{proto}://{host}"
+    if kind == "live":
+        ext = live_format
     url = f"{origin}/api/iptv/p/{proxy_kind}/{sid}.{ext}?t={quote(stream_token)}"
-    return {"url": url, "type": "hls" if kind == "live" else "direct", "mode": "proxy"}
+    return {"url": url, "type": "hls" if ext == "m3u8" else "ts" if kind == "live" else "direct", "mode": "proxy"}
 
 
 # ============================================================

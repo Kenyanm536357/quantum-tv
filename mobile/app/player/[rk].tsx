@@ -41,6 +41,7 @@ export default function Player() {
   const [launchMethod, setLaunchMethod] = useState<string | null>(null);
   const [playerLabel, setPlayerLabel] = useState<string | null>(null);
   const fellBackRef = useRef(false);
+  const triedTransportStreamRef = useRef(false);
 
   const player = useVideoPlayer(url ?? null, (p) => {
     p.play();
@@ -88,6 +89,7 @@ export default function Player() {
   useEffect(() => {
     const cancelledRef = { current: false };
     fellBackRef.current = false;
+    triedTransportStreamRef.current = false;
     setPhase("loading");
     setErrorMsg(null);
     setUrl(null);
@@ -127,8 +129,28 @@ export default function Player() {
   useEffect(() => {
     const sub = player.addListener("statusChange", (status: VideoPlayerStatus) => {
       if (status === "error" && !fellBackRef.current) {
-        fellBackRef.current = true;
         const cancelledRef = { current: false };
+        const canRetryWithTs = String(rk || "").startsWith("iptv-live-") && !triedTransportStreamRef.current;
+        if (canRetryWithTs) {
+          triedTransportStreamRef.current = true;
+          setPhase("loading");
+          client.get(`/stream/${rk}`, {
+            params: { direct: "false", external: "false", live_format: "ts" },
+          }).then(({ data }) => {
+            if (data?.url && typeof data.url === "string") {
+              setUrl(data.url);
+              setPhase("in-app");
+            } else {
+              fellBackRef.current = true;
+              fallbackToExternal(cancelledRef);
+            }
+          }).catch(() => {
+            fellBackRef.current = true;
+            fallbackToExternal(cancelledRef);
+          });
+          return;
+        }
+        fellBackRef.current = true;
         fallbackToExternal(cancelledRef);
       }
     });

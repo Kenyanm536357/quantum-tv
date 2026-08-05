@@ -52,8 +52,14 @@ export default function Player() {
   // asks to switch players.
   const fallbackToExternal = async (cancelledRef: { current: boolean }) => {
     try {
+      const isLiveChannel = String(rk || "").startsWith("iptv-live-");
       const { data } = await client.get(`/stream/${rk}`, {
-        params: { direct: "true", external: "true" },
+        // Some providers reject the TV's direct request (HTTP 458). Keep live
+        // fallback traffic on the authenticated TS proxy so the provider sees
+        // the backend connection while MX Player still gets a TV-friendly URL.
+        params: isLiveChannel
+          ? { direct: "false", external: "false", live_format: "ts" }
+          : { direct: "true", external: "true" },
       });
       if (cancelledRef.current) return;
       if (!data?.url || typeof data.url !== "string" || !data.url.length) {

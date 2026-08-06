@@ -100,7 +100,20 @@ async function tryStartActivity(opts: {
       flags: FLAG_ACTIVITY_NEW_TASK,
     });
     return true;
-  } catch {
+  } catch (e) {
+    // Swallowing this error previously made external-player failures
+    // impossible to diagnose remotely (only "plain-url" fallback was ever
+    // visible in logs). Log it so `adb logcat` shows the real reason
+    // (e.g. native module missing, ActivityNotFoundException, etc.)
+    if (__DEV__) {
+      console.warn("[externalPlayer] tryStartActivity failed", opts.packageName, e);
+    } else {
+      console.warn(
+        "[externalPlayer] tryStartActivity failed",
+        opts.packageName,
+        (e as any)?.message || e
+      );
+    }
     return false;
   }
 }

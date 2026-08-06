@@ -2734,4 +2734,5 @@ async def startup():
     await db.users.create_index("id", unique=True)
     await db.users.create_index("username", unique=True, sparse=True)
     asyncio.create_task(_iptv_cache_refresh_loop())
+    asyncio.create_task(_public_m3u_refresh_loop())
     log.info("Quantum TV API started")

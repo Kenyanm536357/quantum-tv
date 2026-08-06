@@ -206,6 +206,7 @@ export default function App() {
       <Route path="/watch/*" element={<Watch />} />
       <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
       <Route path="/users" element={<RequireAuth><UsersPage /></RequireAuth>} />
+      <Route path="/iptv" element={<RequireAuth><Iptv /></RequireAuth>} />
       <Route path="/activity" element={<RequireAuth><ActivityPage /></RequireAuth>} />
       <Route path="/preview" element={<RequireAuth><MobilePreview /></RequireAuth>} />
       <Route path="/tv-preview" element={<RequireAuth><FireTVPreview /></RequireAuth>} />

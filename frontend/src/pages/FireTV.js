@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../api";
 import { Upload, Trash2, Copy, Check, Tv, Download, CheckCircle2, AlertTriangle, Link2 } from "lucide-react";
@@ -194,14 +194,14 @@ export default function FireTV() {
               <Link2 className="w-4 h-4" />
               {shortening ? "Shortening…" : "Refresh short URLs"}
             </button>
-            <a href={SHORT_URL} target="_blank" rel="noopener"
+            <a href={SHORT_URL} target="_blank" rel="noopener noreferrer"
               className="flex-1 bg-gradient-to-r from-purple-500 to-cyan-500 rounded-xl py-2.5 text-sm font-heading font-bold flex items-center justify-center gap-2 hover:brightness-110">
               <Download className="w-4 h-4" /> Test download
             </a>
           </div>
 
           <div className="mt-5 text-xs text-zinc-500">
-            Friendly landing page: <a className="text-cyan-400 hover:text-cyan-300" href={INSTALL_URL} target="_blank" rel="noopener">{INSTALL_URL.replace(/^https?:\/\//, "")}</a>
+            Friendly landing page: <a className="text-cyan-400 hover:text-cyan-300" href={INSTALL_URL} target="_blank" rel="noopener noreferrer">{INSTALL_URL.replace(/^https?:\/\//, "")}</a>
           </div>
         </div>
       </div>

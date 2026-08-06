@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useVideoPlayer, VideoView, type VideoPlayerStatus } from "expo-video";
 import client, { colors } from "../../src/api";
-import { SAFE, SIZES, ms, vs, IS_TV } from "../../src/responsive";
+import { SAFE, SIZES, ms, vs, s as scale, IS_TV } from "../../src/responsive";
 import {
   launchExternalPlayer,
   openPlayerStore,
@@ -45,6 +45,64 @@ export default function Player() {
   const player = useVideoPlayer(url ?? null, (p) => {
     p.play();
   });
+
+  // Custom playback controls — expo-video's `nativeControls` overlay is
+  // touch-oriented and not reliably operable with a D-pad remote (no
+  // visible/focusable play/pause or seek buttons on Android TV). We render
+  // our own focusable control bar instead and drive it off the player API.
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [, setTick] = useState(0);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const sub = player.addListener("playingChange", (playing: boolean) => setIsPlaying(playing));
+    return () => sub.remove();
+  }, [player]);
+
+  // Force a re-render every 500ms so the time display / progress bar
+  // reflect the player's live currentTime (which isn't itself reactive).
+  useEffect(() => {
+    if (phase !== "in-app") return;
+    const id = setInterval(() => setTick((t) => t + 1), 500);
+    return () => clearInterval(id);
+  }, [phase]);
+
+  const showControlsTemporarily = () => {
+    setControlsVisible(true);
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setControlsVisible(false), 5000);
+  };
+
+  useEffect(() => {
+    if (phase === "in-app") showControlsTemporarily();
+    return () => { if (hideTimer.current) clearTimeout(hideTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
+  const togglePlay = () => {
+    showControlsTemporarily();
+    if (player.playing) player.pause();
+    else player.play();
+  };
+  const seek = (deltaSeconds: number) => {
+    showControlsTemporarily();
+    player.seekBy(deltaSeconds);
+  };
+
+  const formatTime = (secs: number) => {
+    if (!Number.isFinite(secs) || secs < 0) return "0:00";
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const sec = Math.floor(secs % 60);
+    return h > 0
+      ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
+      : `${m}:${String(sec).padStart(2, "0")}`;
+  };
+
+  const duration = player.duration || 0;
+  const currentTime = player.currentTime || 0;
+  const progressPct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
 
   // Runs the external-player probe/launch flow. Used both as the initial
   // fallback when the in-app player errors, and when the user manually
@@ -160,10 +218,27 @@ export default function Player() {
         <VideoView
           style={StyleSheet.absoluteFill}
           player={player}
-          nativeControls
+          nativeControls={false}
           allowsFullscreen
           allowsPictureInPicture
           contentFit="contain"
+        />
+      )}
+
+      {/* Invisible full-screen target so a D-pad press/OK or a touch tap
+          can bring the controls back once they've auto-hidden — without
+          this, focus has nowhere to land and the controls are unreachable.
+          Style must be a focus-aware function (not a plain object) or
+          Android TV paints its default white focus-highlight full-screen. */}
+      {phase === "in-app" && (
+        <Pressable
+          testID="player-surface"
+          focusable
+          hasTVPreferredFocus={!controlsVisible}
+          onPress={showControlsTemporarily}
+          onFocus={showControlsTemporarily}
+          android_ripple={{ color: "transparent", borderless: true }}
+          style={() => [StyleSheet.absoluteFill, { backgroundColor: "transparent" }]}
         />
       )}
 
@@ -181,6 +256,14 @@ export default function Player() {
         <Ionicons name="chevron-back" size={SIZES.iconMd} color="#fff" />
       </Pressable>
 
+      {(phase === "in-app" ? controlsVisible : true) && (
+        <LinearGradient
+          colors={["rgba(5,3,15,0.85)", "transparent"]}
+          style={[s.topScrim, { height: SAFE.top + vs(90) }]}
+          pointerEvents="none"
+        />
+      )}
+
       <Text
         numberOfLines={2}
         style={[s.titleText, { top: SAFE.top + 12, left: ms(60) + SAFE.left, right: SAFE.right }]}
@@ -188,7 +271,7 @@ export default function Player() {
         {title}
       </Text>
 
-      {phase === "in-app" && (
+      {phase === "in-app" && controlsVisible && (
         <Pressable
           testID="player-switch-external"
           focusable
@@ -199,13 +282,64 @@ export default function Player() {
           }}
           style={({ focused }) => [
             s.switchBtn,
-            { bottom: SAFE.bottom + 16, right: SAFE.right + 16 },
+            { top: SAFE.top + 10, right: SAFE.right + 10 },
             focused && s.actionBtnFocused,
           ]}
         >
           <Ionicons name="swap-horizontal-outline" size={ms(16)} color={colors.cyan} />
-          <Text style={s.actionBtnTxt}>Use External Player</Text>
+          <Text style={s.actionBtnTxt}>External Player</Text>
         </Pressable>
+      )}
+
+      {phase === "in-app" && (
+        <LinearGradient
+          colors={["transparent", "rgba(5,3,15,0.55)", "rgba(5,3,15,0.95)"]}
+          locations={[0, 0.4, 1]}
+          style={[s.bottomScrim, { height: SAFE.bottom + vs(200), opacity: controlsVisible ? 1 : 0 }]}
+          pointerEvents="none"
+        />
+      )}
+
+      {phase === "in-app" && controlsVisible && (
+        <View style={[s.controlBar, { bottom: SAFE.bottom + vs(16), left: SAFE.left + scale(24), right: SAFE.right + scale(24) }]}>
+          <View style={s.progressRow}>
+            <Text style={s.timeText}>{formatTime(currentTime)}</Text>
+            <View style={s.progressTrack}>
+              <View style={[s.progressFill, { width: `${progressPct}%` }]} />
+            </View>
+            <Text style={s.timeText}>{formatTime(duration)}</Text>
+          </View>
+          <View style={s.transportRow}>
+            <Pressable
+              testID="player-rewind"
+              focusable
+              onFocus={showControlsTemporarily}
+              onPress={() => seek(-10)}
+              style={({ focused }) => [s.transportBtn, focused && s.actionBtnFocused]}
+            >
+              <Ionicons name="play-back" size={ms(22)} color="#fff" />
+            </Pressable>
+            <Pressable
+              testID="player-play-pause"
+              focusable
+              hasTVPreferredFocus
+              onFocus={showControlsTemporarily}
+              onPress={togglePlay}
+              style={({ focused }) => [s.transportBtnPrimary, focused && s.actionBtnFocused]}
+            >
+              <Ionicons name={isPlaying ? "pause" : "play"} size={ms(28)} color="#050614" />
+            </Pressable>
+            <Pressable
+              testID="player-forward"
+              focusable
+              onFocus={showControlsTemporarily}
+              onPress={() => seek(10)}
+              style={({ focused }) => [s.transportBtn, focused && s.actionBtnFocused]}
+            >
+              <Ionicons name="play-forward" size={ms(22)} color="#fff" />
+            </Pressable>
+          </View>
+        </View>
       )}
 
       {(phase === "loading" || phase === "launching" || phase === "checking-player") && (
@@ -359,9 +493,23 @@ const s = StyleSheet.create({
   titleText: {
     position: "absolute",
     zIndex: 9,
-    color: "rgba(255,255,255,0.75)",
+    color: "rgba(255,255,255,0.9)",
     fontFamily: "Unbounded_700Bold",
     fontSize: SIZES.fontBody,
+  },
+  topScrim: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 8,
+  },
+  bottomScrim: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 8,
   },
   switchBtn: {
     position: "absolute",
@@ -369,12 +517,67 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    paddingVertical: vs(10),
-    paddingHorizontal: ms(16),
+    paddingVertical: vs(8),
+    paddingHorizontal: ms(14),
     borderRadius: 999,
     borderWidth: 2,
     borderColor: "rgba(255,255,255,0.18)",
     backgroundColor: "rgba(11,5,24,0.7)",
+  },
+  controlBar: {
+    position: "absolute",
+    zIndex: 11,
+  },
+  progressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: ms(10),
+    marginBottom: vs(18),
+  },
+  progressTrack: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.cyan,
+  },
+  timeText: {
+    color: "rgba(255,255,255,0.85)",
+    fontFamily: "Outfit_500Medium",
+    fontSize: ms(12),
+    minWidth: ms(40),
+    textAlign: "center",
+  },
+  transportRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: ms(24),
+  },
+  transportBtn: {
+    width: ms(44),
+    height: ms(44),
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  transportBtnPrimary: {
+    width: ms(58),
+    height: ms(58),
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.cyan,
+    borderWidth: 2,
+    borderColor: "transparent",
   },
   center: {
     flex: 1,

@@ -1,6 +1,10 @@
 import { Platform } from "react-native";
 import * as Linking from "expo-linking";
 import * as Application from "expo-application";
+import * as IntentLauncher from "expo-intent-launcher";
+
+const ACTION_VIEW = "android.intent.action.VIEW";
+const FLAG_ACTIVITY_NEW_TASK = 0x10000000;
 
 /**
  * Known Android TV / Fire TV video player packages.
@@ -71,15 +75,6 @@ export type PlayerProbe = {
   installed: boolean | null;
 };
 
-function buildIntentUrl(streamUrl: string, opts?: { pkg?: string; mime?: string }): string {
-  // Intent URLs break if the stream URL is not carefully encoded. Prefer
-  // intentional S.browser_fallback_url-free form used by Android TV launchers.
-  const mime = opts?.mime || "video/*";
-  const pkgPart = opts?.pkg ? `package=${opts.pkg};` : "";
-  // Keep stream URL raw after intent: — Android resolves it as the data URI.
-  return `intent:${streamUrl}#Intent;action=android.intent.action.VIEW;type=${mime};${pkgPart}end`;
-}
-
 async function tryOpen(url: string): Promise<boolean> {
   try {
     await Linking.openURL(url);
@@ -88,6 +83,28 @@ async function tryOpen(url: string): Promise<boolean> {
     return false;
   }
 }
+
+/** Explicit-package launch via the real Android Intent API — Linking.openURL
+ * can't set a package/type on an intent, it only opens a bare ACTION_VIEW
+ * on the raw URL, so it can never reliably target a specific player app. */
+async function tryStartActivity(opts: {
+  data: string;
+  type?: string;
+  packageName?: string;
+}): Promise<boolean> {
+  try {
+    await IntentLauncher.startActivityAsync(ACTION_VIEW, {
+      data: opts.data,
+      type: opts.type,
+      packageName: opts.packageName,
+      flags: FLAG_ACTIVITY_NEW_TASK,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 
 /**
  * Probe whether common players look installed.
@@ -166,36 +183,37 @@ export async function launchExternalPlayer(streamUrl: string): Promise<LaunchRes
   const mime = isM3u8 ? "application/x-mpegURL" : isTs ? "video/mp2t" : "video/*";
 
   if (Platform.OS === "android") {
-    // 1) Package-targeted intents for known players
+    // 1) Explicit-package Intents for known players (real Android Intent API —
+    // works whether or not the target declares a matching data/mime filter,
+    // since packageName alone is enough to resolve the component).
     for (const p of KNOWN_PLAYERS) {
-      const intent = buildIntentUrl(streamUrl, { pkg: p.androidPackage, mime });
       tried.push(`intent-pkg:${p.androidPackage}`);
-      if (await tryOpen(intent)) {
+      if (await tryStartActivity({ data: streamUrl, type: mime, packageName: p.androidPackage })) {
         return { ok: true, method: `intent-package:${p.androidPackage}`, playerLabel: p.label };
       }
     }
 
-    // 2) Generic video intent (lets user/chooser pick)
-    const generic = buildIntentUrl(streamUrl, { mime });
+    // 2) Generic video intent (lets Android's chooser pick, or auto-resolve
+    // if only one app matches)
     tried.push("intent-generic-video");
-    if (await tryOpen(generic)) {
+    if (await tryStartActivity({ data: streamUrl, type: mime })) {
       return { ok: true, method: "intent-generic", playerLabel: "System player" };
     }
 
-    // 3) Generic without mime
-    const bare = `intent:${streamUrl}#Intent;action=android.intent.action.VIEW;end`;
+    // 3) Generic without mime — some players only match a bare VIEW+data
     tried.push("intent-bare");
-    if (await tryOpen(bare)) {
+    if (await tryStartActivity({ data: streamUrl })) {
       return { ok: true, method: "intent-bare", playerLabel: "System player" };
     }
 
-    // 4) VLC custom scheme
+    // 4) VLC custom scheme (real scheme VLC's manifest declares — safe via Linking)
     tried.push("vlc-scheme");
     if (await tryOpen(`vlc://${streamUrl}`)) {
       return { ok: true, method: "vlc-scheme", playerLabel: "VLC" };
     }
 
-    // 5) Plain HTTPS/HTTP open (some devices route to a player)
+    // 5) Plain HTTPS/HTTP open — last-resort fallback for very old/oddball
+    // Fire OS builds where the above may not resolve any component.
     tried.push("plain-url");
     if (await tryOpen(streamUrl)) {
       return { ok: true, method: "plain-url", playerLabel: "System handler" };

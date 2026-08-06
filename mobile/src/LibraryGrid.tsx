@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
-import { View, Text, FlatList, Pressable, Image, StyleSheet, ActivityIndicator, TextInput, ScrollView } from "react-native";
+import { View, Text, FlatList, Pressable, Image, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import client, { BACKEND, colors } from "./api";
 import BrandBackground from "./BrandBackground";
+import TVTextInput from "./TVTextInput";
 import { SAFE, SIZES, GRID_COLS, IS_TV, vs, ms, s, FOCUSED_CARD } from "./responsive";
 import { useParentalGate, isAdultCategory } from "./useParentalGate";
 
@@ -130,21 +131,23 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
 
       {/* Search bar */}
       <View style={{ paddingHorizontal: SAFE.left, marginBottom: vs(8) }}>
-        <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,0.07)", borderRadius: SIZES.radius, paddingHorizontal: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" }}>
-          <Ionicons name="search-outline" size={ms(16)} color={colors.zinc500} style={{ marginRight: 8 }} />
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            placeholder={`Search ${label.toLowerCase()}…`}
-            placeholderTextColor={colors.zinc500}
-            style={{ flex: 1, color: "#fff", fontFamily: "Outfit_400Regular", fontSize: SIZES.fontBody, paddingVertical: vs(8) }}
-          />
-          {search.length > 0 && (
-            <Pressable onPress={() => setSearch("")} focusable>
-              <Ionicons name="close-circle" size={ms(16)} color={colors.zinc500} />
-            </Pressable>
-          )}
-        </View>
+        <TVTextInput
+          value={search}
+          onChangeText={setSearch}
+          placeholder={`Search ${label.toLowerCase()}…`}
+          placeholderTextColor={colors.zinc500}
+          left={<Ionicons name="search-outline" size={ms(16)} color={colors.zinc500} />}
+          right={
+            search.length > 0 ? (
+              <Pressable onPress={() => setSearch("")} focusable={IS_TV}>
+                <Ionicons name="close-circle" size={ms(16)} color={colors.zinc500} />
+              </Pressable>
+            ) : undefined
+          }
+          wrapperStyle={{ backgroundColor: "rgba(255,255,255,0.07)", borderRadius: SIZES.radius, paddingHorizontal: 12, borderColor: "rgba(255,255,255,0.08)" }}
+          style={{ color: "#fff", fontFamily: "Outfit_400Regular", fontSize: SIZES.fontBody, paddingVertical: vs(8) }}
+          autoCapitalize="none"
+        />
       </View>
 
       {/* Category chips */}

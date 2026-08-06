@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../api";
 import {
@@ -58,7 +59,9 @@ function CreateUserModal({ open, onClose, onCreated }) {
   const reset = () => { setU(""); setPw(""); setDn(""); setMonths(1); setMaxDevices(3); setErr(""); setCreated(null); };
   const closeAndReset = () => { reset(); onClose(); };
   if (!open) return null;
-  return (
+  // Portal to <body> — a framer-motion ancestor applies a CSS transform,
+  // which would otherwise turn `fixed` into a scoped/offset position.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm" data-testid="create-user-modal">
       <div className="glass rounded-t-3xl sm:rounded-3xl p-6 sm:p-7 w-full sm:max-w-md relative max-h-[95vh] overflow-y-auto">
         <button onClick={closeAndReset} className="absolute top-4 right-4 text-zinc-400 hover:text-white p-1 z-10" data-testid="close-create-modal">
@@ -130,7 +133,8 @@ function CreateUserModal({ open, onClose, onCreated }) {
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -146,7 +150,9 @@ function ManageDrawer({ userId, onClose }) {
   });
   if (!userId) return null;
   const refreshAll = async () => { await refetch(); await qc.invalidateQueries({ queryKey: ["users"] }); };
-  return (
+  // Portal to <body> — a framer-motion ancestor applies a CSS transform,
+  // which would otherwise turn `fixed` into a scoped/offset position.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-sm"
       data-testid="manage-drawer"
@@ -183,7 +189,8 @@ function ManageDrawer({ userId, onClose }) {
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

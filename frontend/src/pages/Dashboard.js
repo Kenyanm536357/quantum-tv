@@ -1,7 +1,39 @@
-import React from "react";
+import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "../api";
-import { Users, Activity, Sparkles, ArrowUpRight } from "lucide-react";
+import { Users, Activity, Sparkles, ArrowUpRight, X } from "lucide-react";
+
+const WHATS_NEW_KEY = "qtv_admin_whats_new_v2_00_dismissed";
+
+const WhatsNewCard = () => {
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem(WHATS_NEW_KEY) === "1");
+  if (dismissed) return null;
+  const dismiss = () => { localStorage.setItem(WHATS_NEW_KEY, "1"); setDismissed(true); };
+  return (
+    <div data-testid="whats-new-card" className="neon-card p-5 sm:p-6 relative overflow-hidden">
+      <div className="absolute -top-16 -left-16 w-40 h-40 rounded-full blur-3xl opacity-30" style={{ background: "rgba(139,92,246,0.5)" }} />
+      <button
+        data-testid="whats-new-dismiss"
+        onClick={dismiss}
+        className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-500 hover:text-white hover:bg-white/5"
+        aria-label="Dismiss"
+      >
+        <X className="w-4 h-4" />
+      </button>
+      <div className="flex items-center gap-2 relative">
+        <Sparkles className="w-4 h-4 text-cyan-400" />
+        <span className="px-2 py-0.5 rounded-full text-[10px] font-heading font-semibold bg-cyan-500/15 border border-cyan-400/30 text-cyan-200">v2.00</span>
+        <h3 className="font-heading font-semibold text-base sm:text-lg">What's new</h3>
+      </div>
+      <ul className="mt-3 space-y-1.5 text-sm text-zinc-400 relative">
+        <li>• IPTV Provider page is reachable again (fixed a broken nav route)</li>
+        <li>• New background cache panel — live/VOD/series counts + one-click refresh</li>
+        <li>• Free public US backup channels now stay in sync automatically</li>
+        <li>• External player launch is more reliable on Android (explicit app targeting)</li>
+      </ul>
+    </div>
+  );
+};
 
 const StatCard = ({ label, value, icon: Icon, accent, testid }) => (
   <div data-testid={testid} className="neon-card p-4 sm:p-6 group">
@@ -42,6 +74,8 @@ export default function Dashboard() {
         <h1 className="font-heading text-2xl sm:text-3xl font-bold mt-1">Control Panel</h1>
         <p className="text-zinc-400 text-sm mt-2">Manage subscribers, IPTV provider, and activity.</p>
       </div>
+
+      <WhatsNewCard />
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">
         <StatCard testid="stat-users-total" label="Total Users" value={isLoading ? "—" : data?.users_total ?? 0} icon={Users} accent="purple" />

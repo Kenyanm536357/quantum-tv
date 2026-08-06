@@ -60,8 +60,11 @@ const NavList = ({ onPick }) => {
 const BrandHeader = () => (
   <div className="p-5 flex items-center gap-3">
     <img src="/logo.png" alt="logo" className="w-10 h-10 rounded-xl shadow-glow" />
-    <div>
-      <div className="font-heading font-bold tracking-wide text-sm gradient-text">QUANTUM TV</div>
+    <div className="min-w-0">
+      <div className="flex items-center gap-2">
+        <div className="font-heading font-bold tracking-wide text-sm gradient-text">QUANTUM TV</div>
+        <span className="px-1.5 py-0.5 rounded-full text-[9px] font-heading font-semibold bg-white/5 border border-white/10 text-zinc-400">v2.00</span>
+      </div>
       <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Admin Console</div>
     </div>
   </div>
@@ -177,7 +180,10 @@ const Shell = ({ children }) => {
             <span className="hidden md:inline font-heading uppercase tracking-[0.25em] text-xs text-zinc-400">Control Center</span>
             <span className="md:hidden font-heading text-sm font-semibold text-white truncate">{currentLabel}</span>
           </div>
-          <div className="text-[10px] sm:text-xs text-zinc-500 font-mono shrink-0">v1.0.0</div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" />
+            <span className="text-[10px] sm:text-xs text-zinc-500 font-mono">v2.00</span>
+          </div>
         </header>
         <motion.div
           initial={{ opacity: 0, y: 8 }}

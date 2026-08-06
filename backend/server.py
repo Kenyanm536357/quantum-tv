@@ -425,6 +425,91 @@ async def _iptv_get(action: Optional[str] = None, params: Optional[dict] = None)
 # that cache. This is both faster for users and far more reliable.
 # ---------------------------------------------------------------------------
 IPTV_CACHE_REFRESH_SECONDS = 240  # ~4 minutes
+PUBLIC_M3U_CACHE_REFRESH_SECONDS = 6 * 60 * 60
+PUBLIC_M3U_SOURCES = [
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us_30a.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us_3abn.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us_abcnews.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us_afrolandtv.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us_amagi.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us_canelatv.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us_cbsn.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us_cineversetv.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us_distro.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us_firetv.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us_frequency.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us_glewedt.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us.m3u",
+]
+_M3U_ATTR_RE = re.compile(r'([\w-]+)="([^"]*)"')
+
+
+def _parse_public_m3u(text: str) -> list[dict]:
+    """Parse trusted IPTV-Org M3U feeds into stable, proxyable live channels."""
+    channels: list[dict] = []
+    pending: Optional[dict] = None
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("#EXTINF:"):
+            attrs = dict(_M3U_ATTR_RE.findall(line))
+            title = line.rsplit(",", 1)[-1].strip() if "," in line else "Public TV"
+            pending = {
+                "title": title or "Public TV",
+                "logo": attrs.get("tvg-logo") or None,
+                "category_name": attrs.get("group-title") or "Public US",
+                "original_title": title or "Public TV",
+                "headers": {},
+            }
+            continue
+        if pending and line.startswith("#EXTVLCOPT:http-user-agent="):
+            pending["headers"]["User-Agent"] = line.split("=", 1)[1].strip()
+            continue
+        if not pending or line.startswith("#"):
+            continue
+        parsed = urlparse(line)
+        if parsed.scheme not in {"http", "https"}:
+            pending = None
+            continue
+        channel = {**pending, "url": line}
+        channel["id"] = hashlib.sha256(line.encode()).hexdigest()[:20]
+        channels.append(channel)
+        pending = None
+    return channels
+
+
+async def _refresh_public_m3u_once() -> None:
+    """Refresh public supplemental US channels; an unavailable feed never removes cached channels."""
+    merged: dict[str, dict] = {}
+    failures: list[str] = []
+    timeout = httpx.Timeout(connect=15.0, read=45.0, write=15.0, pool=15.0)
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as c:
+        for source in PUBLIC_M3U_SOURCES:
+            try:
+                response = await c.get(source, headers={"User-Agent": IPTV_UA})
+                response.raise_for_status()
+                for channel in _parse_public_m3u(response.text):
+                    merged.setdefault(channel["id"], channel)
+            except Exception as e:
+                failures.append(source.rsplit("/", 1)[-1])
+                log.warning("Public M3U refresh failed for %s: %s", source, e)
+    if merged:
+        await db.iptv_cache.update_one(
+            {"id": "public-live"},
+            {"$set": {"id": "public-live", "streams": list(merged.values()), "updated_at": now_iso(), "failures": failures}},
+            upsert=True,
+        )
+        log.info("Public M3U cache: refreshed %d channels (%d sources unavailable)", len(merged), len(failures))
+
+
+async def _public_m3u_refresh_loop() -> None:
+    while True:
+        try:
+            await _refresh_public_m3u_once()
+        except Exception as e:
+            log.warning("Public M3U cache refresh loop error: %s", e)
+        await asyncio.sleep(PUBLIC_M3U_CACHE_REFRESH_SECONDS)
 
 
 async def _iptv_cache_set(kind: str, streams: list[dict], cat_by_id: dict[str, str]) -> None:
@@ -951,11 +1036,15 @@ async def iptv_logo(u: str):
 IPTV_UA = "Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 QuantumTV/1.0"
 
 
-async def _stream_upstream(upstream: str, request: Request) -> StreamingResponse:
+async def _stream_upstream(
+    upstream: str,
+    request: Request,
+    upstream_headers: Optional[dict[str, str]] = None,
+) -> StreamingResponse:
     """Open a streaming GET to `upstream` and pipe bytes back to the client.
     Forwards Range so the player can seek (VOD). Lifecycle of the upstream
     httpx client/response is tied to the StreamingResponse via aclose()."""
-    headers = {"User-Agent": IPTV_UA}
+    headers = {"User-Agent": IPTV_UA, **(upstream_headers or {})}
     if "range" in request.headers:
         headers["Range"] = request.headers["range"]
 
@@ -987,6 +1076,34 @@ async def _stream_upstream(upstream: str, request: Request) -> StreamingResponse
         headers=forward,
         media_type=media_type,
     )
+
+
+@api.get("/public/p/{channel_id}")
+async def public_m3u_proxy(
+    channel_id: str,
+    request: Request,
+    _: dict = Depends(get_user_flex),
+):
+    """Authenticated byte proxy for the trusted public M3U catalog."""
+    doc = await db.iptv_cache.find_one({"id": "public-live"}) or {}
+    channel = next((item for item in doc.get("streams") or [] if item.get("id") == channel_id), None)
+    if not channel or not channel.get("url"):
+        raise HTTPException(404, "Public channel not found")
+    if urlparse(channel["url"]).path.lower().endswith(".m3u8"):
+        try:
+            async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as c:
+                response = await c.get(
+                    channel["url"],
+                    headers={"User-Agent": IPTV_UA, **(channel.get("headers") or {})},
+                )
+                response.raise_for_status()
+                return Response(
+                    _rewrite_m3u8(response.text, str(response.url), request.query_params.get("t") or ""),
+                    media_type="application/vnd.apple.mpegurl",
+                )
+        except Exception as e:
+            raise HTTPException(502, f"Public playlist error: {e}")
+    return await _stream_upstream(channel["url"], request, channel.get("headers") or None)
 
 
 def _rewrite_m3u8(text: str, upstream_url: str, token: str) -> str:
@@ -2174,12 +2291,50 @@ async def live_channels(user: dict = Depends(get_current_user)):
         except Exception as e:
             log.warning("IPTV live channels merge failed: %s", e)
 
+    public_doc = await db.iptv_cache.find_one({"id": "public-live"}) or {}
+    for index, channel in enumerate(public_doc.get("streams") or [], start=1):
+        title = _clean_channel_title(channel.get("title"))
+        category_name = str(channel.get("category_name") or "Public US").strip() or "Public US"
+        category = _classify_live_category(f"{category_name} {title}")
+        out.append({
+            "title": title,
+            "original_title": channel.get("original_title") or channel.get("title"),
+            "number": f"P{index}",
+            "logo": channel.get("logo"),
+            "key": f"public-live-{channel.get('id')}",
+            "source": "public",
+            "category_id": "public-us",
+            "category_name": category_name,
+            "country": "United States",
+            "genre": category["genre"],
+        })
+
     return {"channels": out}
 
 
 @api.get("/stream/{rating_key}")
 async def stream_url(rating_key: str, request: Request, user: dict = Depends(get_current_user),
-                    direct: bool = True, external: bool = False, max_bitrate: int = 8000):
+                    direct: bool = True, external: bool = False, live_format: str = "m3u8",
+                    max_bitrate: int = 8000):
+    if str(rating_key).startswith("public-live-"):
+        channel_id = str(rating_key)[len("public-live-"):]
+        doc = await db.iptv_cache.find_one({"id": "public-live"}) or {}
+        channel = next((item for item in doc.get("streams") or [] if item.get("id") == channel_id), None)
+        if not channel:
+            raise HTTPException(404, "Public channel not found")
+        stream_token = create_jwt(
+            {"sub": user["id"], "role": "user", "username": user.get("username")},
+            expires_hours=6,
+        )
+        proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+        origin = f"{proto}://{host}"
+        return {
+            "url": f"{origin}/api/public/p/{quote(channel_id)}?t={quote(stream_token)}",
+            "type": "hls" if ".m3u8" in str(channel.get("url", "")).lower() else "direct",
+            "mode": "public-proxy",
+        }
+
     # IPTV stream resolution. Rating keys are minted as iptv-<kind>-<id>.
     if not str(rating_key).startswith("iptv-"):
         raise HTTPException(404, "Stream not found")
@@ -2201,6 +2356,9 @@ async def stream_url(rating_key: str, request: Request, user: dict = Depends(get
         proxy_kind = kind
     else:
         raise HTTPException(400, "bad iptv kind")
+
+    if kind == "live" and live_format not in {"m3u8", "ts"}:
+        raise HTTPException(400, "bad live format")
 
     cfg = await db.settings.find_one({"id": "iptv_config"})
     if not cfg or not cfg.get("password_enc"):
@@ -2228,8 +2386,10 @@ async def stream_url(rating_key: str, request: Request, user: dict = Depends(get
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
     origin = f"{proto}://{host}"
+    if kind == "live":
+        ext = live_format
     url = f"{origin}/api/iptv/p/{proxy_kind}/{sid}.{ext}?t={quote(stream_token)}"
-    return {"url": url, "type": "hls" if kind == "live" else "direct", "mode": "proxy"}
+    return {"url": url, "type": "hls" if ext == "m3u8" else "ts" if kind == "live" else "direct", "mode": "proxy"}
 
 
 # ============================================================

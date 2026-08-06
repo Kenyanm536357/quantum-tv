@@ -41,6 +41,7 @@ export default function Player() {
   const [launchMethod, setLaunchMethod] = useState<string | null>(null);
   const [playerLabel, setPlayerLabel] = useState<string | null>(null);
   const fellBackRef = useRef(false);
+  const triedTransportStreamRef = useRef(false);
 
   const player = useVideoPlayer(url ?? null, (p) => {
     p.play();
@@ -109,8 +110,14 @@ export default function Player() {
   // asks to switch players.
   const fallbackToExternal = async (cancelledRef: { current: boolean }) => {
     try {
+      const isLiveChannel = /^(iptv|public)-live-/.test(String(rk || ""));
       const { data } = await client.get(`/stream/${rk}`, {
-        params: { direct: "true", external: "true" },
+        // Some providers reject the TV's direct request (HTTP 458). Keep live
+        // fallback traffic on the authenticated TS proxy so the provider sees
+        // the backend connection while MX Player still gets a TV-friendly URL.
+        params: isLiveChannel
+          ? { direct: "false", external: "false", live_format: "ts" }
+          : { direct: "true", external: "true" },
       });
       if (cancelledRef.current) return;
       if (!data?.url || typeof data.url !== "string" || !data.url.length) {
@@ -146,6 +153,7 @@ export default function Player() {
   useEffect(() => {
     const cancelledRef = { current: false };
     fellBackRef.current = false;
+    triedTransportStreamRef.current = false;
     setPhase("loading");
     setErrorMsg(null);
     setUrl(null);
@@ -185,8 +193,29 @@ export default function Player() {
   useEffect(() => {
     const sub = player.addListener("statusChange", (status: VideoPlayerStatus) => {
       if (status === "error" && !fellBackRef.current) {
-        fellBackRef.current = true;
         const cancelledRef = { current: false };
+        const canRetryWithTs = String(rk || "").startsWith("iptv-live-") && !triedTransportStreamRef.current;
+        if (canRetryWithTs) {
+          triedTransportStreamRef.current = true;
+          setPhase("loading");
+          client.get(`/stream/${rk}`, {
+            params: { direct: "false", external: "false", live_format: "ts" },
+          }).then((response: { data: { url?: unknown } }) => {
+            const { data } = response;
+            if (data?.url && typeof data.url === "string") {
+              setUrl(data.url);
+              setPhase("in-app");
+            } else {
+              fellBackRef.current = true;
+              fallbackToExternal(cancelledRef);
+            }
+          }).catch(() => {
+            fellBackRef.current = true;
+            fallbackToExternal(cancelledRef);
+          });
+          return;
+        }
+        fellBackRef.current = true;
         fallbackToExternal(cancelledRef);
       }
     });

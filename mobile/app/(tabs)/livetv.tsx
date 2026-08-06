@@ -249,6 +249,37 @@ export default function LiveTV() {
   const [focused, setFocused] = useState<{ channel: Channel; program: Program | null } | null>(null);
   const focusedChannel = focused?.channel ?? null;
   const focusedProgram = focused?.program ?? null;
+  const focusFrame = useRef<number | null>(null);
+
+  const updateFocused = useCallback((channel: Channel, program: Program | null) => {
+    if (focusFrame.current !== null) cancelAnimationFrame(focusFrame.current);
+    focusFrame.current = requestAnimationFrame(() => {
+      focusFrame.current = null;
+      setFocused((current) => {
+        if (current?.channel.key === channel.key && current.program === program) return current;
+        return { channel, program };
+      });
+    });
+  }, []);
+
+  useEffect(() => () => {
+    if (focusFrame.current !== null) cancelAnimationFrame(focusFrame.current);
+  }, []);
+
+  const renderGuideRow = useCallback(({ item, index }: { item: Channel; index: number }) => (
+    <GuideRow
+      channel={item}
+      timelineStart={timelineStart}
+      timelineEnd={timelineEnd}
+      isFav={favKeys.has(String(item.key))}
+      loadEpg={focusedChannel?.key === item.key}
+      onOpen={openChannel}
+      onToggleFav={handleToggleFav}
+      onFocusProgram={(p) => updateFocused(item, p)}
+      onFocusChannel={() => updateFocused(item, null)}
+      hasPreferredFocus={index === 0}
+    />
+  ), [favKeys, focusedChannel?.key, handleToggleFav, openChannel, timelineEnd, timelineStart, updateFocused]);
 
   // ---- Channel-number quick jump ----
   const [jumpBuf, setJumpBuf] = useState("");
@@ -353,26 +384,16 @@ export default function LiveTV() {
           <View style={{ flex: 1, position: "relative" }}>
             <FlatList
               data={list}
-              keyExtractor={(it, i) => `guide-${it.key}-${i}`}
-              initialNumToRender={12}
-              maxToRenderPerBatch={8}
-              windowSize={7}
+              keyExtractor={(it) => `guide-${it.key}`}
+              initialNumToRender={6}
+              maxToRenderPerBatch={4}
+              updateCellsBatchingPeriod={32}
+              windowSize={4}
+              disableVirtualization={false}
               removeClippedSubviews
               getItemLayout={(_, index) => ({ length: ROW_H, offset: ROW_H * index, index })}
               contentContainerStyle={{ paddingBottom: SIZES.tabBarH + vs(20) }}
-              renderItem={({ item, index }) => (
-                <GuideRow
-                  channel={item}
-                  timelineStart={timelineStart}
-                  timelineEnd={timelineEnd}
-                  isFav={favKeys.has(String(item.key))}
-                  onOpen={openChannel}
-                  onToggleFav={handleToggleFav}
-                  onFocusProgram={(p) => setFocused({ channel: item, program: p })}
-                  onFocusChannel={() => setFocused((f) => ({ channel: item, program: f?.program ?? null }))}
-                  hasPreferredFocus={index === 0}
-                />
-              )}
+              renderItem={renderGuideRow}
             />
             {/* Vertical "now" indicator drawn over the entire visible timeline area. */}
             {nowX >= 0 && nowX <= TIMELINE_W ? (
@@ -528,14 +549,15 @@ function HeroPanel({ channel, program }: { channel: Channel | null; program: Pro
 }
 
 // ---- One channel row in the guide grid --------------------------------
-function GuideRow({
+const GuideRow = React.memo(function GuideRow({
   channel, timelineStart, timelineEnd, isFav,
-  onOpen, onToggleFav, onFocusProgram, onFocusChannel, hasPreferredFocus,
+  loadEpg, onOpen, onToggleFav, onFocusProgram, onFocusChannel, hasPreferredFocus,
 }: {
   channel: Channel;
   timelineStart: number;
   timelineEnd: number;
   isFav: boolean;
+  loadEpg: boolean;
   onOpen: (c: Channel) => void;
   onToggleFav: (c: Channel) => void;
   onFocusProgram: (p: Program | null) => void;
@@ -544,7 +566,9 @@ function GuideRow({
 }) {
   const isIptv = channel.source === "iptv";
   const epgQ = useQuery({
-    enabled: isIptv,
+    // Fetch only the channel being browsed. Starting EPG requests for every
+    // mounted row overwhelms some Xtream lines and makes TV-remote scrolling jagged.
+    enabled: isIptv && loadEpg,
     queryKey: ["epg", channel.key],
     queryFn: async () => (await client.get(`/livetv/epg?channel_key=${encodeURIComponent(channel.key)}&limit=8`)).data as { programs: Program[] },
     staleTime: 5 * 60 * 1000,
@@ -620,7 +644,7 @@ function GuideRow({
       </View>
     </View>
   );
-}
+});
 
 // ---- A single program block on a row ----------------------------------
 function ProgramBlock({

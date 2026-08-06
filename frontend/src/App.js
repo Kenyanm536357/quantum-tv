@@ -3,7 +3,7 @@ import { Routes, Route, Navigate, useLocation, useNavigate, Link } from "react-r
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Users, Settings, Activity, LogOut, Tv,
-  Smartphone, Download, MonitorPlay, Menu, X, AlertTriangle, Cable,
+  Smartphone, Download, MonitorPlay, Menu, X, AlertTriangle, Cable, ClipboardCheck,
 } from "lucide-react";
 import { IS_PRODUCTION_BACKEND, PRODUCTION_URL } from "./api";
 import Login from "./pages/Login";
@@ -17,11 +17,13 @@ import FireTVPreview from "./pages/FireTVPreview";
 import Watch from "./pages/Watch";
 import Activate from "./pages/Activate";
 import Iptv from "./pages/Iptv";
+import Audit from "./pages/Audit";
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, testid: "nav-dashboard" },
   { to: "/users", label: "Subscribers", icon: Users, testid: "nav-users" },
   { to: "/iptv", label: "IPTV Provider", icon: Cable, testid: "nav-iptv" },
+  { to: "/audit", label: "Live TV + VOD Audit", icon: ClipboardCheck, testid: "nav-audit" },
   { to: "/preview", label: "App Preview", icon: Smartphone, testid: "nav-preview" },
   { to: "/tv-preview", label: "Fire TV Preview", icon: MonitorPlay, testid: "nav-tv-preview" },
   { to: "/firetv", label: "Fire TV Install", icon: Download, testid: "nav-firetv" },
@@ -104,7 +106,7 @@ const Shell = ({ children }) => {
   return (
     <div className="min-h-screen flex relative z-10">
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-60 lg:w-64 shrink-0 border-r border-white/5 bg-[#060714]/80 backdrop-blur-md flex-col sticky top-0 h-screen">
+      <aside className="hidden md:flex w-60 lg:w-64 shrink-0 border-r border-white/5 bg-[#060714]/80 backdrop-blur-md flex-col sticky top-0 h-screen print:hidden">
         <BrandHeader />
         <NavList />
         <div className="p-3 border-t border-white/5">
@@ -166,7 +168,7 @@ const Shell = ({ children }) => {
 
       <main className="flex-1 min-w-0 w-full">
         {!IS_PRODUCTION_BACKEND && <PreviewBanner />}
-        <header className="h-12 sm:h-14 border-b border-white/5 px-3 sm:px-4 md:px-6 flex items-center justify-between sticky top-0 bg-[#060714]/80 backdrop-blur-md z-30">
+        <header className="h-12 sm:h-14 border-b border-white/5 px-3 sm:px-4 md:px-6 flex items-center justify-between sticky top-0 bg-[#060714]/80 backdrop-blur-md z-30 print:hidden">
           <div className="flex items-center gap-3 min-w-0">
             <button
               data-testid="open-drawer"
@@ -213,6 +215,7 @@ export default function App() {
       <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
       <Route path="/users" element={<RequireAuth><UsersPage /></RequireAuth>} />
       <Route path="/iptv" element={<RequireAuth><Iptv /></RequireAuth>} />
+      <Route path="/audit" element={<RequireAuth><Audit /></RequireAuth>} />
       <Route path="/activity" element={<RequireAuth><ActivityPage /></RequireAuth>} />
       <Route path="/preview" element={<RequireAuth><MobilePreview /></RequireAuth>} />
       <Route path="/tv-preview" element={<RequireAuth><FireTVPreview /></RequireAuth>} />

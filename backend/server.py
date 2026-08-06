@@ -740,6 +740,142 @@ async def admin_iptv_refresh_cache(admin: dict = Depends(get_current_admin)):
     return await admin_iptv_cache_status(admin)
 
 
+@api.get("/admin/audit/livetv-vod")
+async def admin_audit_livetv_vod(admin: dict = Depends(get_current_admin)):
+    """On-demand data-integrity audit of the Live TV + VOD catalogs. Reads
+    straight from the already-cached data (no provider requests), so it's
+    fast and safe to re-run on every button click regardless of the
+    provider's connection limit."""
+    now = datetime.now(timezone.utc)
+
+    def _age_seconds(iso_ts: Optional[str]) -> Optional[float]:
+        if not iso_ts:
+            return None
+        try:
+            ts = datetime.fromisoformat(iso_ts.replace("Z", "+00:00"))
+            return (now - ts).total_seconds()
+        except Exception:
+            return None
+
+    cfg = await db.settings.find_one({"id": "iptv_config"})
+    live_doc = await db.iptv_cache.find_one({"id": "live"})
+    vod_doc = await db.iptv_cache.find_one({"id": "vod"})
+    public_doc = await db.iptv_cache.find_one({"id": "public-live"})
+
+    issues: list[str] = []
+
+    # ---- Live (IPTV provider) ----
+    live_raw = (live_doc.get("streams") if live_doc else None) or []
+    live_cat_by_id = (live_doc.get("cat_by_id") if live_doc else None) or {}
+    live_missing_title = live_missing_id = live_dividers = 0
+    live_ids: list[str] = []
+    for s in live_raw:
+        sid = s.get("stream_id")
+        if not sid:
+            live_missing_id += 1
+            continue
+        live_ids.append(str(sid))
+        if not (s.get("name") or "").strip():
+            live_missing_title += 1
+        elif _is_divider_channel(s.get("name") or ""):
+            live_dividers += 1
+    live_dupes = len(live_ids) - len(set(live_ids))
+    live_age = _age_seconds(live_doc.get("updated_at") if live_doc else None)
+    if cfg and not live_raw:
+        issues.append("Live TV: provider configured but the cache is empty — check provider connectivity.")
+    if live_missing_id:
+        issues.append(f"Live TV: {live_missing_id} provider channel(s) missing a stream_id (unplayable, skipped by the app).")
+    if live_dupes:
+        issues.append(f"Live TV: {live_dupes} duplicate stream_id(s) in the provider cache.")
+    if live_age is not None and live_age > IPTV_CACHE_REFRESH_SECONDS * 3:
+        issues.append(f"Live TV: provider cache hasn't refreshed in {int(live_age // 60)} min (expected every {IPTV_CACHE_REFRESH_SECONDS // 60} min).")
+
+    # ---- Public US backup channels ----
+    public_raw = (public_doc.get("streams") if public_doc else None) or []
+    public_missing_title = public_missing_url = 0
+    public_ids: list[str] = []
+    for c in public_raw:
+        if c.get("id"):
+            public_ids.append(str(c["id"]))
+        if not (c.get("title") or "").strip():
+            public_missing_title += 1
+        if not (c.get("url") or "").strip():
+            public_missing_url += 1
+    public_dupes = len(public_ids) - len(set(public_ids))
+    public_age = _age_seconds(public_doc.get("updated_at") if public_doc else None)
+    if public_dupes:
+        issues.append(f"Public US: {public_dupes} duplicate channel id(s).")
+    if public_missing_url:
+        issues.append(f"Public US: {public_missing_url} channel(s) missing a playable URL.")
+    if public_age is not None and public_age > PUBLIC_M3U_CACHE_REFRESH_SECONDS * 3:
+        issues.append(f"Public US: source cache hasn't refreshed in {int(public_age // 3600)}h.")
+    if public_doc and public_doc.get("failures"):
+        issues.append(f"Public US: {len(public_doc['failures'])} upstream M3U source(s) failed on last refresh ({', '.join(public_doc['failures'][:3])}{'…' if len(public_doc['failures']) > 3 else ''}).")
+
+    # ---- VOD (movies) ----
+    vod_raw = (vod_doc.get("streams") if vod_doc else None) or []
+    vod_cat_by_id = (vod_doc.get("cat_by_id") if vod_doc else None) or {}
+    vod_missing_title = vod_missing_id = 0
+    vod_ids: list[str] = []
+    for s in vod_raw:
+        sid = s.get("stream_id")
+        if not sid:
+            vod_missing_id += 1
+            continue
+        vod_ids.append(str(sid))
+        if not (s.get("name") or "").strip():
+            vod_missing_title += 1
+    vod_dupes = len(vod_ids) - len(set(vod_ids))
+    vod_age = _age_seconds(vod_doc.get("updated_at") if vod_doc else None)
+    if cfg and not vod_raw:
+        issues.append("VOD: provider configured but the cache is empty — check provider connectivity.")
+    if vod_missing_id:
+        issues.append(f"VOD: {vod_missing_id} title(s) missing a stream_id (unplayable, skipped by the app).")
+    if vod_dupes:
+        issues.append(f"VOD: {vod_dupes} duplicate stream_id(s) in the provider cache.")
+    if vod_age is not None and vod_age > IPTV_CACHE_REFRESH_SECONDS * 3:
+        issues.append(f"VOD: provider cache hasn't refreshed in {int(vod_age // 60)} min (expected every {IPTV_CACHE_REFRESH_SECONDS // 60} min).")
+
+    if not cfg:
+        issues.append("No IPTV provider is configured — connect one on the IPTV Provider page.")
+
+    status = "critical" if not cfg or (cfg and not live_raw and not vod_raw) else ("warning" if issues else "healthy")
+
+    return {
+        "generated_at": now_iso(),
+        "provider_configured": bool(cfg),
+        "status": status,
+        "issues": issues,
+        "live": {
+            "provider_channels": len(live_raw),
+            "provider_categories": len(live_cat_by_id),
+            "provider_missing_title": live_missing_title,
+            "provider_missing_stream_id": live_missing_id,
+            "provider_duplicate_ids": max(live_dupes, 0),
+            "provider_divider_entries_skipped": live_dividers,
+            "provider_cache_updated_at": live_doc.get("updated_at") if live_doc else None,
+            "provider_cache_age_seconds": live_age,
+            "public_channels": len(public_raw),
+            "public_missing_title": public_missing_title,
+            "public_missing_url": public_missing_url,
+            "public_duplicate_ids": max(public_dupes, 0),
+            "public_cache_updated_at": public_doc.get("updated_at") if public_doc else None,
+            "public_cache_age_seconds": public_age,
+            "public_source_failures": (public_doc.get("failures") if public_doc else None) or [],
+            "total_channels": len(live_raw) + len(public_raw),
+        },
+        "vod": {
+            "titles": len(vod_raw),
+            "categories": len(vod_cat_by_id),
+            "missing_title": vod_missing_title,
+            "missing_stream_id": vod_missing_id,
+            "duplicate_ids": max(vod_dupes, 0),
+            "cache_updated_at": vod_doc.get("updated_at") if vod_doc else None,
+            "cache_age_seconds": vod_age,
+        },
+    }
+
+
 @api.get("/iptv/live/categories")
 async def iptv_live_categories(_: dict = Depends(get_current_user)):
     return await _iptv_get("get_live_categories")

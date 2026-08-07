@@ -276,14 +276,20 @@ export default function Player() {
           can bring the controls back once they've auto-hidden — without
           this, focus has nowhere to land and the controls are unreachable.
           Style must be a focus-aware function (not a plain object) or
-          Android TV paints its default white focus-highlight full-screen. */}
+          Android TV paints its default white focus-highlight full-screen.
+          IMPORTANT: only show controls on an actual onPress, NOT onFocus —
+          when controls hide, this surface becomes the preferred focus
+          target (below) so the OS auto-focuses it, which fired onFocus
+          immediately and re-showed the controls right after hiding them,
+          an infinite show/hide loop that made auto-hide look totally
+          broken. Gaining focus programmatically must not count as a
+          "wake up" gesture, only an explicit press does. */}
       {phase === "in-app" && (
         <Pressable
           testID="player-surface"
           focusable
           hasTVPreferredFocus={!controlsVisible}
           onPress={showControlsTemporarily}
-          onFocus={showControlsTemporarily}
           android_ripple={{ color: "transparent", borderless: true }}
           style={() => [StyleSheet.absoluteFill, { backgroundColor: "transparent" }]}
         />

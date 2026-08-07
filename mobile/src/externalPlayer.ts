@@ -4,7 +4,6 @@ import * as Application from "expo-application";
 import * as IntentLauncher from "expo-intent-launcher";
 
 const ACTION_VIEW = "android.intent.action.VIEW";
-const FLAG_ACTIVITY_NEW_TASK = 0x10000000;
 
 /**
  * Known Android TV / Fire TV video player packages.
@@ -14,6 +13,14 @@ export const KNOWN_PLAYERS: Array<{
   id: string;
   label: string;
   androidPackage: string;
+  /** Player's officially documented playback Activity — REQUIRED for real
+   * explicit-package targeting. expo-intent-launcher's native module only
+   * sets `intent.component` (i.e. actually restricts to this package) when
+   * BOTH packageName AND className are given; packageName alone is
+   * silently ignored, so without this the "explicit" attempt below is
+   * actually just a generic implicit VIEW intent (whatever the OS
+   * auto-resolves), and any "Opened with X" label would be a lie. */
+  androidClassName?: string;
   schemes?: string[];
   storeQuery?: string;
 }> = [
@@ -21,6 +28,7 @@ export const KNOWN_PLAYERS: Array<{
     id: "vlc",
     label: "VLC",
     androidPackage: "org.videolan.vlc",
+    androidClassName: "org.videolan.vlc.gui.video.VideoPlayerActivity",
     schemes: ["vlc://"],
     storeQuery: "vlc",
   },
@@ -28,18 +36,21 @@ export const KNOWN_PLAYERS: Array<{
     id: "mx-tv",
     label: "MX Player TV",
     androidPackage: "com.mxtech.videoplayer.television",
+    androidClassName: "com.mxtech.videoplayer.ActivityScreen",
     storeQuery: "mx player",
   },
   {
     id: "mx-pro",
     label: "MX Player Pro",
     androidPackage: "com.mxtech.videoplayer.pro",
+    androidClassName: "com.mxtech.videoplayer.ActivityScreen",
     storeQuery: "mx player pro",
   },
   {
     id: "mx",
     label: "MX Player",
     androidPackage: "com.mxtech.videoplayer.ad",
+    androidClassName: "com.mxtech.videoplayer.ActivityScreen",
     storeQuery: "mx player",
   },
   {
@@ -86,18 +97,32 @@ async function tryOpen(url: string): Promise<boolean> {
 
 /** Explicit-package launch via the real Android Intent API — Linking.openURL
  * can't set a package/type on an intent, it only opens a bare ACTION_VIEW
- * on the raw URL, so it can never reliably target a specific player app. */
+ * on the raw URL, so it can never reliably target a specific player app.
+ *
+ * IMPORTANT: do NOT pass FLAG_ACTIVITY_NEW_TASK here. expo-intent-launcher's
+ * native module calls startActivityForResult() and keeps a single pending
+ * promise until Android delivers the result back via onActivityResult — but
+ * per Android's own contract, NEW_TASK activities never deliver a result.
+ * That leaves the native module's pending-promise lock permanently held
+ * after the very first successful external-player launch, so every
+ * subsequent call in the same app session throws
+ * ActivityAlreadyStartedException immediately and silently degrades to the
+ * generic Linking.openURL fallback (a bare "System handler" open) instead
+ * of correctly targeting MX Player/VLC/etc. Omitting the flag lets Android
+ * deliver the result when the user backs out of the external player,
+ * clearing the lock and keeping every later launch working. */
 async function tryStartActivity(opts: {
   data: string;
   type?: string;
   packageName?: string;
+  className?: string;
 }): Promise<boolean> {
   try {
     await IntentLauncher.startActivityAsync(ACTION_VIEW, {
       data: opts.data,
       type: opts.type,
       packageName: opts.packageName,
-      flags: FLAG_ACTIVITY_NEW_TASK,
+      className: opts.className,
     });
     return true;
   } catch (e) {
@@ -200,8 +225,13 @@ export async function launchExternalPlayer(streamUrl: string): Promise<LaunchRes
     // works whether or not the target declares a matching data/mime filter,
     // since packageName alone is enough to resolve the component).
     for (const p of KNOWN_PLAYERS) {
+      // Skip candidates we can't actually target explicitly — packageName
+      // alone doesn't restrict the intent (see androidClassName doc above),
+      // so without a known className this would just be a duplicate of the
+      // generic attempt below, wasting an intent-launcher call for nothing.
+      if (!p.androidClassName) continue;
       tried.push(`intent-pkg:${p.androidPackage}`);
-      if (await tryStartActivity({ data: streamUrl, type: mime, packageName: p.androidPackage })) {
+      if (await tryStartActivity({ data: streamUrl, type: mime, packageName: p.androidPackage, className: p.androidClassName })) {
         return { ok: true, method: `intent-package:${p.androidPackage}`, playerLabel: p.label };
       }
     }

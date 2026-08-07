@@ -110,6 +110,24 @@ export default function Player() {
   // asks to switch players.
   const fallbackToExternal = async (cancelledRef: { current: boolean }) => {
     try {
+      // Release the in-app player's connection BEFORE requesting/launching an
+      // external one. Many providers (including this account's Xtream
+      // backend) only allow a single concurrent connection per line — if the
+      // in-app player is left playing/buffering in the background, the
+      // external player's brand-new connection gets rejected with HTTP 458
+      // ("too many connections") even though the stream itself is fine.
+      // Pausing alone isn't enough to guarantee the native player closes its
+      // socket, so we also clear the source, which forces useVideoPlayer to
+      // dispose of the old native player instance entirely.
+      if (player.playing) player.pause();
+      setUrl(null);
+      // Give the backend a moment to notice the client socket closed and
+      // actually tear down its upstream connection to the provider. Some
+      // providers hold a live line's slot for a brief grace period after the
+      // last byte, so requesting a new stream immediately can still race
+      // into an HTTP 458 rejection even though we already released our side.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      if (cancelledRef.current) return;
       const isLiveChannel = /^(iptv|public)-live-/.test(String(rk || ""));
       const { data } = await client.get(`/stream/${rk}`, {
         // Some providers reject the TV's direct request (HTTP 458). Keep live

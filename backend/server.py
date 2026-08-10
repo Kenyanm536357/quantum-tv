@@ -18,7 +18,7 @@ import hashlib
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional, Any
-from urllib.parse import urlencode, urljoin, urlparse, parse_qs, quote
+from urllib.parse import urlencode, urljoin, urlparse, quote
 
 import httpx
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Response, UploadFile, File, Request
@@ -44,6 +44,10 @@ JWT_SECRET = os.environ["JWT_SECRET"]
 FERNET_KEY = os.environ["FERNET_KEY"].encode()
 ADMIN_USERNAME = os.environ["ADMIN_USERNAME"]
 ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
+XTREAM_PROVIDER_URLS = (
+    "http://ky-tv.cc:25461",
+    "http://kytv.xyz:25461",
+)
 
 fernet = Fernet(FERNET_KEY)
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -104,7 +108,8 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
          "watchlist": 1, "favorites": 1, "password_hash": 1,
          "live_favorites": 1, "live_recent": 1,
          "account_number": 1, "subscription_months": 1, "expires_at": 1,
-         "max_devices": 1, "devices": 1},
+         "max_devices": 1, "devices": 1, "xtream_url": 1,
+         "xtream_username": 1, "xtream_password_enc": 1},
     )
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
@@ -130,7 +135,11 @@ async def get_user_flex(
     payload = decode_jwt(tok)
     if payload.get("role") != "user":
         raise HTTPException(401, "Invalid token")
-    user = await db.users.find_one({"id": payload.get("sub")}, {"id": 1, "status": 1})
+    user = await db.users.find_one(
+        {"id": payload.get("sub")},
+        {"id": 1, "status": 1, "xtream_url": 1, "xtream_username": 1,
+         "xtream_password_enc": 1},
+    )
     if not user or user.get("status") != "active":
         raise HTTPException(403, "Account inactive")
     return user
@@ -258,7 +267,7 @@ async def login(body: LoginBody):
 
 
 class IptvSignInBody(BaseModel):
-    mode: str                           # "xtream" | "m3u"
+    mode: str = "xtream"
     url: Optional[str] = None
     username: Optional[str] = None
     password: Optional[str] = None
@@ -268,41 +277,18 @@ class IptvSignInBody(BaseModel):
     device_name: Optional[str] = None
 
 
-def _parse_m3u_credentials(m3u_url: str) -> tuple[str, str, str]:
-    """Extract (base_url, username, password) from an Xtream-style M3U link,
-    e.g. http://host:port/get.php?username=U&password=P&type=m3u_plus."""
-    parsed = urlparse((m3u_url or "").strip())
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise HTTPException(400, "That doesn't look like a valid link.")
-    qs = parse_qs(parsed.query)
-    user = (qs.get("username") or [""])[0]
-    pw = (qs.get("password") or [""])[0]
-    if not user or not pw:
-        raise HTTPException(400, "Couldn't find a username/password in that M3U link. Use Xtream Codes login instead.")
-    base = f"{parsed.scheme}://{parsed.netloc}"
-    return base, user, pw
-
-
 @api.post("/auth/iptv-login")
 async def auth_iptv_login(body: IptvSignInBody):
-    """Alternate Fire Stick sign-in: connect directly with an Xtream Codes
-    login or an M3U playlist link instead of a Quantum TV username/password.
-    Validates the credentials against the provider, makes it the app's
-    active IPTV source, and auto-provisions (or reuses) a Quantum TV
-    account tied to that provider login so devices/subscription still work.
-    """
-    if body.mode == "m3u":
-        url, xt_user, xt_pass = _parse_m3u_credentials(body.m3u_url or "")
-    elif body.mode == "xtream":
-        url, xt_user, xt_pass = body.url or "", body.username or "", body.password or ""
-    else:
-        raise HTTPException(400, "mode must be 'xtream' or 'm3u'")
-
-    ui = await _connect_iptv_provider(url, xt_user, xt_pass)
+    """Sign in with an account created in the hardwired provider portal."""
+    xt_user = (body.username or "").strip()
+    xt_pass = (body.password or "").strip()
+    if not xt_user or not xt_pass:
+        raise HTTPException(400, "username and password required")
+    url, ui = await _connect_hardwired_provider(xt_user, xt_pass)
 
     # Deterministic account per provider login so re-signing-in reuses the
     # same device slots instead of spawning a new account each time.
-    account_key = hashlib.sha256(f"{url.rstrip('/')}|{xt_user}".encode()).hexdigest()[:16]
+    account_key = hashlib.sha256(f"kytv|{xt_user}".encode()).hexdigest()[:16]
     username = f"iptv_{account_key}"
     user = await db.users.find_one({"username": username})
     now = now_iso()
@@ -325,6 +311,9 @@ async def auth_iptv_login(body: IptvSignInBody):
             "created_at": now,
             "updated_at": now,
             "last_login": None,
+            "xtream_url": url,
+            "xtream_username": xt_user,
+            "xtream_password_enc": encrypt_token(xt_pass),
         }
         await db.users.insert_one(user)
 
@@ -352,7 +341,14 @@ async def auth_iptv_login(body: IptvSignInBody):
 
     await db.users.update_one(
         {"id": user["id"]},
-        {"$set": {"last_login": now, "devices": devices}},
+        {"$set": {
+            "last_login": now,
+            "devices": devices,
+            "display_name": xt_user,
+            "xtream_url": url,
+            "xtream_username": xt_user,
+            "xtream_password_enc": encrypt_token(xt_pass),
+        }},
     )
     token = create_jwt({"sub": user["id"], "role": "user", "username": user["username"]})
     return {
@@ -391,7 +387,7 @@ async def admin_login_compat(body: LoginBody):
 # IPTV / Xtream Codes integration
 # ============================================================
 class IptvConnectBody(BaseModel):
-    url: str            # e.g. http://line.2tvusa.xyz
+    url: Optional[str] = None
     username: str
     password: str
 
@@ -400,8 +396,9 @@ async def _iptv_get(action: Optional[str] = None, params: Optional[dict] = None)
     """Call the configured Xtream Codes provider. Returns parsed JSON.
     Raises HTTPException if no provider is configured."""
     cfg = await db.settings.find_one({"id": "iptv_config"})
-    if not cfg or not cfg.get("password_enc"):
-        raise HTTPException(404, "No IPTV provider configured. Add one in Admin → IPTV.")
+    if (not cfg or not cfg.get("password_enc")
+            or cfg.get("url", "").rstrip("/") not in XTREAM_PROVIDER_URLS):
+        raise HTTPException(404, "No account from the Quantum TV provider has signed in yet.")
     base = cfg["url"].rstrip("/")
     qp = {"username": cfg["username"], "password": decrypt_token(cfg["password_enc"])}
     if action:
@@ -658,40 +655,49 @@ async def _probe_xtream(url: str, user: str, pw: str) -> dict:
         raise HTTPException(502, f"Could not reach IPTV provider: {e}")
 
 
-async def _connect_iptv_provider(url: str, user: str, pw: str) -> dict:
-    """Validate Xtream credentials, persist them as the app's provider
-    (password encrypted), and return the user_info from the probe."""
-    url = (url or "").strip().rstrip("/")
-    if not url.startswith("http"):
-        url = "http://" + url
-    user = (user or "").strip()
-    pw = (pw or "").strip()
-    if not (url and user and pw):
-        raise HTTPException(400, "url, username, password required")
-    d = await _probe_xtream(url, user, pw)
-    ui = (d or {}).get("user_info") or {}
-    if str(ui.get("auth", 1)) == "0" or ui.get("status") not in {"Active", "active"}:
-        raise HTTPException(401, f"IPTV provider rejected credentials (status={ui.get('status')!r})")
-    await db.settings.update_one(
-        {"id": "iptv_config"},
-        {"$set": {
-            "id": "iptv_config",
-            "url": url,
-            "username": user,
-            "password_enc": encrypt_token(pw),
-            "user_info": ui,
-            "server_info": (d or {}).get("server_info") or {},
-            "connected_at": now_iso(),
-        }},
-        upsert=True,
-    )
-    return ui
+async def _connect_hardwired_provider(user: str, pw: str) -> tuple[str, dict]:
+    for url in XTREAM_PROVIDER_URLS:
+        try:
+            data = await _probe_xtream(url, user, pw)
+            info = (data or {}).get("user_info") or {}
+            if str(info.get("auth", 1)) == "0" or info.get("status") not in {"Active", "active"}:
+                continue
+            await db.settings.update_one(
+                {"id": "iptv_config"},
+                {"$set": {
+                    "id": "iptv_config",
+                    "url": url,
+                    "username": user,
+                    "password_enc": encrypt_token(pw),
+                    "user_info": info,
+                    "server_info": (data or {}).get("server_info") or {},
+                    "connected_at": now_iso(),
+                }},
+                upsert=True,
+            )
+            return url, info
+        except HTTPException:
+            continue
+    raise HTTPException(401, "Provider login failed on both Quantum TV servers. Check the username and password.")
+
+
+def _user_iptv_config(user: dict) -> dict:
+    url = str(user.get("xtream_url") or "").rstrip("/")
+    if url not in XTREAM_PROVIDER_URLS:
+        raise HTTPException(403, "Sign in with your provider portal credentials first.")
+    if not user.get("xtream_username") or not user.get("xtream_password_enc"):
+        raise HTTPException(403, "Provider credentials are missing for this account.")
+    return {
+        "url": url,
+        "username": user["xtream_username"],
+        "password_enc": user["xtream_password_enc"],
+    }
 
 
 @api.post("/admin/iptv/connect")
 async def admin_iptv_connect(body: IptvConnectBody, admin: dict = Depends(get_current_admin)):
-    """Validate Xtream credentials and persist them (password encrypted)."""
-    ui = await _connect_iptv_provider(body.url, body.username, body.password)
+    """Validate credentials against the hardwired Quantum TV provider."""
+    _, ui = await _connect_hardwired_provider(body.username, body.password)
     return {"ok": True, "status": ui.get("status"), "exp_date": ui.get("exp_date"),
             "max_connections": ui.get("max_connections"), "active_cons": ui.get("active_cons")}
 
@@ -958,11 +964,11 @@ async def livetv_epg(
 
 
 @api.get("/iptv/live/streams")
-async def iptv_live_streams(category_id: Optional[str] = None, _: dict = Depends(get_current_user)):
+async def iptv_live_streams(category_id: Optional[str] = None, user: dict = Depends(get_current_user)):
     raw, _cats = await _iptv_cached("live")
     if category_id:
         raw = [s for s in raw if str(s.get("category_id") or "") == str(category_id)]
-    cfg = await db.settings.find_one({"id": "iptv_config"})
+    cfg = _user_iptv_config(user)
     out = []
     for s in (raw or []):
         thumb_raw = s.get("stream_icon")
@@ -1054,7 +1060,7 @@ async def _iptv_catalog(action: str, categories_action: str, category_id: Option
 async def iptv_vod_streams(
     category_id: Optional[str] = None,
     exclude_adult: bool = False,
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ):
     try:
         raw, cat_by_id = await _iptv_cached("vod")
@@ -1064,7 +1070,7 @@ async def iptv_vod_streams(
     if category_id:
         raw = [s for s in raw if str(s.get("category_id") or "") == str(category_id)]
     adult_cat_ids = {cid for cid, name in cat_by_id.items() if _is_adult_category_name(name)}
-    cfg = await db.settings.find_one({"id": "iptv_config"})
+    cfg = _user_iptv_config(user)
     out = []
     for s in (raw or []):
         cid = str(s.get("category_id") or "")
@@ -1266,7 +1272,7 @@ async def iptv_proxy(
     ext: str,
     request: Request,
     t: Optional[str] = None,
-    _: dict = Depends(get_user_flex),
+    user: dict = Depends(get_user_flex),
 ):
     """Primary stream proxy. `kind` is live|movie|series. For .m3u8 we fetch
     the manifest and rewrite segment URLs; everything else streams bytes."""
@@ -1274,9 +1280,7 @@ async def iptv_proxy(
         raise HTTPException(400, "bad kind")
     if ext.lower() not in {"m3u8", "ts", "mp4", "mkv"}:
         raise HTTPException(400, "bad ext")
-    cfg = await db.settings.find_one({"id": "iptv_config"})
-    if not cfg or not cfg.get("password_enc"):
-        raise HTTPException(404, "IPTV not configured")
+    cfg = _user_iptv_config(user)
     pw = decrypt_token(cfg["password_enc"])
     base = cfg["url"].rstrip("/")
     upstream = f"{base}/{kind}/{cfg['username']}/{pw}/{stream_id}.{ext}"
@@ -2384,48 +2388,43 @@ def _clean_channel_title(raw: Optional[str]) -> str:
 @api.get("/livetv/channels")
 async def live_channels(user: dict = Depends(get_current_user)):
     out: list[dict] = []
+    _user_iptv_config(user)
 
     # Merge IPTV live channels (if configured). Keyed as iptv-live-<id> so the
     # /stream/{rk} endpoint can route playback through the proxy. Enrich each
     # channel with category_id/name so the mobile client can offer clean
     # "Country" + "Genre" filter chips without doing name-parsing itself.
-    cfg = await db.settings.find_one({"id": "iptv_config"})
-    if cfg and cfg.get("password_enc"):
-        try:
-            live_raw, live_cats_raw_by_id = await _iptv_cached("live")
-            cat_by_id: dict[str, dict] = {
-                cid: {"name": name, **_classify_live_category(name)}
-                for cid, name in live_cats_raw_by_id.items()
-            }
-            for s in live_raw or []:
-                sid = s.get("stream_id")
-                if not sid:
-                    continue
-                raw_name = s.get("name") or ""
-                # Skip section-divider entries like "##### USA GENERAL #####" —
-                # they aren't playable channels, they're M3U group headers.
-                if _is_divider_channel(raw_name):
-                    continue
-                logo_raw = s.get("stream_icon") or None
-                # Route http logos through our logo proxy so browsers on
-                # https pages actually render them.
-                logo = f"/api/iptv/logo?u={quote(logo_raw, safe='')}" if logo_raw else None
-                cid = str(s.get("category_id") or "")
-                cat = cat_by_id.get(cid) or {"name": None, "country": "Other", "genre": "General"}
-                out.append({
-                    "title": _clean_channel_title(s.get("name")),
-                    "original_title": s.get("name"),
-                    "number": s.get("num"),
-                    "logo": logo,
-                    "key": f"iptv-live-{sid}",
-                    "source": "iptv",
-                    "category_id": cid or None,
-                    "category_name": cat["name"],
-                    "country": cat["country"],
-                    "genre": cat["genre"],
-                })
-        except Exception as e:
-            log.warning("IPTV live channels merge failed: %s", e)
+    try:
+        live_raw, live_cats_raw_by_id = await _iptv_cached("live")
+        cat_by_id: dict[str, dict] = {
+            cid: {"name": name, **_classify_live_category(name)}
+            for cid, name in live_cats_raw_by_id.items()
+        }
+        for s in live_raw or []:
+            sid = s.get("stream_id")
+            if not sid:
+                continue
+            raw_name = s.get("name") or ""
+            if _is_divider_channel(raw_name):
+                continue
+            logo_raw = s.get("stream_icon") or None
+            logo = f"/api/iptv/logo?u={quote(logo_raw, safe='')}" if logo_raw else None
+            cid = str(s.get("category_id") or "")
+            cat = cat_by_id.get(cid) or {"name": None, "country": "Other", "genre": "General"}
+            out.append({
+                "title": _clean_channel_title(s.get("name")),
+                "original_title": s.get("name"),
+                "number": s.get("num"),
+                "logo": logo,
+                "key": f"iptv-live-{sid}",
+                "source": "iptv",
+                "category_id": cid or None,
+                "category_name": cat["name"],
+                "country": cat["country"],
+                "genre": cat["genre"],
+            })
+    except Exception as e:
+        log.warning("IPTV live channels merge failed: %s", e)
 
     public_doc = await db.iptv_cache.find_one({"id": "public-live"}) or {}
     for index, channel in enumerate(public_doc.get("streams") or [], start=1):
@@ -2496,9 +2495,7 @@ async def stream_url(rating_key: str, request: Request, user: dict = Depends(get
     if kind == "live" and live_format not in {"m3u8", "ts"}:
         raise HTTPException(400, "bad live format")
 
-    cfg = await db.settings.find_one({"id": "iptv_config"})
-    if not cfg or not cfg.get("password_enc"):
-        raise HTTPException(503, "IPTV is not configured")
+    cfg = _user_iptv_config(user)
 
     # External players (VLC / MX / Kodi on Fire TV) work much more reliably on
     # the provider's direct Xtream URL than on our auth-proxied m3u8.
@@ -2869,6 +2866,11 @@ async def install_landing(request: Request):
 async def startup():
     await db.users.create_index("id", unique=True)
     await db.users.create_index("username", unique=True, sparse=True)
+    cfg = await db.settings.find_one({"id": "iptv_config"})
+    if cfg and str(cfg.get("url") or "").rstrip("/") not in XTREAM_PROVIDER_URLS:
+        await db.settings.delete_one({"id": "iptv_config"})
+        await db.iptv_cache.delete_many({"id": {"$in": ["live", "vod", "series"]}})
+        log.info("Removed legacy IPTV provider configuration and catalog cache")
     asyncio.create_task(_iptv_cache_refresh_loop())
     asyncio.create_task(_public_m3u_refresh_loop())
     log.info("Quantum TV API started")

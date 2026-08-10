@@ -11,17 +11,18 @@ export default function Iptv() {
     refetchOnWindowFocus: true,
   });
 
-  const [url, setUrl] = useState("");
   const [user, setUser] = useState("");
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
   const [ok, setOk] = useState(null);
+  const [showConnectForm, setShowConnectForm] = useState(false);
 
   const connect = useMutation({
-    mutationFn: async () => (await api.post("/admin/iptv/connect", { url, username: user, password: pw })).data,
+    mutationFn: async () => (await api.post("/admin/iptv/connect", { username: user, password: pw })).data,
     onSuccess: (d) => {
       setErr(""); setOk(d);
-      setUrl(""); setUser(""); setPw("");
+      setUser(""); setPw("");
+      setShowConnectForm(false);
       qc.invalidateQueries({ queryKey: ["iptv-status"] });
     },
     onError: (e) => { setErr(e?.response?.data?.detail || "Could not connect"); setOk(null); },
@@ -54,7 +55,7 @@ export default function Iptv() {
       <div>
         <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500 font-heading">External</div>
         <h1 className="font-heading text-2xl sm:text-3xl font-bold mt-1">IPTV Provider</h1>
-        <p className="text-zinc-400 text-sm mt-2">Connect any Xtream Codes line to stream live channels and movies in the Quantum TV apps.</p>
+        <p className="text-zinc-400 text-sm mt-2">Use credentials created in the Quantum TV provider portal. Server selection is automatic.</p>
       </div>
 
       {cfg?.configured ? (
@@ -69,13 +70,22 @@ export default function Iptv() {
                 <div className="text-xs text-zinc-500 font-mono">{cfg.url}</div>
               </div>
             </div>
-            <button
-              data-testid="iptv-disconnect"
-              onClick={() => { if (window.confirm("Disconnect IPTV provider?")) disconnect.mutate(); }}
-              className="px-4 py-2 rounded-full bg-red-500/10 text-red-300 hover:bg-red-500/20 text-xs flex items-center gap-2 border border-red-500/20"
-            >
-              <Unlink className="w-3.5 h-3.5" /> Disconnect
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                data-testid="iptv-replace"
+                onClick={() => { setErr(""); setOk(null); setShowConnectForm(true); }}
+                className="px-4 py-2 rounded-full bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 text-xs flex items-center gap-2 border border-cyan-500/20"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Change catalog account
+              </button>
+              <button
+                data-testid="iptv-disconnect"
+                onClick={() => { if (window.confirm("Disconnect IPTV provider?")) disconnect.mutate(); }}
+                className="px-4 py-2 rounded-full bg-red-500/10 text-red-300 hover:bg-red-500/20 text-xs flex items-center gap-2 border border-red-500/20"
+              >
+                <Unlink className="w-3.5 h-3.5" /> Disconnect
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             <Stat label="Status" value={ui.status} accent={ui.status === "Active" ? "emerald" : "amber"} />
@@ -91,17 +101,17 @@ export default function Iptv() {
             Stream URLs are server-proxied so subscriber credentials never reach the client.
           </div>
         </div>
-      ) : (
+      ) : null}
+
+      {(!cfg?.configured || showConnectForm) && (
         <div className="neon-card p-5 sm:p-6">
           <div className="flex items-center gap-3 mb-4">
             <Cable className="w-5 h-5 text-purple-400" />
-            <h3 className="font-heading font-semibold text-lg">Connect Xtream Codes Line</h3>
+            <h3 className="font-heading font-semibold text-lg">
+              {cfg?.configured ? "Change Catalog Account" : "Connect Provider Portal Account"}
+            </h3>
           </div>
           <div className="space-y-3">
-            <div>
-              <label className="text-[11px] uppercase tracking-[0.2em] text-zinc-400 font-heading">Server URL</label>
-              <input data-testid="iptv-url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://line.example.com" className="qtv-input mt-2" autoCapitalize="none" autoCorrect="off" />
-            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-[11px] uppercase tracking-[0.2em] text-zinc-400 font-heading">Username</label>
@@ -109,20 +119,29 @@ export default function Iptv() {
               </div>
               <div>
                 <label className="text-[11px] uppercase tracking-[0.2em] text-zinc-400 font-heading">Password</label>
-                <input data-testid="iptv-password" value={pw} onChange={(e) => setPw(e.target.value)} className="qtv-input mt-2" type="text" autoCapitalize="none" autoCorrect="off" />
+                <input data-testid="iptv-password" value={pw} onChange={(e) => setPw(e.target.value)} className="qtv-input mt-2" type="password" autoCapitalize="none" autoCorrect="off" />
               </div>
             </div>
             {err && <div data-testid="iptv-error" className="text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 flex items-start gap-2"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> {err}</div>}
             {ok && <div data-testid="iptv-ok" className="text-sm text-emerald-200 bg-emerald-500/10 border border-emerald-400/20 rounded-lg px-3 py-2">Connected. {ok.max_connections} max connections, expires {ok.exp_date ? new Date(Number(ok.exp_date) * 1000).toLocaleDateString() : "—"}.</div>}
             <button
               data-testid="iptv-connect"
-              disabled={!url || !user || !pw || connect.isPending}
+              disabled={!user || !pw || connect.isPending}
               onClick={() => connect.mutate()}
               className="btn-gradient w-full py-3 disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {connect.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              {connect.isPending ? "Connecting…" : "Connect IPTV provider"}
+              {connect.isPending ? "Validating…" : cfg?.configured ? "Validate and change account" : "Connect portal account"}
             </button>
+            {cfg?.configured && (
+              <button
+                type="button"
+                onClick={() => { setErr(""); setOk(null); setShowConnectForm(false); }}
+                className="w-full py-2 text-sm text-zinc-400 hover:text-white"
+              >
+                Cancel replacement
+              </button>
+            )}
           </div>
         </div>
       )}

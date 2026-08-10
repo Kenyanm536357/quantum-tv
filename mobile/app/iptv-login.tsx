@@ -8,13 +8,7 @@ import client, { colors } from "../src/api";
 import { s, vs, ms, SAFE, IS_TV, SIZES } from "../src/responsive";
 import TVTextInput from "../src/TVTextInput";
 
-/**
- * Alternate sign-in for the Fire Stick app: connect straight to an Xtream
- * Codes provider or paste an M3U playlist link instead of a Quantum TV
- * username/password. Hits /auth/iptv-login, which validates the provider,
- * makes it the app's active IPTV source, and returns a normal session token.
- */
-type Mode = "xtream" | "m3u";
+const PROVIDER_URLS = ["http://ky-tv.cc:25461", "http://kytv.xyz:25461"];
 
 async function getDeviceId(): Promise<string> {
   try {
@@ -31,27 +25,18 @@ async function getDeviceId(): Promise<string> {
 export default function IptvLogin() {
   const router = useRouter();
   const { width: W, height: H } = useWindowDimensions();
-  const [mode, setMode] = useState<Mode>("xtream");
-  const [url, setUrl] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [m3uUrl, setM3uUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const urlRef = useRef<TextInput>(null);
   const userRef = useRef<TextInput>(null);
   const pwRef = useRef<TextInput>(null);
-  const m3uRef = useRef<TextInput>(null);
 
   const cardMaxW = IS_TV ? Math.min(W * 0.6, 780) : Math.min(W * 0.9, 560);
 
   const submit = async () => {
-    if (mode === "xtream" && (!url.trim() || !username.trim() || !password)) {
-      setError("Please enter the server URL, username, and password");
-      return;
-    }
-    if (mode === "m3u" && !m3uUrl.trim()) {
-      setError("Please paste your M3U playlist link");
+    if (!username.trim() || !password) {
+      setError("Please enter your provider username and password");
       return;
     }
     setError(null);
@@ -60,16 +45,26 @@ export default function IptvLogin() {
       const device_id = await getDeviceId();
       const device_model = Device.modelName || Device.deviceName || "Fire TV";
       const device_name = Device.deviceName || Device.modelName || "Device";
-      const { data } = await client.post("/auth/iptv-login", {
-        mode,
-        url: mode === "xtream" ? url.trim() : undefined,
-        username: mode === "xtream" ? username.trim() : undefined,
-        password: mode === "xtream" ? password : undefined,
-        m3u_url: mode === "m3u" ? m3uUrl.trim() : undefined,
-        device_id,
-        device_model,
-        device_name,
-      });
+      let data: any;
+      let lastError: any;
+      for (const url of PROVIDER_URLS) {
+        try {
+          const response = await client.post("/auth/iptv-login", {
+            mode: "xtream",
+            url,
+            username: username.trim(),
+            password,
+            device_id,
+            device_model,
+            device_name,
+          });
+          data = response.data;
+          break;
+        } catch (e: any) {
+          lastError = e;
+        }
+      }
+      if (!data) throw lastError;
       await AsyncStorage.setItem("qtv_token", data.token);
       await AsyncStorage.setItem("qtv_user", JSON.stringify({
         username: data.username,
@@ -95,99 +90,40 @@ export default function IptvLogin() {
       <View style={styles.center}>
         <Image source={require("../assets/logo.png")} style={{ width: ms(96), height: ms(96), borderRadius: ms(24), marginBottom: vs(14) }} />
         <Text style={[styles.brand, { fontSize: SIZES.fontTitle * 1.2 }]}>Quantum <Text style={{ color: colors.cyan }}>TV</Text></Text>
-        <Text style={[styles.tag, { fontSize: SIZES.fontSmall }]}>Sign in with your Xtream or M3U link</Text>
+        <Text style={[styles.tag, { fontSize: SIZES.fontSmall }]}>Sign in with your provider portal account</Text>
 
         <View style={[styles.card, { width: cardMaxW, marginTop: vs(24), padding: s(24) }]}>
-          <View style={styles.tabRow}>
-            <Pressable
-              testID="tab-xtream"
-              focusable
-              hasTVPreferredFocus={IS_TV}
-              onPress={() => setMode("xtream")}
-              style={({ focused }) => [styles.tab, mode === "xtream" && styles.tabActive, focused && styles.focusRing]}
-            >
-              <Text style={[styles.tabText, mode === "xtream" && styles.tabTextActive]}>Xtream Codes</Text>
-            </Pressable>
-            <Pressable
-              testID="tab-m3u"
-              focusable
-              onPress={() => setMode("m3u")}
-              style={({ focused }) => [styles.tab, mode === "m3u" && styles.tabActive, focused && styles.focusRing]}
-            >
-              <Text style={[styles.tabText, mode === "m3u" && styles.tabTextActive]}>M3U Playlist</Text>
-            </Pressable>
-          </View>
+          <Text style={[styles.label, { fontSize: SIZES.fontTiny }]}>USERNAME</Text>
+          <TVTextInput
+            ref={userRef}
+            testID="xtream-username-input"
+            value={username}
+            onChangeText={setUsername}
+            placeholder="Provider username"
+            placeholderTextColor="rgba(255,255,255,0.35)"
+            wrapperStyle={[styles.input, { paddingVertical: vs(14), paddingHorizontal: s(16), borderRadius: SIZES.radius }]}
+            style={{ fontSize: SIZES.fontBody }}
+            hasTVPreferredFocus={IS_TV}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="next"
+            onSubmitEditing={() => pwRef.current?.focus()}
+          />
 
-          {mode === "xtream" ? (
-            <>
-              <Text style={[styles.label, { fontSize: SIZES.fontTiny, marginTop: vs(18) }]}>SERVER URL</Text>
-              <TVTextInput
-                ref={urlRef}
-                testID="xtream-url-input"
-                value={url}
-                onChangeText={setUrl}
-                placeholder="http://your-provider.com:port"
-                placeholderTextColor="rgba(255,255,255,0.35)"
-                wrapperStyle={[styles.input, { paddingVertical: vs(14), paddingHorizontal: s(16), borderRadius: SIZES.radius }]}
-                style={{ fontSize: SIZES.fontBody }}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-                returnKeyType="next"
-                onSubmitEditing={() => userRef.current?.focus()}
-              />
-
-              <Text style={[styles.label, { fontSize: SIZES.fontTiny, marginTop: vs(16) }]}>USERNAME</Text>
-              <TVTextInput
-                ref={userRef}
-                testID="xtream-username-input"
-                value={username}
-                onChangeText={setUsername}
-                placeholder="Xtream username"
-                placeholderTextColor="rgba(255,255,255,0.35)"
-                wrapperStyle={[styles.input, { paddingVertical: vs(14), paddingHorizontal: s(16), borderRadius: SIZES.radius }]}
-                style={{ fontSize: SIZES.fontBody }}
-                autoCapitalize="none"
-                autoCorrect={false}
-                returnKeyType="next"
-                onSubmitEditing={() => pwRef.current?.focus()}
-              />
-
-              <Text style={[styles.label, { fontSize: SIZES.fontTiny, marginTop: vs(16) }]}>PASSWORD</Text>
-              <TVTextInput
-                ref={pwRef}
-                testID="xtream-password-input"
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Xtream password"
-                placeholderTextColor="rgba(255,255,255,0.35)"
-                wrapperStyle={[styles.input, { paddingVertical: vs(14), paddingHorizontal: s(16), borderRadius: SIZES.radius }]}
-                style={{ fontSize: SIZES.fontBody }}
-                secureTextEntry
-                returnKeyType="go"
-                onSubmitEditing={submit}
-              />
-            </>
-          ) : (
-            <>
-              <Text style={[styles.label, { fontSize: SIZES.fontTiny, marginTop: vs(18) }]}>M3U LINK</Text>
-              <TVTextInput
-                ref={m3uRef}
-                testID="m3u-url-input"
-                value={m3uUrl}
-                onChangeText={setM3uUrl}
-                placeholder="http://your-provider.com/get.php?username=..&password=..&type=m3u_plus"
-                placeholderTextColor="rgba(255,255,255,0.35)"
-                wrapperStyle={[styles.input, { paddingVertical: vs(14), paddingHorizontal: s(16), borderRadius: SIZES.radius }]}
-                style={{ fontSize: SIZES.fontBody }}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-                returnKeyType="go"
-                onSubmitEditing={submit}
-              />
-            </>
-          )}
+          <Text style={[styles.label, { fontSize: SIZES.fontTiny, marginTop: vs(16) }]}>PASSWORD</Text>
+          <TVTextInput
+            ref={pwRef}
+            testID="xtream-password-input"
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Provider password"
+            placeholderTextColor="rgba(255,255,255,0.35)"
+            wrapperStyle={[styles.input, { paddingVertical: vs(14), paddingHorizontal: s(16), borderRadius: SIZES.radius }]}
+            style={{ fontSize: SIZES.fontBody }}
+            secureTextEntry
+            returnKeyType="go"
+            onSubmitEditing={submit}
+          />
 
           <Pressable
             testID="iptv-signin-btn"

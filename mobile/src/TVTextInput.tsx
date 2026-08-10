@@ -23,7 +23,6 @@ import {
   ViewStyle,
   StyleProp,
   StyleSheet,
-  Platform,
 } from "react-native";
 import { IS_TV } from "./responsive";
 import { colors } from "./api";
@@ -119,12 +118,7 @@ const styles = StyleSheet.create({
   },
   focusRing: {
     borderColor: colors.cyan,
-    backgroundColor: "rgba(6,182,212,0.10)",
-    shadowColor: colors.cyan,
-    shadowOpacity: 0.9,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 0 },
-    ...(Platform.OS === "android" ? { elevation: 10 } : null),
+    backgroundColor: "transparent",
   },
 });
 

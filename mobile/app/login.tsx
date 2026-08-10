@@ -67,7 +67,13 @@ function TVPairScreen({ router, onFallback }: { router: any; onFallback: () => v
       setStatus("waiting");
     } catch (e: any) {
       setStatus("error");
-      setErrMsg(e?.response?.data?.detail || "Could not start activation. Check your internet.");
+      const responseStatus = e?.response?.status;
+      setErrMsg(
+        e?.response?.data?.detail
+          || (responseStatus >= 500
+            ? "Quantum TV service is temporarily unavailable. Use provider login below or try again shortly."
+            : "Could not start activation. Check your internet."),
+      );
     }
   };
 
@@ -124,11 +130,11 @@ function TVPairScreen({ router, onFallback }: { router: any; onFallback: () => v
         <View style={{ height: vs(28) }} />
 
         <Text style={[styles.label, { fontSize: SIZES.fontTiny, letterSpacing: 4 }]}>STEP 2 — ENTER THIS CODE</Text>
-        {status === "loading" || !userCode ? (
+        {status === "loading" ? (
           <View style={{ marginTop: vs(14), height: ms(72), justifyContent: "center" }}>
             <ActivityIndicator size="large" color={colors.cyan} />
           </View>
-        ) : (
+        ) : userCode ? (
           <Text
             testID="pair-code"
             style={{
@@ -138,6 +144,8 @@ function TVPairScreen({ router, onFallback }: { router: any; onFallback: () => v
           >
             {userCode}
           </Text>
+        ) : (
+          <View style={{ height: ms(72) }} />
         )}
 
         <View style={{ height: vs(24) }} />
@@ -192,7 +200,7 @@ function TVPairScreen({ router, onFallback }: { router: any; onFallback: () => v
             { marginTop: vs(18), borderRadius: 999, borderWidth: 2, borderColor: focused ? colors.cyan : "transparent", paddingHorizontal: 22, paddingVertical: 10 },
           ]}
         >
-          <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall }}>Sign in with Xtream / M3U link instead</Text>
+          <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall }}>Sign in with your provider portal account</Text>
         </Pressable>
       </View>
     </View>
@@ -338,7 +346,7 @@ export default function Login() {
             focusable
             style={({ focused }) => [{ marginTop: vs(16), alignSelf: "center", borderRadius: 999, borderWidth: 2, borderColor: focused ? colors.cyan : "transparent", paddingHorizontal: 16, paddingVertical: 8 }]}
           >
-            <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall }}>Sign in with Xtream / M3U link instead</Text>
+            <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall }}>Sign in with your provider portal account</Text>
           </Pressable>
         </View>
       </View>

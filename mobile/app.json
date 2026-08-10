@@ -63,7 +63,7 @@
       "eas": {
         "projectId": "dcff3612-a952-43e9-a210-ddefaffcd9e8"
       },
-      "backendUrl": "https://quantumtv.app"
+      "backendUrl": "https://quantum-tv-production.up.railway.app"
     },
     "owner": "kenyanm",
     "runtimeVersion": {

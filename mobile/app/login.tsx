@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { View, Text, Image, Pressable, ActivityIndicator, StyleSheet, TextInput, useWindowDimensions, Platform } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -36,177 +36,9 @@ async function getDeviceId(): Promise<string> {
 }
 
 /**
- * Fire TV pairing screen. Replaces username/password on TV devices because
- * typing on a remote is brutal. Flow:
- *   1. Call /auth/pair/start → get short user_code (e.g. "ABCD12") + device_code.
- *   2. Show user_code on screen + URL "quantumtv.app/activate".
- *   3. User signs in on their phone at that URL, types user_code.
- *   4. We poll /auth/pair/poll every 5s; when status='verified', save the
- *      returned token + user info and route into the app.
+ * Only sign-in method: the account's Xtream provider username/password.
+ * The backend validates directly against the hardwired provider server.
  */
-function TVPairScreen({ router, onFallback }: { router: any; onFallback: () => void }) {
-  const [userCode, setUserCode] = useState<string | null>(null);
-  const [deviceCode, setDeviceCode] = useState<string | null>(null);
-  const [activateUrl, setActivateUrl] = useState("https://quantumtv.app/activate");
-  const [status, setStatus] = useState<"loading" | "waiting" | "expired" | "error">("loading");
-  const [errMsg, setErrMsg] = useState<string | null>(null);
-  const pollTimer = useRef<any>(null);
-
-  const start = async () => {
-    setStatus("loading"); setErrMsg(null); setUserCode(null); setDeviceCode(null);
-    try {
-      const device_id = await getDeviceId();
-      const { data } = await client.post("/auth/pair/start", {
-        device_id,
-        device_model: Device.modelName || "Fire TV",
-        device_name: Device.deviceName || "Fire TV",
-      });
-      setUserCode(data.user_code);
-      setDeviceCode(data.device_code);
-      if (data.activate_url) setActivateUrl(data.activate_url);
-      setStatus("waiting");
-    } catch (e: any) {
-      setStatus("error");
-      const responseStatus = e?.response?.status;
-      setErrMsg(
-        e?.response?.data?.detail
-          || (responseStatus >= 500
-            ? "Quantum TV service is temporarily unavailable. Use provider login below or try again shortly."
-            : "Could not start activation. Check your internet."),
-      );
-    }
-  };
-
-  useEffect(() => { start(); /* run once */ // eslint-disable-next-line
-  }, []);
-
-  // Poll while waiting
-  useEffect(() => {
-    if (status !== "waiting" || !deviceCode) return;
-    const poll = async () => {
-      try {
-        const { data } = await client.post("/auth/pair/poll", { device_code: deviceCode });
-        if (data.status === "verified") {
-          await AsyncStorage.setItem("qtv_token", data.token);
-          await AsyncStorage.setItem("qtv_user", JSON.stringify({
-            username: data.username, display_name: data.display_name, avatar: data.avatar,
-            account_number: data.account_number, subscription: data.subscription,
-          }));
-          router.replace("/(tabs)/browse");
-        } else if (data.status === "expired") {
-          setStatus("expired");
-        }
-      } catch (e: any) {
-        // 403 (subscription expired / device limit) → show message, stop polling
-        if (e?.response?.status === 403) {
-          setStatus("error");
-          setErrMsg(e?.response?.data?.detail || "Activation rejected.");
-        }
-        // other transient errors → keep polling
-      }
-    };
-    pollTimer.current = setInterval(poll, 5000);
-    return () => clearInterval(pollTimer.current);
-  }, [status, deviceCode, router]);
-
-  return (
-    <View style={[styles.root, { paddingHorizontal: SAFE.right, paddingVertical: SAFE.top, alignItems: "center", justifyContent: "center" }]}>
-      <LinearGradient
-        colors={["rgba(139,92,246,0.18)", "transparent"]}
-        style={{ position: "absolute", top: 0, left: 0, right: 0, height: 320 }}
-      />
-      <Image source={require("../assets/logo.png")} style={{ width: ms(96), height: ms(96), borderRadius: ms(24), marginBottom: vs(14) }} />
-      <Text style={[styles.brand, { fontSize: SIZES.fontTitle * 1.2, marginBottom: vs(6) }]}>Quantum <Text style={{ color: colors.cyan }}>TV</Text></Text>
-      <Text style={[styles.tag, { fontSize: SIZES.fontSmall, marginBottom: vs(28), textAlign: "center", maxWidth: 720 }]}>
-        Activate this Fire Stick from your phone or computer
-      </Text>
-
-      <View style={[styles.card, { padding: s(32), alignItems: "center", minWidth: Math.min(720, 0.7 * 1920) }]}>
-        <Text style={[styles.label, { fontSize: SIZES.fontTiny, letterSpacing: 4 }]}>STEP 1 — ON YOUR PHONE</Text>
-        <Text testID="activate-url" style={{ color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontBody * 1.4, marginTop: vs(8) }}>
-          Go to <Text style={{ color: colors.cyan }}>{activateUrl.replace(/^https?:\/\//, "")}</Text>
-        </Text>
-
-        <View style={{ height: vs(28) }} />
-
-        <Text style={[styles.label, { fontSize: SIZES.fontTiny, letterSpacing: 4 }]}>STEP 2 — ENTER THIS CODE</Text>
-        {status === "loading" ? (
-          <View style={{ marginTop: vs(14), height: ms(72), justifyContent: "center" }}>
-            <ActivityIndicator size="large" color={colors.cyan} />
-          </View>
-        ) : userCode ? (
-          <Text
-            testID="pair-code"
-            style={{
-              color: "#fff", fontFamily: "Unbounded_800ExtraBold", letterSpacing: ms(10),
-              fontSize: ms(56), marginTop: vs(14),
-            }}
-          >
-            {userCode}
-          </Text>
-        ) : (
-          <View style={{ height: ms(72) }} />
-        )}
-
-        <View style={{ height: vs(24) }} />
-
-        {status === "waiting" && (
-          <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall }}>
-            Waiting for you to enter the code… (auto-detects in ~5s)
-          </Text>
-        )}
-        {status === "expired" && (
-          <Text testID="pair-expired" style={{ color: "#fca5a5", fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall, textAlign: "center" }}>
-            Code expired. Refresh to get a new one.
-          </Text>
-        )}
-        {status === "error" && errMsg && (
-          <Text testID="pair-error" style={{ color: "#fca5a5", fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall, textAlign: "center" }}>
-            {errMsg}
-          </Text>
-        )}
-
-        <View style={{ height: vs(24) }} />
-
-        <View style={{ flexDirection: "row", gap: 12 }}>
-          <Pressable
-            testID="pair-refresh"
-            onPress={start}
-            focusable
-            hasTVPreferredFocus={status !== "waiting"}
-            style={({ focused }) => [
-              { borderWidth: 2, borderColor: focused ? colors.cyan : "rgba(255,255,255,0.18)", borderRadius: 999, paddingHorizontal: 22, paddingVertical: 12 },
-            ]}
-          >
-            <Text style={{ color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall }}>Refresh code</Text>
-          </Pressable>
-          <Pressable
-            testID="pair-fallback"
-            onPress={onFallback}
-            focusable
-            style={({ focused }) => [
-              { borderWidth: 2, borderColor: focused ? colors.cyan : "transparent", borderRadius: 999, paddingHorizontal: 22, paddingVertical: 12, backgroundColor: "rgba(255,255,255,0.05)" },
-            ]}
-          >
-            <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall }}>Use username instead</Text>
-          </Pressable>
-        </View>
-
-        <Pressable
-          testID="pair-iptv-login"
-          onPress={() => router.push("/iptv-login")}
-          focusable
-          style={({ focused }) => [
-            { marginTop: vs(18), borderRadius: 999, borderWidth: 2, borderColor: focused ? colors.cyan : "transparent", paddingHorizontal: 22, paddingVertical: 10 },
-          ]}
-        >
-          <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall }}>Sign in with your provider portal account</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
 export default function Login() {
   const router = useRouter();
   const { width: W, height: H } = useWindowDimensions();
@@ -215,9 +47,6 @@ export default function Login() {
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // On TV, default to pairing-screen UX. Allow falling back to manual login
-  // (e.g. for admin accounts) via the "Use username instead" button.
-  const [tvPairing, setTvPairing] = useState<boolean>(IS_TV);
   const userRef = useRef<TextInput>(null);
   const pwRef = useRef<TextInput>(null);
 
@@ -227,7 +56,7 @@ export default function Login() {
   const signIn = async () => {
     const u = username.trim();
     if (!u || !password) {
-      setError("Please enter username and password");
+      setError("Please enter your username and password");
       return;
     }
     setError(null); setLoading(true);
@@ -235,12 +64,7 @@ export default function Login() {
       const device_id = await getDeviceId();
       const device_model = Device.modelName || Device.deviceName || Platform.OS;
       const device_name = Device.deviceName || Device.modelName || "Device";
-      const { data } = await client.post("/auth/login", { username: u, password, device_id, device_model, device_name });
-      if (data.role === "admin") {
-        setError("Admin accounts must use the web Control Panel.");
-        setLoading(false);
-        return;
-      }
+      const { data } = await client.post("/auth/iptv-login", { username: u, password, device_id, device_model, device_name });
       await AsyncStorage.setItem("qtv_token", data.token);
       await AsyncStorage.setItem("qtv_user", JSON.stringify({
         username: data.username,
@@ -258,10 +82,6 @@ export default function Login() {
 
   return (
     <View style={[styles.root, { paddingHorizontal: SAFE.right, paddingVertical: SAFE.top }]}>
-      {tvPairing ? (
-        <TVPairScreen router={router} onFallback={() => setTvPairing(false)} />
-      ) : (
-      <>
       <LinearGradient
         colors={["rgba(139,92,246,0.18)", "transparent"]}
         style={{ position: "absolute", top: 0, left: 0, right: 0, height: H * 0.55 }}
@@ -339,19 +159,8 @@ export default function Login() {
           </Pressable>
 
           {error && <Text testID="login-error" style={[styles.err, { fontSize: SIZES.fontSmall, marginTop: vs(12) }]}>{error}</Text>}
-
-          <Pressable
-            testID="manual-iptv-login"
-            onPress={() => router.push("/iptv-login")}
-            focusable
-            style={({ focused }) => [{ marginTop: vs(16), alignSelf: "center", borderRadius: 999, borderWidth: 2, borderColor: focused ? colors.cyan : "transparent", paddingHorizontal: 16, paddingVertical: 8 }]}
-          >
-            <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall }}>Sign in with your provider portal account</Text>
-          </Pressable>
         </View>
       </View>
-      </>
-      )}
     </View>
   );
 }

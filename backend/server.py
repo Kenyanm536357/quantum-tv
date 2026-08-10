@@ -45,8 +45,7 @@ FERNET_KEY = os.environ["FERNET_KEY"].encode()
 ADMIN_USERNAME = os.environ["ADMIN_USERNAME"]
 ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
 XTREAM_PROVIDER_URLS = (
-    "http://ky-tv.cc:25461",
-    "http://kytv.xyz:25461",
+    "http://kytv.xyz:25461",  # ky-tv.cc retired: unreachable/timing out
 )
 
 fernet = Fernet(FERNET_KEY)
@@ -678,7 +677,7 @@ async def _connect_hardwired_provider(user: str, pw: str) -> tuple[str, dict]:
             return url, info
         except HTTPException:
             continue
-    raise HTTPException(401, "Provider login failed on both Quantum TV servers. Check the username and password.")
+    raise HTTPException(401, "Provider login failed. Check the username and password.")
 
 
 def _user_iptv_config(user: dict) -> dict:

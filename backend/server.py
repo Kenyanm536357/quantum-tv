@@ -2862,15 +2862,33 @@ async def install_landing(request: Request):
     )
 
 
+async def _init_db_indexes_and_legacy_cleanup() -> None:
+    """Runs after the app has bound its port so a slow/unreachable Mongo
+    can't block startup and trigger a platform restart loop."""
+    try:
+        await db.users.create_index("id", unique=True)
+        await db.users.create_index("username", unique=True, sparse=True)
+        cfg = await db.settings.find_one({"id": "iptv_config"})
+        if cfg and str(cfg.get("url") or "").rstrip("/") not in XTREAM_PROVIDER_URLS:
+            await db.settings.delete_one({"id": "iptv_config"})
+            await db.iptv_cache.delete_many({"id": {"$in": ["live", "vod", "series"]}})
+            log.info("Removed legacy IPTV provider configuration and catalog cache")
+    except Exception:
+        log.exception("DB init/legacy cleanup failed; will retry in background")
+
+
+async def _background_task_guard(coro_fn) -> None:
+    """Keeps a background loop from crashing the process; logs and stops
+    instead of propagating into the event loop's default exception handler."""
+    try:
+        await coro_fn()
+    except Exception:
+        log.exception("%s crashed", getattr(coro_fn, "__name__", coro_fn))
+
+
 @app.on_event("startup")
 async def startup():
-    await db.users.create_index("id", unique=True)
-    await db.users.create_index("username", unique=True, sparse=True)
-    cfg = await db.settings.find_one({"id": "iptv_config"})
-    if cfg and str(cfg.get("url") or "").rstrip("/") not in XTREAM_PROVIDER_URLS:
-        await db.settings.delete_one({"id": "iptv_config"})
-        await db.iptv_cache.delete_many({"id": {"$in": ["live", "vod", "series"]}})
-        log.info("Removed legacy IPTV provider configuration and catalog cache")
-    asyncio.create_task(_iptv_cache_refresh_loop())
-    asyncio.create_task(_public_m3u_refresh_loop())
+    asyncio.create_task(_init_db_indexes_and_legacy_cleanup())
+    asyncio.create_task(_background_task_guard(_iptv_cache_refresh_loop))
+    asyncio.create_task(_background_task_guard(_public_m3u_refresh_loop))
     log.info("Quantum TV API started")

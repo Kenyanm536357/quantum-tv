@@ -1,5 +1,11 @@
 [deploy]
-startCommand = "uvicorn server:app --host 0.0.0.0 --port $PORT --workers 2"
+# Single worker: each worker keeps its own full in-process copy of the IPTV
+# catalogs (live ~16k, VOD ~139k, series items) for fast reads. Running 2
+# workers doubles that memory footprint and was observed causing repeated
+# OOM kills/restarts on this plan's memory limit (visible as a sawtooth
+# memory graph in Railway's Metrics tab), which kept wiping the in-process
+# cache before it could ever stay warm.
+startCommand = "uvicorn server:app --host 0.0.0.0 --port $PORT --workers 1"
 healthcheckPath = "/api/"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"

@@ -536,9 +536,22 @@ async def _iptv_cache_set(kind: str, streams: list[dict], cat_by_id: dict[str, s
     stream can exceed MongoDB's 16MB per-document limit ('update' command
     document too large). A small manifest doc (id=kind) tracks chunk_count
     + cat_by_id + updated_at; the actual stream lists live in
-    id=f"{kind}::chunk::{i}" docs."""
+    id=f"{kind}::chunk::{i}" docs.
+
+    Order matters: we write the NEW chunks first, then flip the manifest's
+    chunk_count pointer, and only THEN delete any left-over old chunks.
+    Doing it in this order means a concurrent reader (_iptv_cache_get_doc)
+    always sees either the fully-intact old chunk set (manifest still points
+    at the old count) or the fully-intact new one (manifest already flipped)
+    -- never a torn/partial read. Deleting old chunks up-front (the previous
+    approach) left a window where the manifest still pointed at chunk ids
+    that had just been wiped, so readers got an empty streams list and fell
+    back to hitting the live Xtream provider directly -- colliding with this
+    same refresh loop on the provider's single-connection limit and hanging
+    for the full request timeout."""
     chunks = [streams[i:i + IPTV_CACHE_CHUNK_SIZE] for i in range(0, len(streams), IPTV_CACHE_CHUNK_SIZE)] or [[]]
-    await db.iptv_cache.delete_many({"id": {"$regex": f"^{kind}::chunk::"}})
+    old_manifest = await db.iptv_cache.find_one({"id": kind}, {"chunk_count": 1})
+    old_chunk_count = (old_manifest or {}).get("chunk_count") or 0
     for i, chunk in enumerate(chunks):
         await db.iptv_cache.update_one(
             {"id": f"{kind}::chunk::{i}"},
@@ -550,6 +563,9 @@ async def _iptv_cache_set(kind: str, streams: list[dict], cat_by_id: dict[str, s
         {"$set": {"id": kind, "cat_by_id": cat_by_id, "updated_at": now_iso(), "chunk_count": len(chunks)}},
         upsert=True,
     )
+    if old_chunk_count > len(chunks):
+        stale_ids = [f"{kind}::chunk::{i}" for i in range(len(chunks), old_chunk_count)]
+        await db.iptv_cache.delete_many({"id": {"$in": stale_ids}})
 
 
 async def _iptv_cache_get_doc(kind: str) -> Optional[dict]:

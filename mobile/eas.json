@@ -16,7 +16,7 @@
       "distribution": "internal",
       "channel": "production",
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://quantumtv.app"
+        "EXPO_PUBLIC_BACKEND_URL": "https://quantum-tv-production.up.railway.app"
       },
       "android": {
         "buildType": "apk",
@@ -27,7 +27,7 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://quantumtv.app"
+        "EXPO_PUBLIC_BACKEND_URL": "https://quantum-tv-production.up.railway.app"
       },
       "android": {
         "buildType": "apk",
@@ -39,7 +39,7 @@
       "distribution": "internal",
       "channel": "production",
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://quantumtv.app"
+        "EXPO_PUBLIC_BACKEND_URL": "https://quantum-tv-production.up.railway.app"
       },
       "android": {
         "buildType": "apk",

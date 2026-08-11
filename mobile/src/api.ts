@@ -1,4 +1,4 @@
-import axios from "axios/dist/browser/axios.cjs";
+import axios from "axios";
 import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 

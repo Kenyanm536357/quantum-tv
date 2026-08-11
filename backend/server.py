@@ -299,6 +299,7 @@ async def auth_iptv_login(body: IptvSignInBody):
     # for brand-new accounts or when the stored password no longer matches
     # (e.g. it was changed at the provider).
     url: Optional[str] = None
+    ui: dict = {}
     if user and user.get("xtream_password_enc"):
         try:
             if decrypt_token(user["xtream_password_enc"]) == xt_pass:
@@ -306,7 +307,7 @@ async def auth_iptv_login(body: IptvSignInBody):
         except Exception:
             url = None
     if not url:
-        url, _ = await _connect_hardwired_provider(xt_user, xt_pass)
+        url, ui = await _connect_hardwired_provider(xt_user, xt_pass)
 
     now = now_iso()
     if not user:
@@ -376,7 +377,7 @@ async def auth_iptv_login(body: IptvSignInBody):
         "avatar": user.get("avatar"),
         "subscription": sub,
         "account_number": user.get("account_number"),
-        "provider_status": ui.get("status"),
+        "provider_status": ui.get("status") if ui else None,
     }
 
 

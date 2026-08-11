@@ -529,6 +529,18 @@ async def _public_m3u_refresh_loop() -> None:
 
 IPTV_CACHE_CHUNK_SIZE = 2000  # keeps each Mongo doc well under the 16MB BSON limit
 
+# In-process memory cache of the fully-reassembled catalog per kind
+# ({"streams", "cat_by_id", "updated_at"}). Reading the full catalog back
+# from Mongo by reassembling chunk docs was measured (via a direct in-container
+# diagnostic) to take 100+ seconds under real-world load/data size -- doing
+# that on every single API request made every iptv_cache-backed endpoint hang
+# until timeout. _iptv_cache_set populates this directly from the data it was
+# just given (already fetched live from the provider by the refresh loop), so
+# the hot read path (_iptv_cache_get_doc) almost never needs to touch Mongo at
+# all. Each uvicorn worker process keeps its own copy; that's fine since each
+# worker also runs its own independent _iptv_cache_refresh_loop.
+_IPTV_MEM_CACHE: dict[str, dict] = {}
+
 
 async def _iptv_cache_set(kind: str, streams: list[dict], cat_by_id: dict[str, str]) -> None:
     """Stores large catalogs (VOD/series can be tens of thousands of items)
@@ -558,20 +570,34 @@ async def _iptv_cache_set(kind: str, streams: list[dict], cat_by_id: dict[str, s
             {"$set": {"id": f"{kind}::chunk::{i}", "streams": chunk}},
             upsert=True,
         )
+    updated_at = now_iso()
     await db.iptv_cache.update_one(
         {"id": kind},
-        {"$set": {"id": kind, "cat_by_id": cat_by_id, "updated_at": now_iso(), "chunk_count": len(chunks)}},
+        {"$set": {"id": kind, "cat_by_id": cat_by_id, "updated_at": updated_at, "chunk_count": len(chunks)}},
         upsert=True,
     )
     if old_chunk_count > len(chunks):
         stale_ids = [f"{kind}::chunk::{i}" for i in range(len(chunks), old_chunk_count)]
         await db.iptv_cache.delete_many({"id": {"$in": stale_ids}})
+    # Populate the in-process memory cache directly -- avoids ever having to
+    # read this data back from Mongo on the hot request path.
+    _IPTV_MEM_CACHE[kind] = {"streams": streams, "cat_by_id": cat_by_id, "updated_at": updated_at}
 
 
 async def _iptv_cache_get_doc(kind: str) -> Optional[dict]:
-    """Reassembles a cache doc written by _iptv_cache_set, transparently
-    merging its chunks back into a single {"streams", "cat_by_id",
-    "updated_at"} dict. Returns None if no manifest doc exists yet."""
+    """Returns the cached catalog doc for `kind` as {"streams", "cat_by_id",
+    "updated_at"}. Prefers the in-process memory cache (populated by
+    _iptv_cache_set from data already fetched live from the provider) since a
+    direct in-container diagnostic measured full-chunk reassembly reads from
+    Mongo taking 100+ seconds under real-world load/data size -- doing that on
+    every request made every iptv_cache-backed endpoint hang until timeout.
+    Only falls back to the (slow) Mongo reassembly path if this worker
+    process hasn't cached `kind` in memory yet, e.g. in the brief window
+    right after startup before its first background refresh pass completes.
+    Returns None if there's no cache at all yet (neither memory nor Mongo)."""
+    cached = _IPTV_MEM_CACHE.get(kind)
+    if cached:
+        return cached
     manifest = await db.iptv_cache.find_one({"id": kind})
     if not manifest:
         return None
@@ -589,7 +615,9 @@ async def _iptv_cache_get_doc(kind: str) -> Optional[dict]:
         doc = chunk_docs.get(cid)
         if doc:
             streams.extend(doc.get("streams") or [])
-    return {"streams": streams, "cat_by_id": manifest.get("cat_by_id") or {}, "updated_at": manifest.get("updated_at")}
+    doc = {"streams": streams, "cat_by_id": manifest.get("cat_by_id") or {}, "updated_at": manifest.get("updated_at")}
+    _IPTV_MEM_CACHE[kind] = doc
+    return doc
 
 
 async def _iptv_fetch_full_catalog_serial(action: str, categories_action: str) -> tuple[list[dict], dict[str, str]]:

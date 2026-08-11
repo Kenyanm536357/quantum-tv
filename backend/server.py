@@ -508,12 +508,48 @@ async def _public_m3u_refresh_loop() -> None:
         await asyncio.sleep(PUBLIC_M3U_CACHE_REFRESH_SECONDS)
 
 
+IPTV_CACHE_CHUNK_SIZE = 2000  # keeps each Mongo doc well under the 16MB BSON limit
+
+
 async def _iptv_cache_set(kind: str, streams: list[dict], cat_by_id: dict[str, str]) -> None:
+    """Stores large catalogs (VOD/series can be tens of thousands of items)
+    split across multiple chunk documents, since a single doc holding every
+    stream can exceed MongoDB's 16MB per-document limit ('update' command
+    document too large). A small manifest doc (id=kind) tracks chunk_count
+    + cat_by_id + updated_at; the actual stream lists live in
+    id=f"{kind}::chunk::{i}" docs."""
+    chunks = [streams[i:i + IPTV_CACHE_CHUNK_SIZE] for i in range(0, len(streams), IPTV_CACHE_CHUNK_SIZE)] or [[]]
+    await db.iptv_cache.delete_many({"id": {"$regex": f"^{kind}::chunk::"}})
+    for i, chunk in enumerate(chunks):
+        await db.iptv_cache.update_one(
+            {"id": f"{kind}::chunk::{i}"},
+            {"$set": {"id": f"{kind}::chunk::{i}", "streams": chunk}},
+            upsert=True,
+        )
     await db.iptv_cache.update_one(
         {"id": kind},
-        {"$set": {"id": kind, "streams": streams, "cat_by_id": cat_by_id, "updated_at": now_iso()}},
+        {"$set": {"id": kind, "cat_by_id": cat_by_id, "updated_at": now_iso(), "chunk_count": len(chunks)}},
         upsert=True,
     )
+
+
+async def _iptv_cache_get_doc(kind: str) -> Optional[dict]:
+    """Reassembles a cache doc written by _iptv_cache_set, transparently
+    merging its chunks back into a single {"streams", "cat_by_id",
+    "updated_at"} dict. Returns None if no manifest doc exists yet."""
+    manifest = await db.iptv_cache.find_one({"id": kind})
+    if not manifest:
+        return None
+    chunk_count = manifest.get("chunk_count")
+    if chunk_count is None:
+        # legacy unchunked doc (written before this fix) — already has "streams" inline
+        return manifest
+    streams: list[dict] = []
+    for i in range(chunk_count):
+        chunk_doc = await db.iptv_cache.find_one({"id": f"{kind}::chunk::{i}"})
+        if chunk_doc:
+            streams.extend(chunk_doc.get("streams") or [])
+    return {"streams": streams, "cat_by_id": manifest.get("cat_by_id") or {}, "updated_at": manifest.get("updated_at")}
 
 
 async def _iptv_fetch_full_catalog_serial(action: str, categories_action: str) -> tuple[list[dict], dict[str, str]]:
@@ -609,7 +645,7 @@ async def _iptv_cached(kind: str) -> tuple[list[dict], dict[str, str]]:
     """Read a cached catalog. Falls back to a direct (uncached) fetch only
     if the cache hasn't been populated yet (e.g. moments after startup,
     before the first background refresh completes)."""
-    doc = await db.iptv_cache.find_one({"id": kind})
+    doc = await _iptv_cache_get_doc(kind)
     if doc and doc.get("streams"):
         return doc.get("streams") or [], doc.get("cat_by_id") or {}
     if kind == "live":
@@ -727,7 +763,7 @@ async def admin_iptv_cache_status(admin: dict = Depends(get_current_admin)):
     """Inspect the background-refreshed IPTV cache (live/VOD/series)."""
     out = {}
     for kind in ("live", "vod", "series"):
-        doc = await db.iptv_cache.find_one({"id": kind})
+        doc = await _iptv_cache_get_doc(kind)
         out[kind] = {
             "count": len(doc.get("streams") or []) if doc else 0,
             "updated_at": doc.get("updated_at") if doc else None,
@@ -763,8 +799,8 @@ async def admin_audit_livetv_vod(admin: dict = Depends(get_current_admin)):
             return None
 
     cfg = await db.settings.find_one({"id": "iptv_config"})
-    live_doc = await db.iptv_cache.find_one({"id": "live"})
-    vod_doc = await db.iptv_cache.find_one({"id": "vod"})
+    live_doc = await _iptv_cache_get_doc("live")
+    vod_doc = await _iptv_cache_get_doc("vod")
     public_doc = await db.iptv_cache.find_one({"id": "public-live"})
 
     issues: list[str] = []
@@ -2870,7 +2906,12 @@ async def _init_db_indexes_and_legacy_cleanup() -> None:
         cfg = await db.settings.find_one({"id": "iptv_config"})
         if cfg and str(cfg.get("url") or "").rstrip("/") not in XTREAM_PROVIDER_URLS:
             await db.settings.delete_one({"id": "iptv_config"})
-            await db.iptv_cache.delete_many({"id": {"$in": ["live", "vod", "series"]}})
+            await db.iptv_cache.delete_many({
+                "$or": [
+                    {"id": {"$in": ["live", "vod", "series"]}},
+                    {"id": {"$regex": "^(live|vod|series)::chunk::"}},
+                ]
+            })
             log.info("Removed legacy IPTV provider configuration and catalog cache")
     except Exception:
         log.exception("DB init/legacy cleanup failed; will retry in background")

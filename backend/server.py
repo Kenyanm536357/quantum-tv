@@ -283,13 +283,31 @@ async def auth_iptv_login(body: IptvSignInBody):
     xt_pass = (body.password or "").strip()
     if not xt_user or not xt_pass:
         raise HTTPException(400, "username and password required")
-    url, ui = await _connect_hardwired_provider(xt_user, xt_pass)
 
     # Deterministic account per provider login so re-signing-in reuses the
     # same device slots instead of spawning a new account each time.
     account_key = hashlib.sha256(f"kytv|{xt_user}".encode()).hexdigest()[:16]
     username = f"iptv_{account_key}"
     user = await db.users.find_one({"username": username})
+
+    # The hardwired provider allows only ONE concurrent connection, which is
+    # also used by the 24/7 background catalog refresh — re-probing it on
+    # every single login (even for an already-known account with unchanged
+    # credentials) causes real, intermittent login failures whenever a
+    # refresh cycle is in flight. Skip the provider round-trip entirely for
+    # returning users whose password hasn't changed; only hit the provider
+    # for brand-new accounts or when the stored password no longer matches
+    # (e.g. it was changed at the provider).
+    url: Optional[str] = None
+    if user and user.get("xtream_password_enc"):
+        try:
+            if decrypt_token(user["xtream_password_enc"]) == xt_pass:
+                url = str(user.get("xtream_url") or "").rstrip("/") or None
+        except Exception:
+            url = None
+    if not url:
+        url, _ = await _connect_hardwired_provider(xt_user, xt_pass)
+
     now = now_iso()
     if not user:
         user = {

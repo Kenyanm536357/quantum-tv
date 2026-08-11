@@ -1119,6 +1119,7 @@ async def _iptv_catalog(action: str, categories_action: str, category_id: Option
 async def iptv_vod_streams(
     category_id: Optional[str] = None,
     exclude_adult: bool = False,
+    limit: Optional[int] = None,
     user: dict = Depends(get_current_user),
 ):
     try:
@@ -1132,6 +1133,10 @@ async def iptv_vod_streams(
     cfg = _user_iptv_config(user)
     out = []
     for s in (raw or []):
+        # Bounded callers (e.g. the home screen) only need a handful of items —
+        # stop early instead of transforming the entire catalog every request.
+        if limit is not None and len(out) >= limit:
+            break
         cid = str(s.get("category_id") or "")
         cat_name = cat_by_id.get(cid) or None
         # Skip adult content when requested
@@ -2158,9 +2163,10 @@ async def metadata_children(rating_key: str, user: dict = Depends(get_current_us
 async def recently_added(user: dict = Depends(get_current_user), limit: int = 30):
     """Return a safe sample of non-adult IPTV VOD for the home screen."""
     try:
-        catalog = await iptv_vod_streams(exclude_adult=True, _=user)
+        catalog = await iptv_vod_streams(exclude_adult=True, limit=limit, user=user)
         return {"items": (catalog.get("items") or [])[:limit]}
-    except Exception:
+    except Exception as e:
+        log.warning("recently-added failed: %s", e)
         return {"items": []}
 
 
@@ -2927,6 +2933,13 @@ async def _init_db_indexes_and_legacy_cleanup() -> None:
     try:
         await db.users.create_index("id", unique=True)
         await db.users.create_index("username", unique=True, sparse=True)
+        # iptv_cache has no index by default (only Mongo's own "_id"); since
+        # our own "id" field is what every find_one/find/update_one/delete_many
+        # in this file actually queries by, without this index every one of
+        # those calls was a full collection scan. Harmless at ~4 docs
+        # (pre-chunking) but became a severe bottleneck once VOD/series
+        # chunking introduced ~90+ documents refreshed every 240s.
+        await db.iptv_cache.create_index("id", unique=True)
         cfg = await db.settings.find_one({"id": "iptv_config"})
         if cfg and str(cfg.get("url") or "").rstrip("/") not in XTREAM_PROVIDER_URLS:
             await db.settings.delete_one({"id": "iptv_config"})

@@ -544,11 +544,16 @@ async def _iptv_cache_get_doc(kind: str) -> Optional[dict]:
     if chunk_count is None:
         # legacy unchunked doc (written before this fix) — already has "streams" inline
         return manifest
+    chunk_ids = [f"{kind}::chunk::{i}" for i in range(chunk_count)]
+    chunk_docs = {
+        doc["id"]: doc
+        async for doc in db.iptv_cache.find({"id": {"$in": chunk_ids}}, {"id": 1, "streams": 1})
+    }
     streams: list[dict] = []
-    for i in range(chunk_count):
-        chunk_doc = await db.iptv_cache.find_one({"id": f"{kind}::chunk::{i}"})
-        if chunk_doc:
-            streams.extend(chunk_doc.get("streams") or [])
+    for cid in chunk_ids:
+        doc = chunk_docs.get(cid)
+        if doc:
+            streams.extend(doc.get("streams") or [])
     return {"streams": streams, "cat_by_id": manifest.get("cat_by_id") or {}, "updated_at": manifest.get("updated_at")}
 
 

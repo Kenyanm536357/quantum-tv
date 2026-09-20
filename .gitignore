@@ -32,3 +32,6 @@ credentials.json
 *.key
 .credentials
 backend/__pycache__/
+
+# Visual Studio workspace
+.vs/

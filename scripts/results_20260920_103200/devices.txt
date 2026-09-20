@@ -1,0 +1,3 @@
+﻿List of devices attached
+adb-2A051HFGN37GFA-tvNhJ1._adb-tls-connect._tcp device product:boreal model:Chromecast_HD device:boreal transport_id:3
+

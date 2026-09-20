@@ -28,7 +28,7 @@ type BrowseRow = { id: string; title: string; kind: "poster" | "live"; items: Br
 
 // ---------- Card variants -----------------------------------------------
 // Netflix-style poster (portrait 2:3 aspect)
-function PosterCard({ item, onPress }: { item: BrowseItem; onPress: () => void }) {
+function PosterCard({ item, onPress, initialFocus }: { item: BrowseItem; onPress: () => void; initialFocus?: boolean }) {
   const w = IS_TV ? s(160) : s(115);
   const h = Math.round(w * 1.5);
   return (
@@ -36,6 +36,7 @@ function PosterCard({ item, onPress }: { item: BrowseItem; onPress: () => void }
       testID={`media-${item.rating_key}`}
       onPress={onPress}
       focusable
+      hasTVPreferredFocus={initialFocus}
       style={({ focused }) => [{ marginRight: SIZES.gap, borderRadius: SIZES.radius }, focused && FOCUSED_CARD]}
     >
       <View style={[styles.card, { width: w, height: h, borderRadius: SIZES.radius }]}>
@@ -57,7 +58,7 @@ function PosterCard({ item, onPress }: { item: BrowseItem; onPress: () => void }
 }
 
 // 16:9 landscape channel logo card (Live TV row)
-function ChannelCard({ item, onPress }: { item: BrowseItem; onPress: () => void }) {
+function ChannelCard({ item, onPress, initialFocus }: { item: BrowseItem; onPress: () => void; initialFocus?: boolean }) {
   const w = IS_TV ? s(200) : s(150);
   const h = Math.round(w * 0.56);
   return (
@@ -65,6 +66,7 @@ function ChannelCard({ item, onPress }: { item: BrowseItem; onPress: () => void 
       testID={`media-${item.rating_key}`}
       onPress={onPress}
       focusable
+      hasTVPreferredFocus={initialFocus}
       style={({ focused }) => [{ marginRight: SIZES.gap, borderRadius: SIZES.radius }, focused && FOCUSED_CARD]}
     >
       <View style={[styles.card, { width: w, height: h, borderRadius: SIZES.radius }]}>
@@ -90,10 +92,10 @@ function ChannelCard({ item, onPress }: { item: BrowseItem; onPress: () => void 
   );
 }
 
-function Row({ row }: { row: BrowseRow; key?: React.Key }) {
+function Row({ row, isFirstRow = false }: { row: BrowseRow; isFirstRow?: boolean; key?: React.Key }) {
   const router = useRouter();
   if (!row.items?.length) return null;
-  const renderItem = ({ item }: { item: BrowseItem }) => {
+  const renderItem = ({ item, index }: { item: BrowseItem; index: number }) => {
     // Shows must go to a detail page for the season/episode picker;
     // everything else (movies, live channels) plays straight through.
     const isShow = (item.type || "").toLowerCase() === "show";
@@ -104,9 +106,10 @@ function Row({ row }: { row: BrowseRow; key?: React.Key }) {
         router.push({ pathname: "/player/[rk]", params: { rk: String(item.rating_key), title: item.title } });
       }
     };
+    const initialFocus = isFirstRow && index === 0;
     return row.kind === "live"
-      ? <ChannelCard item={item} onPress={go} />
-      : <PosterCard item={item} onPress={go} />;
+      ? <ChannelCard item={item} onPress={go} initialFocus={initialFocus} />
+      : <PosterCard item={item} onPress={go} initialFocus={initialFocus} />;
   };
   return (
     // TVFocusGuideView declares an explicit focus target for the row so
@@ -122,7 +125,23 @@ function Row({ row }: { row: BrowseRow; key?: React.Key }) {
         showsHorizontalScrollIndicator={false}
         data={row.items}
         keyExtractor={(it) => String(it.rating_key)}
-        renderItem={renderItem}
+        renderItem={({ item, index }) => {
+          // Wrap the card in a Pressable that can accept hasTVPreferredFocus
+          const isInitial = isFirstRow && index === 0;
+          const go = () => {
+            const isShow = (item.type || "").toLowerCase() === "show";
+            if (isShow) {
+              useRouter().push({ pathname: "/show/[rk]", params: { rk: String(item.rating_key), title: item.title } });
+            } else {
+              useRouter().push({ pathname: "/player/[rk]", params: { rk: String(item.rating_key), title: item.title } });
+            }
+          };
+          return (
+            <Pressable focusable hasTVPreferredFocus={isInitial} onPress={go} style={{ marginRight: SIZES.gap }}>
+              {row.kind === 'live' ? <ChannelCard item={item} onPress={go} /> : <PosterCard item={item} onPress={go} />}
+            </Pressable>
+          );
+        }}
         style={{ marginTop: vs(10) }}
         contentContainerStyle={{ paddingLeft: SAFE.left, paddingRight: SAFE.right, paddingVertical: vs(6) }}
         initialNumToRender={6}
@@ -243,7 +262,7 @@ export default function Browse() {
             </Text>
           </View>
         ) : (
-          rows.map((r) => <Row key={r.id} row={r} />)
+        rows.map((r, idx) => <Row key={r.id} row={r} isFirstRow={idx === 0} />)
         )}
       </ScrollView>
     </BrandBackground>

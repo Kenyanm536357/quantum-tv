@@ -68,12 +68,13 @@ export const GRID_COLS = {
 
 // Standard sizes used everywhere
 export const SIZES = {
-  fontTitle: ms(28),
-  fontH1: ms(22),
-  fontH2: ms(18),
-  fontBody: ms(14),
-  fontSmall: ms(11),
-  fontTiny: ms(9),
+  // Slight TV-specific upscale for readability on large screens
+  fontTitle: ms(28) * (IS_TV ? 1.12 : 1),
+  fontH1: ms(22) * (IS_TV ? 1.12 : 1),
+  fontH2: ms(18) * (IS_TV ? 1.12 : 1),
+  fontBody: ms(14) * (IS_TV ? 1.12 : 1),
+  fontSmall: ms(11) * (IS_TV ? 1.12 : 1),
+  fontTiny: ms(9) * (IS_TV ? 1.12 : 1),
 
   radius: s(14),
   radiusSm: s(10),

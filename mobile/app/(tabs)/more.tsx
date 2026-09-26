@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useCallback, type ReactNode } from "react";
 import { View, Text, Pressable, StyleSheet, ScrollView, Alert, Image, Modal, ActivityIndicator, TextInput } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -180,6 +179,9 @@ function EditProfileModal({
 
   const pickPhoto = useCallback(async () => {
     try {
+      // Dynamic import keeps OTA-safe behavior on binaries that don't yet
+      // include expo-image-picker native code.
+      const ImagePicker = await import("expo-image-picker");
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
         Alert.alert("Permission needed", "Allow photo access to set a profile picture.");

@@ -29,7 +29,8 @@ function TVSideRail({ state, descriptors, navigation }: BottomTabBarProps) {
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Snapshot the initially-active tab ONCE at mount so we can set
   // hasTVPreferredFocus without re-triggering it on every render.
-  const initialTabIndex = useRef(state.index);
+  const initialTabKey = useRef(state.routes[state.index]?.key);
+  const visibleRoutes = state.routes.filter((route) => descriptors[route.key]?.options?.href !== null);
 
   useEffect(() => () => { if (collapseTimer.current) clearTimeout(collapseTimer.current); }, []);
 
@@ -95,9 +96,9 @@ function TVSideRail({ state, descriptors, navigation }: BottomTabBarProps) {
           </View>
         </View>
         <View style={{ paddingVertical: vs(6) }}>
-          {state.routes.map((route, i) => {
+          {visibleRoutes.map((route) => {
             const { options } = descriptors[route.key];
-            const active = state.index === i;
+            const active = state.routes[state.index]?.key === route.key;
             const label = (options.title ?? route.name) as string;
             const iconRender = options.tabBarIcon;
             return (
@@ -105,7 +106,7 @@ function TVSideRail({ state, descriptors, navigation }: BottomTabBarProps) {
                 key={route.key}
                 testID={`tab-${route.name}`}
                 focusable
-                hasTVPreferredFocus={i === initialTabIndex.current}
+                hasTVPreferredFocus={route.key === initialTabKey.current}
                 onFocus={onItemFocus}
                 onBlur={onItemBlur}
                 onPress={() => {
@@ -158,13 +159,14 @@ function TVSideRail({ state, descriptors, navigation }: BottomTabBarProps) {
 // Phone layout — traditional bottom tab bar
 // ============================================================
 function BottomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  const visibleRoutes = state.routes.filter((route) => descriptors[route.key]?.options?.href !== null);
   return (
     <View style={[styles.bar, { height: SIZES.tabBarH + SAFE.bottom, paddingBottom: SAFE.bottom + 2 }]}>
       <BlurView tint="dark" intensity={40} style={StyleSheet.absoluteFill} />
       <View style={styles.row}>
-        {state.routes.map((route, i) => {
+        {visibleRoutes.map((route) => {
           const { options } = descriptors[route.key];
-          const active = state.index === i;
+          const active = state.routes[state.index]?.key === route.key;
           const label = (options.title ?? route.name) as string;
           const iconRender = options.tabBarIcon;
           return (
@@ -204,6 +206,7 @@ export default function TabsLayout() {
   return (
     <Tabs
       tabBar={(props) => (IS_TV ? <TVSideRail {...props} /> : <BottomTabBar {...props} />)}
+      initialRouteName="livetv"
       screenOptions={{ headerShown: false }}
     >
       <Tabs.Screen name="browse" options={{ href: null }} />

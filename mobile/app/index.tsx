@@ -129,7 +129,7 @@ export default function Index() {
 
   // Once ready, redirect to correct screen
   if (phase === "ready" && token !== undefined) {
-    return token ? <Redirect href="/(tabs)/browse" /> : <Redirect href="/login" />;
+    return token ? <Redirect href="/(tabs)/livetv" /> : <Redirect href="/login" />;
   }
 
   // Full-screen updating view (hidden behind app during download)

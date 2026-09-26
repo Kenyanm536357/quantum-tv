@@ -73,7 +73,7 @@ export default function Login() {
         account_number: data.account_number,
         subscription: data.subscription,
       }));
-      router.replace("/(tabs)/browse");
+      router.replace("/(tabs)/livetv");
     } catch (e: any) {
       const reason = e?.response?.data?.detail || "Incorrect username or password. Please try again.";
       setError(reason);

@@ -206,7 +206,7 @@ export default function TabsLayout() {
       tabBar={(props) => (IS_TV ? <TVSideRail {...props} /> : <BottomTabBar {...props} />)}
       screenOptions={{ headerShown: false }}
     >
-      <Tabs.Screen name="browse"    options={{ title: "Browse",    tabBarIcon: ({ color, size }) => <Ionicons name="grid-outline"     size={size ?? SIZES.iconMd} color={color} /> }} />
+      <Tabs.Screen name="browse" options={{ href: null }} />
       <Tabs.Screen name="livetv"    options={{ title: "Live TV",   tabBarIcon: ({ color, size }) => <Ionicons name="radio-outline"    size={size ?? SIZES.iconMd} color={color} /> }} />
       <Tabs.Screen name="movies"    options={{ title: "Movies",    tabBarIcon: ({ color, size }) => <Ionicons name="film-outline"     size={size ?? SIZES.iconMd} color={color} /> }} />
       <Tabs.Screen name="series"    options={{ title: "Series",    tabBarIcon: ({ color, size }) => <Ionicons name="albums-outline"   size={size ?? SIZES.iconMd} color={color} /> }} />

@@ -9,6 +9,8 @@ import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { colors, GRADIENTS } from "../../src/api";
 import { IS_TV, SIZES, SAFE, SIDE_RAIL_W, SIDE_RAIL_EXPANDED_W, s, vs, ms } from "../../src/responsive";
 
+const HIDDEN_TAB_ROUTES = new Set(["browse"]);
+
 // ============================================================
 // TV Layout — Netflix-style collapsible left navigation rail.
 // The rail's OUTER width is fixed at SIDE_RAIL_W (68px collapsed) so
@@ -30,7 +32,9 @@ function TVSideRail({ state, descriptors, navigation }: BottomTabBarProps) {
   // Snapshot the initially-active tab ONCE at mount so we can set
   // hasTVPreferredFocus without re-triggering it on every render.
   const initialTabKey = useRef(state.routes[state.index]?.key);
-  const visibleRoutes = state.routes.filter((route) => descriptors[route.key]?.options?.href !== null);
+  const visibleRoutes = state.routes.filter(
+    (route) => descriptors[route.key]?.options?.href !== null && !HIDDEN_TAB_ROUTES.has(route.name),
+  );
 
   useEffect(() => () => { if (collapseTimer.current) clearTimeout(collapseTimer.current); }, []);
 
@@ -159,7 +163,9 @@ function TVSideRail({ state, descriptors, navigation }: BottomTabBarProps) {
 // Phone layout — traditional bottom tab bar
 // ============================================================
 function BottomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
-  const visibleRoutes = state.routes.filter((route) => descriptors[route.key]?.options?.href !== null);
+  const visibleRoutes = state.routes.filter(
+    (route) => descriptors[route.key]?.options?.href !== null && !HIDDEN_TAB_ROUTES.has(route.name),
+  );
   return (
     <View style={[styles.bar, { height: SIZES.tabBarH + SAFE.bottom, paddingBottom: SAFE.bottom + 2 }]}>
       <BlurView tint="dark" intensity={40} style={StyleSheet.absoluteFill} />

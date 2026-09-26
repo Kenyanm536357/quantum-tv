@@ -46,6 +46,11 @@ type Program = {
   end?: string | null;
 };
 
+type CategoryCount = {
+  name: string;
+  count: number;
+};
+
 // Keep the full Xtream line available. Older builds hard-capped at 400,
 // which hid most of a 5,000+ channel provider lineup.
 const MAX_CHANNELS = 20000;
@@ -88,6 +93,23 @@ function formatDayShort(ts?: number): string {
   } catch { return ""; }
 }
 
+function formatClock(ts?: number): string {
+  try {
+    const d = ts ? new Date(ts * 1000) : new Date();
+    return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  } catch {
+    return "";
+  }
+}
+
+function shortCategoryLabel(name: string): string {
+  if (!name) return "Other";
+  const sName = name.replace(/\s+/g, " ").trim();
+  if (!sName) return "Other";
+  if (sName.length <= 16) return sName;
+  return `${sName.slice(0, 15)}...`;
+}
+
 export default function LiveTV() {
   const router = useRouter();
   const qc = useQueryClient();
@@ -97,6 +119,10 @@ export default function LiveTV() {
     queryFn: async () => (await client.get("/livetv/channels")).data as { channels: Channel[] },
     // Always prefer a fresh full channel dump; Xtream lines change often.
     staleTime: 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
+    refetchOnReconnect: true,
     refetchInterval: CHANNEL_REFRESH_MS,
     refetchOnWindowFocus: true,
     refetchIntervalInBackground: false,
@@ -201,30 +227,40 @@ export default function LiveTV() {
   // ---- Filters + search ----
   const [country, setCountry] = useState<string>("All");
   const [genre, setGenre] = useState<string>("All");
+  const [category, setCategory] = useState<string>("All");
   const [filterOpen, setFilterOpen] = useState(false);
 
-  const { list, counts, countries, genres } = useMemo(() => {
+  const { list, counts, countries, genres, categories } = useMemo(() => {
       const raw: Channel[] = data?.channels || [];
+      const deduped = Array.from(new Map(raw.map((c) => [String(c.key), c])).values());
       // Adult channels stay hidden while the parental gate is active
       // (default OFF until enabled in Settings / unlocked with PIN).
       const all = requiresPin
-        ? raw.filter((c) => !isAdultCategory(c.genre, c.category_name, c.title))
-        : raw;
+        ? deduped.filter((c) => !isAdultCategory(c.genre, c.category_name, c.title))
+        : deduped;
       const countryCounts = new Map<string, number>();
       const genreCounts = new Map<string, number>();
+      const categoryCounts = new Map<string, number>();
       for (const c of all) {
         const co = c.country || "Other";
         const ge = c.genre || "General";
+        const cat = c.category_name || c.genre || "Other";
         countryCounts.set(co, (countryCounts.get(co) || 0) + 1);
         genreCounts.set(ge, (genreCounts.get(ge) || 0) + 1);
+        categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1);
       }
       const countries = Array.from(countryCounts.entries()).sort((a, b) => b[1] - a[1]);
       const genres = Array.from(genreCounts.entries()).sort((a, b) => b[1] - a[1]);
+      const categories = Array.from(categoryCounts.entries())
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 18);
       let filtered = all;
       if (country !== "All") filtered = filtered.filter((x) => (x.country || "Other") === country);
       if (genre !== "All") filtered = filtered.filter((x) => (x.genre || "General") === genre);
-      return { list: filtered.slice(0, MAX_CHANNELS), counts: { all: all.length }, countries, genres };
-    }, [data, country, genre, requiresPin]);
+      if (category !== "All") filtered = filtered.filter((x) => (x.category_name || x.genre || "Other") === category);
+      return { list: filtered.slice(0, MAX_CHANNELS), counts: { all: all.length }, countries, genres, categories };
+    }, [data, country, genre, category, requiresPin]);
 
   // ---- Time slots (updates every minute) ----
   // Anchor at the last :00 or :30 boundary; render VISIBLE_SLOTS slots
@@ -306,11 +342,41 @@ export default function LiveTV() {
   }, []);
   useEffect(() => () => clearJumpTimer(), []);
 
-  const activeFilterCount = (country !== "All" ? 1 : 0) + (genre !== "All" ? 1 : 0);
+  const activeFilterCount = (country !== "All" ? 1 : 0) + (genre !== "All" ? 1 : 0) + (category !== "All" ? 1 : 0);
 
   return (
     <BrandBackground headerGlow={false}>
       <View style={{ flex: 1, paddingTop: SAFE.top }}>
+        <View style={styles.categoryRailWrap}>
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            data={[{ name: "All", count: counts.all }, ...categories] as CategoryCount[]}
+            keyExtractor={(it) => `cat-${it.name}`}
+            contentContainerStyle={styles.categoryRailContent}
+            renderItem={({ item, index }) => {
+              const active = category === item.name;
+              return (
+                <Pressable
+                  testID={`live-cat-${item.name}`}
+                  focusable
+                  hasTVPreferredFocus={index === 0}
+                  onPress={() => setCategory(item.name)}
+                  style={({ focused }) => [
+                    styles.categoryChip,
+                    active && styles.categoryChipActive,
+                    focused && styles.categoryChipFocused,
+                  ]}
+                >
+                  <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]} numberOfLines={1}>
+                    {shortCategoryLabel(item.name)}
+                  </Text>
+                </Pressable>
+              );
+            }}
+          />
+        </View>
+
         {/* Top nav strip — slim, matches reference (no big header taking room). */}
         <View style={styles.topNav}>
           <Image
@@ -356,7 +422,7 @@ export default function LiveTV() {
         </View>
 
         {/* Hero — currently-focused program preview */}
-        <HeroPanel channel={focusedChannel} program={focusedProgram} />
+        <HeroPanel channel={focusedChannel} program={focusedProgram} nowSec={nowSec} />
 
         {/* Time header */}
         <View style={styles.timeHeader}>
@@ -385,10 +451,10 @@ export default function LiveTV() {
             <FlatList
               data={list}
               keyExtractor={(it) => `guide-${it.key}`}
-              initialNumToRender={6}
-              maxToRenderPerBatch={4}
+              initialNumToRender={7}
+              maxToRenderPerBatch={5}
               updateCellsBatchingPeriod={32}
-              windowSize={4}
+              windowSize={6}
               disableVirtualization={false}
               removeClippedSubviews
               getItemLayout={(_, index) => ({ length: ROW_H, offset: ROW_H * index, index })}
@@ -499,7 +565,7 @@ export default function LiveTV() {
 }
 
 // ---- Hero preview panel (focused program) ------------------------------
-function HeroPanel({ channel, program }: { channel: Channel | null; program: Program | null }) {
+function HeroPanel({ channel, program, nowSec }: { channel: Channel | null; program: Program | null; nowSec: number }) {
   if (!channel && !program) {
     return (
       <View style={[styles.hero, { alignItems: "flex-start", justifyContent: "flex-end" }]}>
@@ -513,6 +579,10 @@ function HeroPanel({ channel, program }: { channel: Channel | null; program: Pro
     program?.start_ts && program?.end_ts
       ? `${formatTime(program.start_ts)} – ${formatTime(program.end_ts)}`
       : "";
+  const minsLeft =
+    program?.end_ts && nowSec
+      ? Math.max(0, Math.floor((program.end_ts - nowSec) / 60))
+      : null;
   return (
     <View style={styles.hero}>
       {channel?.logo ? (
@@ -529,6 +599,9 @@ function HeroPanel({ channel, program }: { channel: Channel | null; program: Pro
         </View>
       )}
       <View style={{ flex: 1, marginLeft: 16 }}>
+        <Text style={styles.heroLiveMeta} numberOfLines={1}>
+          {`LIVE  |  ${formatDayShort(nowSec)}  |  ${times || formatClock(nowSec)}${minsLeft !== null ? `  |  ${minsLeft} min left` : ""}`}
+        </Text>
         <Text style={styles.heroTitle} numberOfLines={2}>
           {program?.title || channel?.title || "—"}
         </Text>
@@ -572,6 +645,10 @@ const GuideRow = React.memo(function GuideRow({
     queryKey: ["epg", channel.key],
     queryFn: async () => (await client.get(`/livetv/epg?channel_key=${encodeURIComponent(channel.key)}&limit=8`)).data as { programs: Program[] },
     staleTime: 5 * 60 * 1000,
+    gcTime: 20 * 60 * 1000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
   });
 
   // Programs that overlap the visible timeline window
@@ -835,6 +912,43 @@ function NumKey({ label, testID, onPress, accent, hasTVPreferredFocus }: {
 }
 
 const styles = StyleSheet.create({
+  categoryRailWrap: {
+    paddingHorizontal: SAFE.left,
+    paddingRight: SAFE.right,
+    marginBottom: vs(8),
+  },
+  categoryRailContent: {
+    gap: 10,
+    paddingVertical: 2,
+  },
+  categoryChip: {
+    paddingHorizontal: s(14),
+    paddingVertical: vs(9),
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    minWidth: s(88),
+    alignItems: "center",
+  },
+  categoryChipActive: {
+    backgroundColor: "rgba(255,255,255,0.22)",
+    borderColor: "rgba(255,255,255,0.42)",
+  },
+  categoryChipFocused: {
+    borderColor: colors.cyan,
+    transform: [{ scale: 1.03 }],
+  },
+  categoryChipText: {
+    color: colors.zinc300,
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: SIZES.fontSmall,
+  },
+  categoryChipTextActive: {
+    color: "#fff",
+    fontFamily: "Unbounded_700Bold",
+  },
+
   // ---- Top nav bar (above hero) ----
   topNav: {
     flexDirection: "row", alignItems: "center", gap: 8,
@@ -848,7 +962,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: s(12), paddingVertical: vs(7),
     borderRadius: 999, borderWidth: 2,
     borderColor: "rgba(103,232,249,0.30)",
-    backgroundColor: "rgba(139,92,246,0.16)",
+    backgroundColor: "rgba(99,102,241,0.20)",
   },
   topNavBtnTxt: { color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall },
 
@@ -858,7 +972,7 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center",
     paddingHorizontal: SAFE.left, paddingRight: SAFE.right,
     paddingVertical: vs(10),
-    borderBottomWidth: 1, borderBottomColor: "rgba(139,92,246,0.20)",
+    borderBottomWidth: 1, borderBottomColor: "rgba(99,102,241,0.32)",
     backgroundColor: "rgba(11,5,24,0.6)",
   },
   heroLogo: {
@@ -877,6 +991,12 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: "rgba(139,92,246,0.30)",
   },
   heroTitle: { color: "#fff", fontFamily: "Unbounded_800ExtraBold", fontSize: SIZES.fontH1, lineHeight: SIZES.fontH1 * 1.15 },
+  heroLiveMeta: {
+    color: "#f87171",
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: SIZES.fontSmall,
+    marginBottom: 4,
+  },
   heroMeta: { color: colors.zinc400, fontFamily: "Outfit_500Medium", fontSize: SIZES.fontSmall, marginTop: 4 },
   heroDesc: { color: colors.zinc300, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall, marginTop: 6, lineHeight: SIZES.fontSmall * 1.35 },
 
@@ -885,8 +1005,8 @@ const styles = StyleSheet.create({
     height: HEADER_H,
     flexDirection: "row",
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(139,92,246,0.15)",
-    backgroundColor: "rgba(11,5,24,0.35)",
+    borderBottomColor: "rgba(99,102,241,0.24)",
+    backgroundColor: "rgba(3,5,11,0.72)",
   },
   timeHeaderDay: { color: colors.zinc400, fontFamily: "Outfit_500Medium", fontSize: SIZES.fontTiny, textTransform: "uppercase", letterSpacing: 1 },
   timeHeaderSlot: { color: colors.zinc300, fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall },
@@ -896,14 +1016,14 @@ const styles = StyleSheet.create({
     height: ROW_H,
     flexDirection: "row",
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(139,92,246,0.10)",
+    borderBottomColor: "rgba(99,102,241,0.12)",
   },
   leftCol: {
     width: LEFT_COL_W,
     paddingLeft: SAFE.left,
     flexDirection: "column",
     justifyContent: "center",
-    borderRightWidth: 1, borderRightColor: "rgba(139,92,246,0.15)",
+    borderRightWidth: 1, borderRightColor: "rgba(99,102,241,0.22)",
     paddingRight: 6,
     paddingVertical: 4,
     gap: 2,
@@ -959,14 +1079,14 @@ const styles = StyleSheet.create({
   progBlock: {
     position: "absolute", top: 4, bottom: 4,
     borderRadius: 6, borderWidth: 2, borderColor: "transparent",
-    backgroundColor: "rgba(28,10,56,0.65)",
+    backgroundColor: "rgba(22,22,27,0.96)",
     paddingHorizontal: 10, justifyContent: "center",
     marginRight: 2,
   },
-  progBlockEmpty: { backgroundColor: "rgba(28,10,56,0.35)" },
+  progBlockEmpty: { backgroundColor: "rgba(34,34,40,0.88)" },
   progBlockFocused: {
-    backgroundColor: "#2563EB",
-    borderColor: "#67E8F9",
+    backgroundColor: "rgba(88,28,135,0.85)",
+    borderColor: "#a78bfa",
     shadowColor: colors.cyan, shadowOpacity: 0.6, shadowRadius: 12, elevation: 8,
   },
   progTitle: { color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall },
@@ -974,13 +1094,13 @@ const styles = StyleSheet.create({
   // ---- Vertical "now" indicator line ----
   nowLine: {
     position: "absolute", top: 0, bottom: 0, width: 2,
-    backgroundColor: colors.cyan,
-    shadowColor: colors.cyan, shadowOpacity: 0.9, shadowRadius: 6, elevation: 8,
+    backgroundColor: "#a78bfa",
+    shadowColor: "#a78bfa", shadowOpacity: 0.95, shadowRadius: 8, elevation: 9,
   },
   nowLineHead: {
     position: "absolute", top: -2, left: -5,
     width: 12, height: 8, borderRadius: 3,
-    backgroundColor: colors.cyan,
+    backgroundColor: "#a78bfa",
   },
 
   // ---- Jump banner + numpad ----

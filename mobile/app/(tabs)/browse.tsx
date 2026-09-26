@@ -125,23 +125,7 @@ function Row({ row, isFirstRow = false }: { row: BrowseRow; isFirstRow?: boolean
         showsHorizontalScrollIndicator={false}
         data={row.items}
         keyExtractor={(it) => String(it.rating_key)}
-        renderItem={({ item, index }) => {
-          // Wrap the card in a Pressable that can accept hasTVPreferredFocus
-          const isInitial = isFirstRow && index === 0;
-          const go = () => {
-            const isShow = (item.type || "").toLowerCase() === "show";
-            if (isShow) {
-              useRouter().push({ pathname: "/show/[rk]", params: { rk: String(item.rating_key), title: item.title } });
-            } else {
-              useRouter().push({ pathname: "/player/[rk]", params: { rk: String(item.rating_key), title: item.title } });
-            }
-          };
-          return (
-            <Pressable focusable hasTVPreferredFocus={isInitial} onPress={go} style={{ marginRight: SIZES.gap }}>
-              {row.kind === 'live' ? <ChannelCard item={item} onPress={go} /> : <PosterCard item={item} onPress={go} />}
-            </Pressable>
-          );
-        }}
+        renderItem={renderItem}
         style={{ marginTop: vs(10) }}
         contentContainerStyle={{ paddingLeft: SAFE.left, paddingRight: SAFE.right, paddingVertical: vs(6) }}
         initialNumToRender={6}

@@ -61,6 +61,7 @@ export default function ShowDetail() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["meta", rk] });
       qc.invalidateQueries({ queryKey: ["favs"] });
+      qc.invalidateQueries({ queryKey: ["/me/favorites"] });
     },
   });
 

@@ -14,6 +14,9 @@ export function ListScreen({ endpoint, title, removeLabel, removeFromList, empty
   const { data, isLoading } = useQuery({
     queryKey: [endpoint],
     queryFn: async () => (await client.get(endpoint)).data,
+    refetchOnMount: "always",
+    refetchOnReconnect: true,
+    refetchOnWindowFocus: true,
   });
   const remove = useMutation({
     mutationFn: async (rk: string) => removeFromList(rk),

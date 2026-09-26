@@ -72,7 +72,10 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
       if (isFav) return client.delete(`/me/favorites/${encodeURIComponent(it.rating_key)}`);
       return client.post(`/me/favorites`, { rating_key: String(it.rating_key) });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["favs"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["favs"] });
+      qc.invalidateQueries({ queryKey: ["/me/favorites"] });
+    },
   });
 
   const openItem = (it: LibItem) => {

@@ -451,6 +451,7 @@ async def _iptv_get(action: Optional[str] = None, params: Optional[dict] = None)
 # that cache. This is both faster for users and far more reliable.
 # ---------------------------------------------------------------------------
 IPTV_CACHE_REFRESH_SECONDS = 90  # refresh live/VOD/series every 90 seconds
+SEARCH_INDEX_REFRESH_SECONDS = 30  # refresh in-memory search index every 30 seconds
 PUBLIC_M3U_CACHE_REFRESH_SECONDS = 6 * 60 * 60
 PUBLIC_M3U_SOURCES = [
     "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us_30a.m3u",
@@ -551,6 +552,16 @@ IPTV_CACHE_CHUNK_SIZE = 2000  # keeps each Mongo doc well under the 16MB BSON li
 # all. Each uvicorn worker process keeps its own copy; that's fine since each
 # worker also runs its own independent _iptv_cache_refresh_loop.
 _IPTV_MEM_CACHE: dict[str, dict] = {}
+
+# In-memory global search index rebuilt from cached IPTV catalogs.
+# This avoids provider round-trips on each /search call and keeps
+# results responsive even under high user traffic.
+_SEARCH_INDEX: dict[str, Any] = {
+    "items": [],
+    "updated_at": None,
+    "source_cache_updated_at": {},
+}
+_search_index_lock = asyncio.Lock()
 
 
 async def _iptv_cache_set(kind: str, streams: list[dict], cat_by_id: dict[str, str]) -> None:
@@ -768,6 +779,125 @@ async def _iptv_cached(kind: str) -> tuple[list[dict], dict[str, str]]:
     action = "get_vod_streams" if kind == "vod" else "get_series"
     categories_action = "get_vod_categories" if kind == "vod" else "get_series_categories"
     return await _iptv_catalog(action, categories_action)
+
+
+async def _rebuild_search_index_once() -> None:
+    """Rebuild the in-memory search index from cached IPTV catalogs.
+
+    This never calls the provider directly; it only consumes already-cached
+    documents so searches stay fast and provider-safe.
+    """
+    if _search_index_lock.locked():
+        return
+    async with _search_index_lock:
+        live_doc = await _iptv_cache_get_doc("live")
+        vod_doc = await _iptv_cache_get_doc("vod")
+        series_doc = await _iptv_cache_get_doc("series")
+
+        out: list[dict] = []
+        seen: set[str] = set()
+
+        live_cat_by_id = (live_doc or {}).get("cat_by_id") or {}
+        for s in ((live_doc or {}).get("streams") or []):
+            sid = s.get("stream_id")
+            if sid is None:
+                continue
+            rating_key = f"iptv-live-{sid}"
+            if rating_key in seen:
+                continue
+            seen.add(rating_key)
+
+            title = str(s.get("name") or "").strip()
+            if not title:
+                continue
+            thumb_raw = s.get("stream_icon")
+            cid = str(s.get("category_id") or "")
+            cat_name = live_cat_by_id.get(cid) or ""
+            cls = _classify_live_category(cat_name)
+            out.append({
+                "rating_key": rating_key,
+                "title": title,
+                "title_lc": title.lower(),
+                "type": "live",
+                "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
+                "year": None,
+                "audience_rating": None,
+                "genre": cls.get("genre"),
+                "category_name": cat_name or None,
+            })
+
+        vod_cat_by_id = (vod_doc or {}).get("cat_by_id") or {}
+        for s in ((vod_doc or {}).get("streams") or []):
+            sid = s.get("stream_id")
+            if sid is None:
+                continue
+            rating_key = f"iptv-movie-{sid}"
+            if rating_key in seen:
+                continue
+            seen.add(rating_key)
+
+            title = str(s.get("name") or "").strip()
+            if not title:
+                continue
+            thumb_raw = s.get("stream_icon")
+            cid = str(s.get("category_id") or "")
+            out.append({
+                "rating_key": rating_key,
+                "title": title,
+                "title_lc": title.lower(),
+                "type": "movie",
+                "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
+                "year": s.get("year"),
+                "audience_rating": s.get("rating"),
+                "genre": s.get("genre"),
+                "category_name": vod_cat_by_id.get(cid) or None,
+            })
+
+        series_cat_by_id = (series_doc or {}).get("cat_by_id") or {}
+        for s in ((series_doc or {}).get("streams") or []):
+            sid = s.get("series_id")
+            if sid is None:
+                continue
+            rating_key = f"iptv-series-{sid}"
+            if rating_key in seen:
+                continue
+            seen.add(rating_key)
+
+            title = str(s.get("name") or "").strip()
+            if not title:
+                continue
+            thumb_raw = s.get("cover")
+            cid = str(s.get("category_id") or "")
+            out.append({
+                "rating_key": rating_key,
+                "title": title,
+                "title_lc": title.lower(),
+                "type": "show",
+                "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
+                "year": str(s.get("release_date") or "")[:4] or None,
+                "audience_rating": s.get("rating"),
+                "genre": s.get("genre"),
+                "category_name": series_cat_by_id.get(cid) or None,
+            })
+
+        _SEARCH_INDEX["items"] = out
+        _SEARCH_INDEX["updated_at"] = now_iso()
+        _SEARCH_INDEX["source_cache_updated_at"] = {
+            "live": (live_doc or {}).get("updated_at"),
+            "vod": (vod_doc or {}).get("updated_at"),
+            "series": (series_doc or {}).get("updated_at"),
+        }
+        log.info("Search index: refreshed %d items", len(out))
+
+
+async def _search_index_refresh_loop() -> None:
+    """24/7 loop that continuously refreshes the global search index."""
+    while True:
+        try:
+            await _rebuild_search_index_once()
+        except Exception as e:
+            log.warning("Search index refresh loop error: %s", e)
+        await asyncio.sleep(SEARCH_INDEX_REFRESH_SECONDS)
 
 
 def _iptv_stream_url(cfg: dict, kind: str, stream_id: int, ext: str = "ts") -> str:
@@ -2388,82 +2518,39 @@ async def browse_rows(user: dict = Depends(get_current_user), per_row: int = 20,
 
 @api.get("/search")
 async def search(q: str, user: dict = Depends(get_current_user), limit: int = 50):
-    """Search IPTV live channels, VOD movies, and series by title."""
+    """Search IPTV live channels, VOD movies, and series by title.
+
+    Uses the in-memory search index refreshed every SEARCH_INDEX_REFRESH_SECONDS.
+    """
     needle = (q or "").strip().lower()
     if not needle:
-        return {"items": []}
+        return {"items": [], "query": "", "total_found": 0, "index_updated_at": _SEARCH_INDEX.get("updated_at")}
 
-    results = []
+    # If the process has just booted and index is still empty, do a one-off
+    # synchronous rebuild so the first search still returns results.
+    if not _SEARCH_INDEX.get("items"):
+        await _rebuild_search_index_once()
 
-    # Live channels (include genre/category_name for parental filtering)
-    try:
-        raw_live = await _iptv_get("get_live_streams")
-        cat_by_id: dict[str, dict] = {}
-        try:
-            raw_cats = await _iptv_get("get_live_categories")
-            for c in raw_cats or []:
-                cid = str(c.get("category_id") or "")
-                name = str(c.get("category_name") or "").strip()
-                cls = _classify_live_category(name)
-                cat_by_id[cid] = {"name": name, "genre": cls["genre"]}
-        except Exception:
-            pass
-        for s in (raw_live or []):
-            if needle in (s.get("name") or "").lower():
-                thumb_raw = s.get("stream_icon")
-                cid = str(s.get("category_id") or "")
-                cat = cat_by_id.get(cid) or {}
-                results.append({
-                    "rating_key": f"iptv-live-{s.get('stream_id')}",
-                    "title": s.get("name"),
-                    "type": "live",
-                    "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
-                    "year": None,
-                    "genre": cat.get("genre"),
-                    "category_name": cat.get("name"),
-                })
-    except Exception:
-        pass
+    max_items = max(1, min(int(limit or 50), 200))
+    ranked: list[tuple[int, dict]] = []
+    for item in (_SEARCH_INDEX.get("items") or []):
+        title_lc = item.get("title_lc") or ""
+        pos = title_lc.find(needle)
+        if pos < 0:
+            continue
+        # Prefer exact title starts and shorter titles for relevance.
+        score = (0 if title_lc.startswith(needle) else 1, pos, len(title_lc))
+        payload = {k: v for k, v in item.items() if k != "title_lc"}
+        ranked.append((score, payload))
 
-    # VOD movies
-    try:
-        raw_vod = await _iptv_get("get_vod_streams")
-        for s in (raw_vod or []):
-            if needle in (s.get("name") or "").lower():
-                thumb_raw = s.get("stream_icon")
-                results.append({
-                    "rating_key": f"iptv-movie-{s.get('stream_id')}",
-                    "title": s.get("name"),
-                    "type": "movie",
-                    "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
-                    "year": s.get("year"),
-                    "audience_rating": s.get("rating"),
-                    "genre": s.get("genre"),
-                    "category_name": None,
-                })
-    except Exception:
-        pass
-
-    # Series
-    try:
-        raw_series = await _iptv_get("get_series")
-        for s in (raw_series or []):
-            if needle in (s.get("name") or "").lower():
-                thumb_raw = s.get("cover")
-                results.append({
-                    "rating_key": f"iptv-series-{s.get('series_id')}",
-                    "title": s.get("name"),
-                    "type": "show",
-                    "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
-                    "year": str(s.get("release_date") or "")[:4] or None,
-                    "audience_rating": s.get("rating"),
-                    "genre": s.get("genre"),
-                    "category_name": None,
-                })
-    except Exception:
-        pass
-
-    return {"items": results[:limit]}
+    ranked.sort(key=lambda x: x[0])
+    items = [payload for _, payload in ranked[:max_items]]
+    return {
+        "items": items,
+        "query": q,
+        "total_found": len(ranked),
+        "index_updated_at": _SEARCH_INDEX.get("updated_at"),
+    }
 
 
 # ============================================================
@@ -3122,5 +3209,6 @@ async def _background_task_guard(coro_fn) -> None:
 async def startup():
     asyncio.create_task(_init_db_indexes_and_legacy_cleanup())
     asyncio.create_task(_background_task_guard(_iptv_cache_refresh_loop))
+    asyncio.create_task(_background_task_guard(_search_index_refresh_loop))
     asyncio.create_task(_background_task_guard(_public_m3u_refresh_loop))
     log.info("Quantum TV API started")

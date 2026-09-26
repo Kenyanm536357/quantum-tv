@@ -26,6 +26,8 @@ export default function Search() {
   const items = requiresPin
     ? allItems.filter((item) => !isAdultCategory(item.genre, item.category_name ?? item.category, item.title))
     : allItems;
+  const searched = q.trim().length >= 2;
+  const foundCount = Number(data?.total_found ?? items.length ?? 0);
 
   const openItem = (item: any) => {
     const isShow = (item.type || "").toLowerCase() === "show";
@@ -65,11 +67,28 @@ export default function Search() {
             returnKeyType="search"
           />
         </View>
+        {searched && !isFetching ? (
+          <View style={{ paddingHorizontal: SAFE.left, marginTop: vs(8) }}>
+            <Text style={styles.resultMeta}>
+              {foundCount > 0
+                ? `${foundCount} result${foundCount === 1 ? "" : "s"} found for "${q.trim()}"`
+                : `No results found for "${q.trim()}"`}
+            </Text>
+          </View>
+        ) : null}
         {isFetching && <ActivityIndicator color={colors.cyan} style={{ marginTop: 24 }} />}
         <FlatList
           contentContainerStyle={{ paddingHorizontal: SAFE.left, paddingBottom: SIZES.tabBarH + vs(40), paddingTop: vs(20) }}
           data={items}
           keyExtractor={(it) => String(it.rating_key)}
+          ListEmptyComponent={() => (
+            searched && !isFetching ? (
+              <View style={styles.emptyWrap}>
+                <Ionicons name="search-outline" size={ms(30)} color={colors.zinc500} />
+                <Text style={styles.emptyTxt}>We could not find anything for "{q.trim()}".</Text>
+              </View>
+            ) : null
+          )}
           renderItem={({ item }) => (
             <Pressable
               testID={`result-${item.rating_key}`}
@@ -110,6 +129,11 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: "rgba(139,92,246,0.30)",
   },
   searchInput: { flex: 1, color: "#fff", fontFamily: "Outfit_400Regular", fontSize: SIZES.fontBody },
+  resultMeta: {
+    color: colors.zinc400,
+    fontFamily: "Outfit_400Regular",
+    fontSize: SIZES.fontSmall,
+  },
   row: {
     flexDirection: "row", alignItems: "center",
     paddingVertical: vs(10), paddingHorizontal: 10,
@@ -119,4 +143,16 @@ const styles = StyleSheet.create({
   thumb: { width: scale(60), height: vs(80), borderRadius: 8, overflow: "hidden", backgroundColor: "#1C0A38" },
   rowTitle: { color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontBody },
   rowSub: { color: colors.zinc500, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall, marginTop: 2, textTransform: "capitalize" },
+  emptyWrap: {
+    marginTop: vs(36),
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  emptyTxt: {
+    color: colors.zinc400,
+    fontFamily: "Outfit_400Regular",
+    fontSize: SIZES.fontSmall,
+    textAlign: "center",
+  },
 });

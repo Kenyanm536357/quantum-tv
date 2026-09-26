@@ -22,6 +22,9 @@ type BrowseItem = {
   source?: string;
   genre?: string;
   category_name?: string;
+  duration?: number;
+  view_offset?: number;
+  progress_pct?: number;
 };
 
 type BrowseRow = { id: string; title: string; kind: "poster" | "live"; items: BrowseItem[] };
@@ -31,6 +34,10 @@ type BrowseRow = { id: string; title: string; kind: "poster" | "live"; items: Br
 function PosterCard({ item, onPress, initialFocus }: { item: BrowseItem; onPress: () => void; initialFocus?: boolean }) {
   const w = IS_TV ? s(160) : s(115);
   const h = Math.round(w * 1.5);
+  const pctRaw = item.progress_pct != null
+    ? Number(item.progress_pct) * 100
+    : (item.duration && item.view_offset ? (Number(item.view_offset) / Number(item.duration)) * 100 : 0);
+  const pct = Math.max(0, Math.min(100, pctRaw || 0));
   return (
     <Pressable
       testID={`media-${item.rating_key}`}
@@ -48,6 +55,11 @@ function PosterCard({ item, onPress, initialFocus }: { item: BrowseItem; onPress
           </LinearGradient>
         )}
         <LinearGradient colors={["transparent", "rgba(0,0,0,0.85)"]} style={styles.cardShade} />
+        {pct > 0 ? (
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${pct}%` }]} />
+          </View>
+        ) : null}
         <View style={{ position: "absolute", left: 8, right: 8, bottom: 8 }}>
           <Text numberOfLines={2} style={{ color: "#fff", fontSize: SIZES.fontSmall, fontFamily: "Outfit_600SemiBold" }}>{item.title}</Text>
           {item.year ? <Text style={{ color: colors.zinc400, fontSize: SIZES.fontTiny, fontFamily: "Outfit_400Regular", marginTop: 1 }}>{item.year}</Text> : null}
@@ -257,6 +269,18 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   card: { overflow: "hidden", backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: "rgba(255,255,255,0.05)" },
   cardShade: { position: "absolute", left: 0, right: 0, bottom: 0, height: "60%" },
+  progressTrack: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 4,
+    backgroundColor: "rgba(255,255,255,0.2)",
+  },
+  progressFill: {
+    height: 4,
+    backgroundColor: colors.cyan,
+  },
   heroWrap: { overflow: "hidden", justifyContent: "flex-end" },
   featuredPill: { alignSelf: "flex-start", backgroundColor: "rgba(232,121,249,0.85)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
 });

@@ -107,6 +107,7 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
         {"id": 1, "username": 1, "display_name": 1, "status": 1, "avatar": 1,
          "watchlist": 1, "favorites": 1, "password_hash": 1,
          "live_favorites": 1, "live_recent": 1,
+         "playback_progress": 1,
          "account_number": 1, "subscription_months": 1, "expires_at": 1,
          "max_devices": 1, "devices": 1, "xtream_url": 1,
          "xtream_username": 1, "xtream_password_enc": 1},
@@ -336,6 +337,7 @@ async def auth_iptv_login(body: IptvSignInBody):
             "notes": [],
             "watchlist": [],
             "favorites": [],
+            "playback_progress": [],
             "created_at": now,
             "updated_at": now,
             "last_login": None,
@@ -1875,6 +1877,7 @@ async def admin_create_user(body: CreateUserBody, admin: dict = Depends(get_curr
         "notes": [],              # list of {id, text, created_at, author}
         "watchlist": [],
         "favorites": [],
+        "playback_progress": [],
         "created_at": now,
         "updated_at": now,
         "last_login": None,
@@ -2283,6 +2286,9 @@ async def _iptv_item_meta(rating_key: str, user: dict) -> Optional[dict]:
 
     in_wl = str(rating_key) in [str(x) for x in (user.get("watchlist") or [])]
     in_fav = str(rating_key) in [str(x) for x in (user.get("favorites") or [])]
+    pr = _progress_row_by_key(user, str(rating_key))
+    view_offset = int((pr or {}).get("position_ms") or 0)
+    tracked_duration = int((pr or {}).get("duration_ms") or 0)
 
     if kind in ("live", "movie"):
         try:
@@ -2307,6 +2313,8 @@ async def _iptv_item_meta(rating_key: str, user: dict) -> Optional[dict]:
             "year": (hit or {}).get("year"),
             "summary": None,
             "audience_rating": (hit or {}).get("rating"),
+            "duration": tracked_duration or None,
+            "view_offset": view_offset or None,
             "in_watchlist": in_wl,
             "in_favorites": in_fav,
         }
@@ -2334,6 +2342,8 @@ async def _iptv_item_meta(rating_key: str, user: dict) -> Optional[dict]:
             "year": release[:4] if release else None,
             "summary": (hit or {}).get("plot"),
             "audience_rating": (hit or {}).get("rating"),
+            "duration": tracked_duration or None,
+            "view_offset": view_offset or None,
             "in_watchlist": in_wl,
             "in_favorites": in_fav,
         }
@@ -2350,6 +2360,8 @@ async def _iptv_item_meta(rating_key: str, user: dict) -> Optional[dict]:
             "year": None,
             "summary": None,
             "audience_rating": None,
+            "duration": tracked_duration or None,
+            "view_offset": view_offset or None,
             "in_watchlist": in_wl,
             "in_favorites": in_fav,
         }
@@ -2422,8 +2434,8 @@ async def metadata_children(rating_key: str, user: dict = Depends(get_current_us
                     "index": ep_num,
                     "parent_index": int(season_num) if str(season_num).isdigit() else 0,
                     "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
-                    "duration": ep_info.get("duration_secs"),
-                    "view_offset": None,
+                    "duration": (int(ep_info.get("duration_secs")) * 1000) if str(ep_info.get("duration_secs") or "").isdigit() else None,
+                    "view_offset": int((_progress_row_by_key(user, f"iptv-ep-{ep_id}-{ext}") or {}).get("position_ms") or 0) or None,
                     "leaf_count": None,
                 })
             return {"items": items}
@@ -2448,8 +2460,38 @@ async def recently_added(user: dict = Depends(get_current_user), limit: int = 30
 
 @api.get("/continue-watching")
 async def on_deck(user: dict = Depends(get_current_user), limit: int = 30):
-    """Return empty — continue-watching requires server-side playback tracking."""
-    return {"items": []}
+    """Return resumable movies/episodes based on server-side playback tracking."""
+    max_items = max(1, min(int(limit or 30), 100))
+    progress_rows = list(user.get("playback_progress") or [])
+    if not progress_rows:
+        return {"items": []}
+
+    # Newest first, already maintained by update pipeline; keep defensive sort.
+    progress_rows.sort(key=lambda r: str(r.get("updated_at") or ""), reverse=True)
+
+    items: list[dict] = []
+    for row in progress_rows:
+        rk = str(row.get("rating_key") or "").strip()
+        if not rk:
+            continue
+        pos_ms = max(0, int(row.get("position_ms") or 0))
+        dur_ms = max(0, int(row.get("duration_ms") or 0))
+        pct = float(row.get("progress_pct") or 0.0)
+        if dur_ms > 0 and (pct <= 0.02 or pct >= 0.97):
+            continue
+        meta = await _iptv_item_meta(rk, user)
+        if not meta:
+            continue
+        meta["view_offset"] = pos_ms
+        meta["duration"] = dur_ms or meta.get("duration")
+        meta["progress_pct"] = pct if pct > 0 else (pos_ms / dur_ms if dur_ms > 0 else 0.0)
+        meta["updated_at"] = row.get("updated_at")
+        if not meta.get("title") and row.get("title"):
+            meta["title"] = row.get("title")
+        items.append(meta)
+        if len(items) >= max_items:
+            break
+    return {"items": items}
 
 
 @api.get("/browse/rows")
@@ -2459,10 +2501,24 @@ async def browse_rows(user: dict = Depends(get_current_user), per_row: int = 20,
 
     rows: list[dict] = []
 
+    deck_task = on_deck(user, limit=per_row)
     live_task = live_channels(user)
     vod_task = recently_added(user, limit=per_row)
 
-    live_resp, vod_resp = await asyncio.gather(live_task, vod_task, return_exceptions=False)
+    deck_resp, live_resp, vod_resp = await asyncio.gather(deck_task, live_task, vod_task, return_exceptions=False)
+
+    # --- Continue watching ---------------------------------------------------
+    try:
+        cw_items = (deck_resp or {}).get("items", []) or []
+        if cw_items:
+            rows.append({
+                "id": "continue",
+                "title": "Continue Watching",
+                "kind": "poster",
+                "items": cw_items[:per_row],
+            })
+    except Exception as e:
+        log.info("Continue row failed: %s", e)
 
     # --- Top Live channels ---------------------------------------------------
     # Feature US channels only on this row — customers reported non-US
@@ -2839,12 +2895,122 @@ class RatingKeyBody(BaseModel):
     rating_key: str
 
 
+class PlaybackProgressBody(BaseModel):
+    rating_key: str
+    position_ms: int
+    duration_ms: Optional[int] = None
+    title: Optional[str] = None
+    media_type: Optional[str] = None
+
+
+PLAYBACK_PROGRESS_CAP = 300
+
+
+def _progress_row_by_key(user: dict, rating_key: str) -> Optional[dict]:
+    rk = str(rating_key or "")
+    for row in (user.get("playback_progress") or []):
+        if str(row.get("rating_key") or "") == rk:
+            return row
+    return None
+
+
+def _progress_is_resumable(position_ms: int, duration_ms: int) -> bool:
+    if position_ms <= 5_000:
+        return False
+    if duration_ms <= 0:
+        return True
+    pct = position_ms / max(duration_ms, 1)
+    return 0.02 <= pct <= 0.97
+
+
+def _progress_pct(position_ms: int, duration_ms: int) -> float:
+    if duration_ms <= 0:
+        return 0.0
+    return max(0.0, min(1.0, position_ms / max(duration_ms, 1)))
+
+
 async def _enrich_keys(keys: list[str], user: dict) -> list[dict]:
     """Fetch IPTV metadata for a list of rating keys (watchlist / favorites)."""
     if not keys:
         return []
     results = await asyncio.gather(*(_iptv_item_meta(rk, user) for rk in keys))
     return [item for item in results if item is not None]
+
+
+@api.get("/me/progress/{rating_key:path}")
+async def get_playback_progress(rating_key: str, user: dict = Depends(get_current_user)):
+    rk = str(rating_key or "").strip()
+    row = _progress_row_by_key(user, rk)
+    if not row:
+        return {
+            "rating_key": rk,
+            "position_ms": 0,
+            "duration_ms": 0,
+            "progress_pct": 0,
+            "updated_at": None,
+            "resumable": False,
+        }
+    pos_ms = max(0, int(row.get("position_ms") or 0))
+    dur_ms = max(0, int(row.get("duration_ms") or 0))
+    pct = float(row.get("progress_pct") or _progress_pct(pos_ms, dur_ms))
+    return {
+        "rating_key": rk,
+        "position_ms": pos_ms,
+        "duration_ms": dur_ms,
+        "progress_pct": pct,
+        "updated_at": row.get("updated_at"),
+        "resumable": _progress_is_resumable(pos_ms, dur_ms),
+    }
+
+
+@api.post("/me/progress")
+async def upsert_playback_progress(body: PlaybackProgressBody, user: dict = Depends(get_current_user)):
+    rk = str(body.rating_key or "").strip()
+    if not rk:
+        raise HTTPException(400, "rating_key is required")
+
+    pos_ms = max(0, int(body.position_ms or 0))
+    dur_ms = max(0, int(body.duration_ms or 0))
+    pct = _progress_pct(pos_ms, dur_ms)
+
+    # Ignore live channels for resume tracking.
+    if rk.startswith("iptv-live-") or rk.startswith("public-live-"):
+        return {"ok": True, "ignored": True}
+
+    # Drop completed/nearly completed items from continue-watching.
+    if not _progress_is_resumable(pos_ms, dur_ms):
+        await db.users.update_one({"id": user["id"]}, {"$pull": {"playback_progress": {"rating_key": rk}}})
+        return {"ok": True, "removed": True}
+
+    row = {
+        "rating_key": rk,
+        "title": (body.title or "").strip(),
+        "media_type": (body.media_type or "").strip() or None,
+        "position_ms": pos_ms,
+        "duration_ms": dur_ms,
+        "progress_pct": pct,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.users.update_one(
+        {"id": user["id"]},
+        [
+            {"$set": {
+                "playback_progress": {
+                    "$slice": [
+                        {"$concatArrays": [
+                            [row],
+                            {"$filter": {
+                                "input": {"$ifNull": ["$playback_progress", []]},
+                                "cond": {"$ne": ["$$this.rating_key", rk]},
+                            }},
+                        ]},
+                        PLAYBACK_PROGRESS_CAP,
+                    ]
+                }
+            }},
+        ],
+    )
+    return {"ok": True, "rating_key": rk, "position_ms": pos_ms, "duration_ms": dur_ms, "progress_pct": pct}
 
 
 @api.get("/me/watchlist")

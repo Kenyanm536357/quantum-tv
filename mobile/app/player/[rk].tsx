@@ -42,10 +42,16 @@ export default function Player() {
   const [playerLabel, setPlayerLabel] = useState<string | null>(null);
   const fellBackRef = useRef(false);
   const triedTransportStreamRef = useRef(false);
+  const resumeAppliedRef = useRef(false);
+  const progressSaveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [resumeMs, setResumeMs] = useState<number>(0);
 
   const player = useVideoPlayer(url ?? null, (p) => {
     p.play();
   });
+
+  const ratingKey = String(rk || "");
+  const canTrackProgress = /^(iptv-(movie|ep)-)/.test(ratingKey);
 
   // Custom playback controls — expo-video's `nativeControls` overlay is
   // touch-oriented and not reliably operable with a D-pad remote (no
@@ -104,6 +110,76 @@ export default function Player() {
   const duration = player.duration || 0;
   const currentTime = player.currentTime || 0;
   const progressPct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+
+  const saveProgress = async () => {
+    if (!canTrackProgress || phase !== "in-app") return;
+    const positionMs = Math.max(0, Math.floor((player.currentTime || 0) * 1000));
+    const durationMs = Math.max(0, Math.floor((player.duration || 0) * 1000));
+    if (positionMs < 5000) return;
+    try {
+      await client.post("/me/progress", {
+        rating_key: ratingKey,
+        position_ms: positionMs,
+        duration_ms: durationMs,
+        title: String(title || ""),
+        media_type: ratingKey.startsWith("iptv-ep-") ? "episode" : "movie",
+      });
+    } catch {
+      // Best-effort persistence — ignore transient network failures.
+    }
+  };
+
+  useEffect(() => {
+    resumeAppliedRef.current = false;
+    setResumeMs(0);
+    if (!canTrackProgress) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await client.get(`/me/progress/${encodeURIComponent(ratingKey)}`);
+        if (cancelled) return;
+        setResumeMs(Math.max(0, Number(data?.position_ms || 0)));
+      } catch {
+        if (!cancelled) setResumeMs(0);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [canTrackProgress, ratingKey]);
+
+  useEffect(() => {
+    if (!canTrackProgress || phase !== "in-app") return;
+    if (resumeAppliedRef.current) return;
+    if (resumeMs < 10_000) {
+      resumeAppliedRef.current = true;
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (resumeAppliedRef.current) return;
+      const targetSec = resumeMs / 1000;
+      const delta = targetSec - (player.currentTime || 0);
+      if (delta > 1) player.seekBy(delta);
+      resumeAppliedRef.current = true;
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [canTrackProgress, phase, player, resumeMs]);
+
+  useEffect(() => {
+    if (progressSaveTimerRef.current) {
+      clearInterval(progressSaveTimerRef.current);
+      progressSaveTimerRef.current = null;
+    }
+    if (!canTrackProgress || phase !== "in-app") return;
+    progressSaveTimerRef.current = setInterval(() => {
+      saveProgress();
+    }, 12_000);
+    return () => {
+      if (progressSaveTimerRef.current) {
+        clearInterval(progressSaveTimerRef.current);
+        progressSaveTimerRef.current = null;
+      }
+      saveProgress();
+    };
+  }, [canTrackProgress, phase]);
 
   // Runs the external-player probe/launch flow. Used both as the initial
   // fallback when the in-app player errors, and when the user manually
@@ -297,7 +373,7 @@ export default function Player() {
 
       <Pressable
         testID="player-back"
-        onPress={() => router.back()}
+        onPress={() => { saveProgress(); router.back(); }}
         focusable
         hasTVPreferredFocus={phase !== "loading" && phase !== "launching" && phase !== "checking-player"}
         style={({ focused }) => [

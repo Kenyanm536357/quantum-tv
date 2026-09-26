@@ -76,6 +76,13 @@ export default function ShowDetail() {
     router.push({ pathname: "/player/[rk]", params: { rk: String(ep.rating_key), title: `${displayTitle} · ${ep.title}` } });
   };
 
+  const progressPct = (ep: MetaItem) => {
+    const off = Number(ep.view_offset || 0);
+    const dur = Number(ep.duration || 0);
+    if (off <= 0 || dur <= 0) return 0;
+    return Math.max(0, Math.min(100, (off / dur) * 100));
+  };
+
   return (
     <BrandBackground headerGlow={false}>
     <View style={{ flex: 1 }}>
@@ -190,7 +197,10 @@ export default function ShowDetail() {
           </Text>
         ) : (
           <View style={{ paddingHorizontal: SAFE.left, gap: vs(8) }}>
-            {episodeList.map((ep, idx) => (
+            {episodeList.map((ep, idx) => {
+              const pct = progressPct(ep);
+              const resumeMins = Number(ep.view_offset || 0) > 0 ? Math.floor(Number(ep.view_offset || 0) / 60000) : 0;
+              return (
               <Pressable
                 key={String(ep.rating_key)}
                 testID={`episode-${ep.rating_key}`}
@@ -221,15 +231,22 @@ export default function ShowDetail() {
                   <Text style={styles.epTitle} numberOfLines={1}>
                     {ep.index ? `${ep.index}. ` : ""}{ep.title}
                   </Text>
-                  {ep.duration ? (
-                    <Text style={styles.epMeta}>{Math.round(ep.duration / 60000)} min</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 2 }}>
+                    {ep.duration ? <Text style={styles.epMeta}>{Math.round(Number(ep.duration) / 60000)} min</Text> : null}
+                    {pct > 0 ? <Text style={styles.epResume}>Resume at {resumeMins}m</Text> : null}
+                  </View>
+                  {pct > 0 ? (
+                    <View style={styles.epProgressTrack}>
+                      <View style={[styles.epProgressFill, { width: `${pct}%` }]} />
+                    </View>
                   ) : null}
                   {ep.summary ? (
                     <Text style={styles.epSummary} numberOfLines={2}>{ep.summary}</Text>
                   ) : null}
                 </View>
               </Pressable>
-            ))}
+              );
+            })}
           </View>
         )}
       </ScrollView>
@@ -287,5 +304,19 @@ const styles = StyleSheet.create({
   },
   epTitle: { color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontBody },
   epMeta: { color: colors.zinc500, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontTiny, marginTop: 2 },
+  epResume: { color: colors.cyan, fontFamily: "Outfit_500Medium", fontSize: SIZES.fontTiny },
+  epProgressTrack: {
+    marginTop: 6,
+    height: 4,
+    width: "100%",
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    overflow: "hidden",
+  },
+  epProgressFill: {
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: colors.cyan,
+  },
   epSummary: { color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall, marginTop: 4 },
 });

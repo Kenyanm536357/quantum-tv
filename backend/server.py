@@ -450,7 +450,7 @@ async def _iptv_get(action: Optional[str] = None, params: Optional[dict] = None)
 # minutes, one request at a time, and all user-facing endpoints read from
 # that cache. This is both faster for users and far more reliable.
 # ---------------------------------------------------------------------------
-IPTV_CACHE_REFRESH_SECONDS = 240  # ~4 minutes
+IPTV_CACHE_REFRESH_SECONDS = 90  # refresh live/VOD/series every 90 seconds
 PUBLIC_M3U_CACHE_REFRESH_SECONDS = 6 * 60 * 60
 PUBLIC_M3U_SOURCES = [
     "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us_30a.m3u",
@@ -1205,6 +1205,7 @@ async def iptv_vod_streams(
     category_id: Optional[str] = None,
     exclude_adult: bool = False,
     limit: Optional[int] = None,
+    include_stream_url: bool = True,
     user: dict = Depends(get_current_user),
 ):
     try:
@@ -1215,21 +1216,24 @@ async def iptv_vod_streams(
     if category_id:
         raw = [s for s in raw if str(s.get("category_id") or "") == str(category_id)]
     adult_cat_ids = {cid for cid, name in cat_by_id.items() if _is_adult_category_name(name)}
-    cfg = _user_iptv_config(user)
+    max_items: Optional[int] = None
+    if limit is not None:
+        # Guard against extreme values that can spike memory/CPU on weaker devices.
+        max_items = max(1, min(int(limit), 20000))
+    cfg = _user_iptv_config(user) if include_stream_url else None
     out = []
     for s in (raw or []):
         # Bounded callers (e.g. the home screen) only need a handful of items —
         # stop early instead of transforming the entire catalog every request.
-        if limit is not None and len(out) >= limit:
+        if max_items is not None and len(out) >= max_items:
             break
         cid = str(s.get("category_id") or "")
         cat_name = cat_by_id.get(cid) or None
         # Skip adult content when requested
         if exclude_adult and (cid in adult_cat_ids or _is_adult_category_name(cat_name) or _is_adult_category_name(s.get("name"))):
             continue
-        ext = s.get("container_extension") or "mp4"
         thumb_raw = s.get("stream_icon")
-        out.append({
+        item = {
             "rating_key": f"iptv-movie-{s.get('stream_id')}",
             "stream_id": s.get("stream_id"),
             "title": s.get("name"),
@@ -1241,8 +1245,11 @@ async def iptv_vod_streams(
             "category_id": cid or None,
             "category_name": cat_name,
             "source": "iptv",
-            "stream_url": _iptv_stream_url(cfg, "movie", s.get("stream_id"), ext),
-        })
+        }
+        if include_stream_url and cfg is not None:
+            ext = s.get("container_extension") or "mp4"
+            item["stream_url"] = _iptv_stream_url(cfg, "movie", s.get("stream_id"), ext)
+        out.append(item)
     return {"items": out, "total": len(out)}
 
 
@@ -1250,6 +1257,7 @@ async def iptv_vod_streams(
 async def iptv_series_streams(
     category_id: Optional[str] = None,
     exclude_adult: bool = False,
+    limit: Optional[int] = None,
     _: dict = Depends(get_current_user),
 ):
     """Return all IPTV TV series from the Xtream Codes provider."""
@@ -1261,8 +1269,13 @@ async def iptv_series_streams(
     if category_id:
         raw = [s for s in raw if str(s.get("category_id") or "") == str(category_id)]
     adult_cat_ids = {cid for cid, name in cat_by_id.items() if _is_adult_category_name(name)}
+    max_items: Optional[int] = None
+    if limit is not None:
+        max_items = max(1, min(int(limit), 20000))
     out = []
     for s in (raw or []):
+        if max_items is not None and len(out) >= max_items:
+            break
         cid = str(s.get("category_id") or "")
         cat_name = cat_by_id.get(cid) or None
         # Skip adult content when requested

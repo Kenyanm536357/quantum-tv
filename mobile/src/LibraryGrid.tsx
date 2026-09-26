@@ -21,6 +21,9 @@ type LibItem = {
   leaf_count?: number;
 };
 
+const LIBRARY_REFRESH_MS = 90 * 1000;
+const LIBRARY_FETCH_LIMIT = 12000;
+
 export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: string }) {
   const router = useRouter();
   const qc = useQueryClient();
@@ -34,14 +37,23 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
   // Pass exclude_adult=true when adult channels are disabled so the server
   // pre-filters by category (catches content the client keyword filter misses).
   const endpoint = type === "movie" ? "/iptv/vod/streams" : "/iptv/series/streams";
-  const fetchUrl = `${endpoint}?exclude_adult=${requiresPin ? "true" : "false"}`;
+  const fetchUrl =
+    type === "movie"
+      ? `${endpoint}?exclude_adult=${requiresPin ? "true" : "false"}&limit=${LIBRARY_FETCH_LIMIT}&include_stream_url=false`
+      : `${endpoint}?exclude_adult=${requiresPin ? "true" : "false"}&limit=${LIBRARY_FETCH_LIMIT}`;
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["iptv-grid", type, requiresPin],
-    queryFn: async () => (await client.get(fetchUrl, { timeout: 180000 })).data as { items: LibItem[]; total: number },
-    staleTime: 5 * 60 * 1000,
-    retry: 2,
-    retryDelay: 2000,
+    queryFn: async () => (await client.get(fetchUrl, { timeout: 60000 })).data as { items: LibItem[]; total: number },
+    // Keep Movies/TV fresh for customers even when users stay on these tabs.
+    staleTime: 60 * 1000,
+    refetchInterval: LIBRARY_REFRESH_MS,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchOnMount: "always",
+    retry: 3,
+    retryDelay: (attempt) => Math.min(6000, 1000 * attempt),
   });
 
   // User's saved favorites for the gold-star badge

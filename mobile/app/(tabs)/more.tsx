@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, type ReactNode } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, Alert, Image, Modal, ActivityIndicator } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView, Alert, Image, Modal, ActivityIndicator, TextInput } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -149,6 +150,138 @@ function CategoryCard({ kicker, title, children }: { kicker: string; title: stri
   );
 }
 
+function EditProfileModal({
+  visible,
+  initialName,
+  initialAvatar,
+  onDismiss,
+  onSaved,
+}: {
+  visible: boolean;
+  initialName: string;
+  initialAvatar?: string | null;
+  onDismiss: () => void;
+  onSaved: (patch: { display_name?: string; avatar?: string | null }) => void;
+}) {
+  const [name, setName] = useState(initialName);
+  const [avatarUri, setAvatarUri] = useState<string | null | undefined>(initialAvatar);
+  const [pendingDataUrl, setPendingDataUrl] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (visible) {
+      setName(initialName);
+      setAvatarUri(initialAvatar);
+      setPendingDataUrl(null);
+      setError(null);
+    }
+  }, [visible, initialName, initialAvatar]);
+
+  const pickPhoto = useCallback(async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert("Permission needed", "Allow photo access to set a profile picture.");
+        return;
+      }
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+        base64: true,
+      });
+      if (res.canceled || !res.assets?.[0]) return;
+      const asset = res.assets[0];
+      if (!asset.base64) {
+        setError("Could not read that photo. Try another one.");
+        return;
+      }
+      const mime = asset.mimeType || "image/jpeg";
+      const dataUrl = `data:${mime};base64,${asset.base64}`;
+      if (dataUrl.length > 700_000) {
+        setError("That photo is too large — pick a smaller one.");
+        return;
+      }
+      setError(null);
+      setAvatarUri(asset.uri);
+      setPendingDataUrl(dataUrl);
+    } catch {
+      setError("Couldn't open your photo library.");
+    }
+  }, []);
+
+  const save = useCallback(async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("Name can't be empty.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const body: { display_name?: string; avatar?: string } = {};
+      if (trimmed !== initialName) body.display_name = trimmed;
+      if (pendingDataUrl) body.avatar = pendingDataUrl;
+      if (Object.keys(body).length === 0) {
+        onDismiss();
+        return;
+      }
+      const { data } = await client.patch("/me", body);
+      onSaved({ display_name: data.display_name, avatar: data.avatar });
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "Couldn't save your changes. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  }, [name, pendingDataUrl, initialName, onSaved, onDismiss]);
+
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onDismiss}>
+      <View style={ps.backdrop}>
+        <View style={[ps.card, { maxWidth: ms(400) }]}>
+          <Text style={ps.title}>Edit Profile</Text>
+          <Text style={ps.subtitle}>Update your display name and photo</Text>
+
+          <Pressable focusable onPress={pickPhoto} style={({ focused }) => [epStyles.avatarPick, focused && { borderColor: colors.cyan }]}>
+            <Image source={{ uri: avatarUri || "https://i.pravatar.cc/200" }} style={epStyles.avatarPickImg} />
+            <View style={epStyles.avatarPickBadge}>
+              <Ionicons name="camera" size={ms(14)} color="#050614" />
+            </View>
+          </Pressable>
+
+          <Text style={epStyles.label}>DISPLAY NAME</Text>
+          <TextInput
+            value={name}
+            onChangeText={setName}
+            placeholder="Your name"
+            placeholderTextColor="rgba(255,255,255,0.35)"
+            style={epStyles.input}
+            maxLength={40}
+            autoCapitalize="words"
+          />
+
+          {error ? <Text style={ps.pinError}>{error}</Text> : null}
+
+          <View style={epStyles.actionsRow}>
+            <Pressable focusable onPress={onDismiss} style={({ focused }) => [ps.cancelBtn, { marginTop: 0 }, focused && { borderColor: colors.cyan }]}>
+              <Text style={ps.cancelTxt}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              focusable
+              onPress={saving ? undefined : save}
+              style={({ focused }) => [epStyles.saveBtn, focused && { borderColor: colors.cyan }]}
+            >
+              {saving ? <ActivityIndicator size="small" color="#050614" /> : <Text style={epStyles.saveTxt}>Save</Text>}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export default function Settings() {
   const router = useRouter();
   const qc = useQueryClient();
@@ -163,6 +296,7 @@ export default function Settings() {
   const [busyAdult, setBusyAdult] = useState(false);
   const [otaBusy, setOtaBusy] = useState(false);
   const [otaMsg, setOtaMsg] = useState<string | null>(null);
+  const [editProfileVisible, setEditProfileVisible] = useState(false);
   const otaInfo = getOtaInfo();
 
   useEffect(() => {
@@ -255,6 +389,15 @@ export default function Settings() {
     setParentalUnlocked(false);
   }, []);
 
+  const handleProfileSaved = useCallback(async (patch: { display_name?: string; avatar?: string | null }) => {
+    setUser((prev: any) => {
+      const next = { ...(prev || {}), ...patch };
+      AsyncStorage.setItem("qtv_user", JSON.stringify(next));
+      return next;
+    });
+    setEditProfileVisible(false);
+  }, []);
+
   const onToggleAdult = useCallback(async () => {
     if (busyAdult) return;
     if (adultEnabled) {
@@ -315,13 +458,24 @@ export default function Settings() {
           <View style={styles.profile}>
             <Image source={{ uri: user?.avatar || "https://i.pravatar.cc/200" }} style={styles.avatar} />
             <View style={{ marginLeft: 14, flex: 1 }}>
-              <Text style={styles.name}>{user?.username || "Guest"}</Text>
-              <Text style={styles.email}>{user?.email || "Signed in on this device"}</Text>
+              <Text style={styles.name}>{user?.display_name || user?.username || "Guest"}</Text>
+              <Text style={styles.email}>{user?.account_number ? `Account #${user.account_number}` : "Signed in on this device"}</Text>
             </View>
             <View style={styles.badge}>
               <Text style={styles.badgeTxt}>ACTIVE</Text>
             </View>
           </View>
+          <View style={styles.divider} />
+          <SettingRow
+            testID="edit-profile-btn"
+            icon="create-outline"
+            iconColor={colors.cyan}
+            iconBg="rgba(103,232,249,0.14)"
+            title="Edit profile"
+            subtitle="Change your name and profile photo"
+            onPress={() => setEditProfileVisible(true)}
+            right={<Ionicons name="chevron-forward" size={ms(16)} color={colors.zinc500} />}
+          />
         </CategoryCard>
 
         <CategoryCard kicker="02" title="Content & Privacy">
@@ -462,6 +616,14 @@ export default function Settings() {
         onSubmit={pinVerifying ? () => {} : handlePinSubmit}
         onDismiss={() => { setPinModalVisible(false); setPinError(null); }}
         error={pinError}
+      />
+
+      <EditProfileModal
+        visible={editProfileVisible}
+        initialName={user?.display_name || user?.username || ""}
+        initialAvatar={user?.avatar}
+        onDismiss={() => setEditProfileVisible(false)}
+        onSaved={handleProfileSaved}
       />
     </BrandBackground>
   );
@@ -645,4 +807,40 @@ const ps = StyleSheet.create({
   numKeyLabel: { color: "#fff", fontFamily: "Unbounded_700Bold", fontSize: ms(16) },
   cancelBtn: { marginTop: vs(14), paddingHorizontal: ms(24), paddingVertical: vs(8), borderRadius: 999, borderWidth: 1, borderColor: "rgba(255,255,255,0.12)" },
   cancelTxt: { color: colors.zinc300, fontFamily: "Outfit_600SemiBold", fontSize: ms(13) },
+});
+
+// Edit-profile modal styles
+const epStyles = StyleSheet.create({
+  avatarPick: {
+    width: ms(84), height: ms(84), borderRadius: 999,
+    borderWidth: 2, borderColor: "rgba(255,255,255,0.15)",
+    alignSelf: "center", marginTop: vs(4), marginBottom: vs(16),
+  },
+  avatarPickImg: { width: "100%", height: "100%", borderRadius: 999 },
+  avatarPickBadge: {
+    position: "absolute", right: -2, bottom: -2,
+    width: ms(26), height: ms(26), borderRadius: 999,
+    backgroundColor: colors.cyan, alignItems: "center", justifyContent: "center",
+    borderWidth: 2, borderColor: "#150826",
+  },
+  label: {
+    color: colors.zinc500, fontFamily: "Outfit_600SemiBold", fontSize: ms(11),
+    letterSpacing: 1.4, alignSelf: "flex-start", marginBottom: vs(6),
+  },
+  input: {
+    width: "100%", color: "#fff", fontFamily: "Outfit_400Regular", fontSize: ms(15),
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.14)", borderRadius: 14,
+    paddingHorizontal: ms(14), paddingVertical: vs(10),
+    backgroundColor: "rgba(255,255,255,0.05)",
+  },
+  actionsRow: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    width: "100%", marginTop: vs(18),
+  },
+  saveBtn: {
+    paddingHorizontal: ms(28), paddingVertical: vs(10), borderRadius: 999,
+    backgroundColor: colors.cyan, borderWidth: 1, borderColor: colors.cyan,
+    alignItems: "center", justifyContent: "center", minWidth: ms(84),
+  },
+  saveTxt: { color: "#050614", fontFamily: "Outfit_600SemiBold", fontSize: ms(13) },
 });

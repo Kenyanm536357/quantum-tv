@@ -43,6 +43,12 @@
       "expo-router",
       "expo-video",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Quantum TV needs access to your photos so you can set a profile picture."
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {

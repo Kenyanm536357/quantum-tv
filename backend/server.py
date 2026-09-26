@@ -175,7 +175,15 @@ api = APIRouter(prefix="/api")
 # ============================================================
 @api.get("/")
 async def root():
-    return {"service": "quantum-tv", "status": "ok", "time": now_iso()}
+    return {
+        "service": "quantum-tv",
+        "status": "ok",
+        "time": now_iso(),
+        # Marker so we can confirm from the outside which commit a Railway
+        # deploy is actually serving (Railway sets RAILWAY_GIT_COMMIT_SHA
+        # automatically on every build; falls back to "unknown" locally).
+        "build": os.environ.get("RAILWAY_GIT_COMMIT_SHA", "unknown")[:12],
+    }
 
 
 # ============================================================
@@ -2062,6 +2070,54 @@ async def me(user: dict = Depends(get_current_user)):
         "avatar": user.get("avatar"),
         "watchlist_count": len(user.get("watchlist") or []),
         "favorites_count": len(user.get("favorites") or []),
+    }
+
+
+class UpdateMeBody(BaseModel):
+    display_name: Optional[str] = None
+    # Data URL (e.g. "data:image/jpeg;base64,....") produced client-side after
+    # picking + compressing a photo. Kept as a plain string on the user doc so
+    # it can be dropped straight into an <Image source={{ uri }}> with no
+    # extra file-hosting endpoint needed.
+    avatar: Optional[str] = None
+
+
+MAX_AVATAR_DATA_URL_LEN = 700_000  # ~500KB image, base64-inflated
+
+
+@api.patch("/me")
+async def update_me(body: UpdateMeBody, user: dict = Depends(get_current_user)):
+    """Self-service profile update: display name + profile photo only.
+    The login `username` itself is not editable here (it's tied to the
+    account's auth identity / IPTV credentials)."""
+    update: dict = {}
+    if body.display_name is not None:
+        name = body.display_name.strip()
+        if not name:
+            raise HTTPException(400, "Display name can't be empty")
+        if len(name) > 40:
+            raise HTTPException(400, "Display name is too long (max 40 characters)")
+        update["display_name"] = name
+    if body.avatar is not None:
+        avatar = body.avatar.strip()
+        if avatar:
+            if not avatar.startswith("data:image/"):
+                raise HTTPException(400, "Avatar must be an image data URL")
+            if len(avatar) > MAX_AVATAR_DATA_URL_LEN:
+                raise HTTPException(400, "Image is too large — please choose a smaller photo")
+            update["avatar"] = avatar
+        else:
+            update["avatar"] = None  # explicit empty string clears the photo
+    if not update:
+        raise HTTPException(400, "Nothing to update")
+    update["updated_at"] = now_iso()
+    await db.users.update_one({"id": user["id"]}, {"$set": update})
+    fresh = await db.users.find_one({"id": user["id"]}) or user
+    return {
+        "id": fresh["id"],
+        "username": fresh["username"],
+        "display_name": fresh.get("display_name") or fresh["username"],
+        "avatar": fresh.get("avatar"),
     }
 
 

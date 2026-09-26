@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 import uuid
 import asyncio
 import base64
@@ -254,6 +255,7 @@ async def login(body: LoginBody):
         {"$set": {"last_login": now, "devices": devices}},
     )
     token = create_jwt({"sub": user["id"], "role": "user", "username": user["username"]})
+    _kick_agent_refresh()
     return {
         "token": token,
         "role": "user",
@@ -369,6 +371,7 @@ async def auth_iptv_login(body: IptvSignInBody):
         }},
     )
     token = create_jwt({"sub": user["id"], "role": "user", "username": user["username"]})
+    _kick_agent_refresh()
     return {
         "token": token,
         "role": "user",
@@ -703,10 +706,40 @@ async def _iptv_cache_refresh_loop() -> None:
     IPTV_CACHE_REFRESH_SECONDS, forever, independent of user traffic."""
     while True:
         try:
-            await _iptv_refresh_all_once()
+            await _iptv_refresh_all_once_locked()
         except Exception as e:
             log.warning("IPTV cache refresh loop error: %s", e)
         await asyncio.sleep(IPTV_CACHE_REFRESH_SECONDS)
+
+
+# ---------------------------------------------------------------------------
+# 24/7 catalog agent — the provider allows only ONE concurrent connection, so
+# a refresh triggered by a user opening the app must never overlap with the
+# scheduled background pass above (both call _iptv_refresh_all_once). This
+# lock makes an overlap a no-op skip instead of a colliding provider request.
+# ---------------------------------------------------------------------------
+_iptv_refresh_lock = asyncio.Lock()
+_last_agent_kick_ts = 0.0
+AGENT_KICK_COOLDOWN_SECONDS = 90  # don't hammer the single-connection provider on every login
+
+
+async def _iptv_refresh_all_once_locked() -> None:
+    if _iptv_refresh_lock.locked():
+        return
+    async with _iptv_refresh_lock:
+        await _iptv_refresh_all_once()
+
+
+def _kick_agent_refresh() -> None:
+    """Fire-and-forget nudge for the 24/7 agent: instead of waiting for the
+    next scheduled tick, refresh right now whenever a user opens/logs into
+    the app, so stale/broken catalog entries get fixed sooner."""
+    global _last_agent_kick_ts
+    now = time.monotonic()
+    if now - _last_agent_kick_ts < AGENT_KICK_COOLDOWN_SECONDS:
+        return
+    _last_agent_kick_ts = now
+    asyncio.create_task(_background_task_guard(_iptv_refresh_all_once_locked))
 
 
 async def _iptv_cached(kind: str) -> tuple[list[dict], dict[str, str]]:
@@ -2233,8 +2266,17 @@ async def browse_rows(user: dict = Depends(get_current_user), per_row: int = 20,
     live_resp, vod_resp = await asyncio.gather(live_task, vod_task, return_exceptions=False)
 
     # --- Top Live channels ---------------------------------------------------
+    # Feature US channels only on this row — customers reported non-US
+    # (e.g. African) channels frequently failing to play, and 24/7 marathon
+    # channels aren't wanted here either. This only affects the Browse
+    # screen's row; the full Live TV tab still lists everything.
     try:
         chs = (live_resp or {}).get("channels", []) or []
+        chs = [
+            c for c in chs
+            if str(c.get("country") or "") in {"USA", "United States"}
+            and str(c.get("genre") or "") != "24/7"
+        ]
         chs.sort(key=lambda c: (0 if c.get("logo") else 1, str(c.get("title") or "")))
         top_live = chs[:per_row]
         if top_live:

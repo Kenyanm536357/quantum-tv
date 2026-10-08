@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { View, Text, FlatList, Pressable, Image, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
+import { View, Text, FlatList, Pressable, Image, StyleSheet, ActivityIndicator, useWindowDimensions } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,14 +21,24 @@ type LibItem = {
   leaf_count?: number;
 };
 
+type SortOrder = "az" | "newest" | "oldest";
+
+function releaseYear(item: LibItem): number | null {
+  const match = String(item.year ?? "").match(/\b(\d{4})\b/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  return year > 0 ? year : null;
+}
+
 const LIBRARY_REFRESH_MS = 90 * 1000;
 const LIBRARY_FETCH_LIMIT = 12000;
 
 export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: string }) {
+  const { width: screenWidth } = useWindowDimensions();
   const router = useRouter();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
-  const [activeCategory, setActiveCategory] = useState("All");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("az");
 
   // Parental gate — exclude adult content when disabled
   const { requiresPin } = useParentalGate();
@@ -93,33 +103,35 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
     return raw.filter((it) => !isAdultCategory(undefined, it.category_name, it.title));
   }, [data, requiresPin]);
 
-  // Derive unique categories from loaded items for filter chips (use category_name if available)
-  const categories = useMemo(() => {
-    const seen = new Set<string>();
-    const cats: string[] = ["All"];
-    for (const it of allItems) {
-      // Prefer human-readable category_name; fall back to category_id
-      const c = String(it.category_name || it.category_id || "").trim();
-      if (c && !seen.has(c)) { seen.add(c); cats.push(c); }
-    }
-    return cats;
-  }, [allItems]);
-
-  // Apply category + search filters
+  // Apply search, then sort the matching catalog.
   const filtered = useMemo(() => {
     let list = allItems;
-    if (activeCategory !== "All") {
-      list = list.filter((it) => {
-        const cat = String(it.category_name || it.category_id || "").trim();
-        return cat === activeCategory;
-      });
-    }
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       list = list.filter((it) => (it.title || "").toLowerCase().includes(q));
     }
-    return list;
-  }, [allItems, activeCategory, search]);
+    const sorted = [...list];
+    sorted.sort((a, b) => {
+      if (sortOrder === "az") {
+        return String(a.title || "").localeCompare(String(b.title || ""), undefined, { sensitivity: "base", numeric: true });
+      }
+      const yearA = releaseYear(a);
+      const yearB = releaseYear(b);
+      // Keep entries with no release year at the end for either date order.
+      if (yearA === null || yearB === null) {
+        if (yearA === yearB) return String(a.title || "").localeCompare(String(b.title || ""), undefined, { sensitivity: "base", numeric: true });
+        return yearA === null ? 1 : -1;
+      }
+      const byYear = sortOrder === "newest" ? yearB - yearA : yearA - yearB;
+      return byYear || String(a.title || "").localeCompare(String(b.title || ""), undefined, { sensitivity: "base", numeric: true });
+    });
+    return sorted;
+  }, [allItems, search, sortOrder]);
+
+  const columns = GRID_COLS.posters;
+  const gridGap = SIZES.gap;
+  const cardWidth = Math.max(96, (screenWidth - SAFE.left - SAFE.right - gridGap * (columns - 1)) / columns);
+  const cardHeight = cardWidth * 1.5;
 
   return (
     <BrandBackground>
@@ -165,31 +177,34 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
         />
       </View>
 
-      {/* Category chips */}
-      {categories.length > 1 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: SAFE.left, paddingBottom: vs(8), gap: 8 }}
-        >
-          {categories.map((cat) => (
+      {/* Sort controls apply after category and search filtering. */}
+      <View style={[styles.sortRow, { paddingHorizontal: SAFE.left, paddingRight: SAFE.right }]}>
+        <Text style={styles.sortCaption}>SORT</Text>
+        {([
+          ["az", "A–Z"],
+          ["newest", "Newest"],
+          ["oldest", "Oldest"],
+        ] as const).map(([value, title]) => {
+          const active = sortOrder === value;
+          return (
             <Pressable
-              key={cat}
+              key={value}
+              testID={`sort-${value}`}
               focusable
-              onPress={() => setActiveCategory(cat)}
+              onPress={() => setSortOrder(value)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
               style={({ focused }) => [
-                styles.chip,
-                activeCategory === cat && styles.chipActive,
-                focused && styles.chipFocused,
+                styles.sortChip,
+                active && styles.sortChipActive,
+                focused && styles.sortChipFocused,
               ]}
             >
-              <Text style={[styles.chipLabel, activeCategory === cat && styles.chipLabelActive]}>
-                {cat === "All" ? "All" : cat}
-              </Text>
+              <Text style={[styles.sortChipLabel, active && styles.sortChipLabelActive]}>{title}</Text>
             </Pressable>
-          ))}
-        </ScrollView>
-      )}
+          );
+        })}
+      </View>
 
       {/* Loading / error states */}
       {isLoading && <ActivityIndicator color={colors.cyan} style={{ marginTop: 40 }} />}
@@ -208,17 +223,18 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
         <View style={{ alignItems: "center", padding: 40 }}>
           <Ionicons name="film-outline" size={ms(36)} color={colors.zinc500} />
           <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", marginTop: 10, textAlign: "center", fontSize: SIZES.fontSmall }}>
-            {search || activeCategory !== "All" ? "No results match your search." : `No ${label.toLowerCase()} available.`}
+            {search ? "No results match your search." : `No ${label.toLowerCase()} available.`}
           </Text>
         </View>
       )}
 
       {/* Grid */}
       <FlatList
-        contentContainerStyle={{ paddingHorizontal: SAFE.left, paddingBottom: SIZES.tabBarH + vs(40) }}
+        key={`library-grid-${type}-${columns}`}
+        contentContainerStyle={{ paddingLeft: SAFE.left, paddingRight: SAFE.right, paddingBottom: SIZES.tabBarH + vs(40) }}
         data={filtered}
         keyExtractor={(it: LibItem) => String(it.rating_key)}
-        numColumns={GRID_COLS.posters}
+        numColumns={columns}
         columnWrapperStyle={{ gap: SIZES.gap }}
         ItemSeparatorComponent={() => <View style={{ height: SIZES.gap }} />}
         initialNumToRender={20}
@@ -232,14 +248,14 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
               testID={`grid-${item.rating_key}`}
               focusable
               hasTVPreferredFocus={index === 0}
-              style={{ flex: 1, borderRadius: SIZES.radius, backgroundColor: "transparent" }}
+              style={{ width: cardWidth, borderRadius: SIZES.radius, backgroundColor: "transparent" }}
               onPress={() => openItem(item)}
               onLongPress={() => toggleFav.mutate(item)}
             >
               {({ focused }) => (
                 <View>
                   <View style={[
-                    { height: IS_TV ? vs(220) : vs(170), borderRadius: SIZES.radius, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 2, borderColor: "rgba(255,255,255,0.05)" },
+                    { width: cardWidth, height: cardHeight, borderRadius: SIZES.radius, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 2, borderColor: "rgba(255,255,255,0.05)" },
                     focused && { borderColor: colors.cyan, transform: [{ scale: 1.04 }], shadowColor: colors.cyan, shadowOpacity: 0.6, shadowRadius: 20, elevation: 12 },
                   ]}>
                     {item.thumb ? (
@@ -280,35 +296,34 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
 }
 
 const styles = StyleSheet.create({
-  chip: {
-    paddingHorizontal: s(14),
+  sortRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: vs(8),
+  },
+  sortCaption: {
+    color: colors.zinc500,
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: SIZES.fontTiny,
+    letterSpacing: 1,
+    marginRight: 2,
+  },
+  sortChip: {
+    minHeight: vs(34),
+    justifyContent: "center",
+    paddingHorizontal: s(12),
     paddingVertical: vs(6),
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
+    borderColor: "rgba(255,255,255,0.14)",
     backgroundColor: "rgba(255,255,255,0.05)",
   },
-  chipActive: {
-    backgroundColor: colors.cyan,
-    borderColor: colors.cyan,
-  },
-  chipFocused: {
-    backgroundColor: colors.purple,
-    borderColor: colors.purple,
-    shadowColor: colors.purple,
-    shadowOpacity: 0.6,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  chipLabel: {
-    color: "#fff",
-    fontFamily: "Outfit_500Medium",
-    fontSize: SIZES.fontSmall,
-  },
-  chipLabelActive: {
-    color: "#050614",
-    fontFamily: "Unbounded_700Bold",
-  },
+  sortChipActive: { backgroundColor: "rgba(103,232,249,0.18)", borderColor: colors.cyan },
+  sortChipFocused: { borderColor: colors.purple, backgroundColor: "rgba(139,92,246,0.24)" },
+  sortChipLabel: { color: colors.zinc300, fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall },
+  sortChipLabelActive: { color: colors.cyan, fontFamily: "Unbounded_700Bold" },
 });
 
 export default LibraryGrid;

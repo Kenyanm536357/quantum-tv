@@ -6,8 +6,8 @@ export default function Watchlist() {
       endpoint="/me/watchlist"
       title="Watchlist"
       removeLabel="remove"
-      removeFromList={(rk: string) => client.delete(`/me/watchlist/${rk}`)}
-      emptyText={"Your watchlist is empty.\nTap the bookmark on any movie to add it."}
+      removeFromList={(item: { rating_key: string }) => client.delete(`/me/watchlist/${encodeURIComponent(String(item.rating_key))}`)}
+      emptyText={"Your watchlist is empty.\nTap the bookmark on any movie or TV show to add it."}
     />
   );
 }

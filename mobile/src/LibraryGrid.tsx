@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { View, Text, FlatList, Pressable, Image, StyleSheet, ActivityIndicator, useWindowDimensions } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import client, { BACKEND, colors } from "./api";
 import BrandBackground from "./BrandBackground";
 import TVTextInput from "./TVTextInput";
@@ -19,6 +19,9 @@ type LibItem = {
   category_id?: string;
   category_name?: string;
   leaf_count?: number;
+  duration?: number;
+  view_offset?: number;
+  progress_pct?: number;
 };
 
 type SortOrder = "az" | "newest" | "oldest";
@@ -76,6 +79,32 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
     [favs.data]
   );
 
+  const watchlist = useQuery({
+    queryKey: ["/me/watchlist"],
+    queryFn: async () => (await client.get("/me/watchlist")).data as { items: LibItem[] },
+  });
+  const watchlistSet = useMemo(
+    () => new Set((watchlist.data?.items || []).map((item) => String(item.rating_key))),
+    [watchlist.data]
+  );
+
+  const continueWatching = useQuery({
+    queryKey: ["continue-watching"],
+    queryFn: async () => (await client.get("/continue-watching")).data as { items: LibItem[] },
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+  });
+  const progressByKey = useMemo(
+    () => new Map((continueWatching.data?.items || []).map((item) => [String(item.rating_key), item])),
+    [continueWatching.data]
+  );
+
+  useFocusEffect(useCallback(() => {
+    void watchlist.refetch();
+    void continueWatching.refetch();
+  }, [watchlist.refetch, continueWatching.refetch]));
+
   const toggleFav = useMutation({
     mutationFn: async (it: LibItem) => {
       const isFav = favSet.has(String(it.rating_key));
@@ -86,6 +115,17 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
       qc.invalidateQueries({ queryKey: ["favs"] });
       qc.invalidateQueries({ queryKey: ["/me/favorites"] });
     },
+  });
+
+  const toggleWatchlist = useMutation({
+    mutationFn: async (it: LibItem) => {
+      const ratingKey = String(it.rating_key);
+      if (watchlistSet.has(ratingKey)) {
+        return client.delete(`/me/watchlist/${encodeURIComponent(ratingKey)}`);
+      }
+      return client.post("/me/watchlist", { rating_key: ratingKey });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/me/watchlist"] }),
   });
 
   const openItem = (it: LibItem) => {
@@ -243,50 +283,84 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
         removeClippedSubviews
         renderItem={({ item, index }: { item: LibItem; index: number }) => {
           const isFav = favSet.has(String(item.rating_key));
+          const isWatchlisted = watchlistSet.has(String(item.rating_key));
+          const savedProgress = progressByKey.get(String(item.rating_key));
+          const progressPct = Math.max(0, Math.min(100, Math.round(
+            Number(savedProgress?.progress_pct || (savedProgress?.duration && savedProgress?.view_offset
+              ? Number(savedProgress.view_offset) / Number(savedProgress.duration)
+              : 0)) * 100
+          )));
+          const resumeMinutes = Math.floor(Number(savedProgress?.view_offset || 0) / 60_000);
+          const hasResume = resumeMinutes > 0;
           return (
-            <Pressable
-              testID={`grid-${item.rating_key}`}
-              focusable
-              hasTVPreferredFocus={index === 0}
-              style={{ width: cardWidth, borderRadius: SIZES.radius, backgroundColor: "transparent" }}
-              onPress={() => openItem(item)}
-              onLongPress={() => toggleFav.mutate(item)}
-            >
-              {({ focused }) => (
-                <View>
-                  <View style={[
-                    { width: cardWidth, height: cardHeight, borderRadius: SIZES.radius, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 2, borderColor: "rgba(255,255,255,0.05)" },
-                    focused && { borderColor: colors.cyan, transform: [{ scale: 1.04 }], shadowColor: colors.cyan, shadowOpacity: 0.6, shadowRadius: 20, elevation: 12 },
-                  ]}>
-                    {item.thumb ? (
-                      <Image source={{ uri: `${BACKEND}${item.thumb}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                    ) : (
-                      <LinearGradient colors={["#1A1C3A", "#0D0E23"]} style={StyleSheet.absoluteFill} />
-                    )}
-                    <LinearGradient colors={["transparent", "rgba(0,0,0,0.9)"]} style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "60%" }} />
-                    {isFav ? (
-                      <View style={{ position: "absolute", top: 8, right: 8, backgroundColor: "rgba(250,204,21,0.95)", borderRadius: 999, width: ms(22), height: ms(22), alignItems: "center", justifyContent: "center" }}>
-                        <Ionicons name="star" size={ms(13)} color="#050614" />
+            <View style={{ width: cardWidth }}>
+              <Pressable
+                testID={`grid-${item.rating_key}`}
+                focusable
+                hasTVPreferredFocus={index === 0}
+                style={{ width: cardWidth, borderRadius: SIZES.radius, backgroundColor: "transparent" }}
+                onPress={() => openItem(item)}
+                onLongPress={() => toggleFav.mutate(item)}
+              >
+                {({ focused }) => (
+                  <View>
+                    <View style={[
+                      { width: cardWidth, height: cardHeight, borderRadius: SIZES.radius, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 2, borderColor: "rgba(255,255,255,0.05)" },
+                      focused && { borderColor: colors.cyan, transform: [{ scale: 1.04 }], shadowColor: colors.cyan, shadowOpacity: 0.6, shadowRadius: 20, elevation: 12 },
+                    ]}>
+                      {item.thumb ? (
+                        <Image source={{ uri: `${BACKEND}${item.thumb}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                      ) : (
+                        <LinearGradient colors={["#1A1C3A", "#0D0E23"]} style={StyleSheet.absoluteFill} />
+                      )}
+                      <LinearGradient colors={["transparent", "rgba(0,0,0,0.9)"]} style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "60%" }} />
+                      {isFav ? (
+                        <View style={{ position: "absolute", top: 8, right: 8, backgroundColor: "rgba(250,204,21,0.95)", borderRadius: 999, width: ms(22), height: ms(22), alignItems: "center", justifyContent: "center" }}>
+                          <Ionicons name="star" size={ms(13)} color="#050614" />
+                        </View>
+                      ) : null}
+                      {(item.type || "").toLowerCase() === "show" ? (
+                        <View style={{ position: "absolute", top: 8, left: 8, backgroundColor: "rgba(6,182,212,0.9)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                          <Text style={{ color: "#050614", fontFamily: "Unbounded_800ExtraBold", fontSize: SIZES.fontTiny, letterSpacing: 1 }}>SHOW</Text>
+                        </View>
+                      ) : null}
+                      {hasResume ? (
+                        <>
+                          <View style={styles.resumeBadge}>
+                            <Text style={styles.resumeBadgeLabel}>RESUME · {progressPct > 0 ? `${progressPct}%` : `${resumeMinutes}m`}</Text>
+                          </View>
+                          {progressPct > 0 ? (
+                            <View style={styles.progressTrack}>
+                              <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
+                            </View>
+                          ) : null}
+                        </>
+                      ) : null}
+                      <View style={{ position: "absolute", bottom: 8, left: 8, right: 8 }}>
+                        <Text style={{ color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall }} numberOfLines={1}>{item.title}</Text>
+                        {item.year ? <Text style={{ color: colors.zinc500, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontTiny, marginTop: 1 }}>{item.year}</Text> : null}
                       </View>
-                    ) : null}
-                    {(item.type || "").toLowerCase() === "show" ? (
-                      <View style={{ position: "absolute", top: 8, left: 8, backgroundColor: "rgba(6,182,212,0.9)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                        <Text style={{ color: "#050614", fontFamily: "Unbounded_800ExtraBold", fontSize: SIZES.fontTiny, letterSpacing: 1 }}>SHOW</Text>
-                      </View>
-                    ) : null}
-                    <View style={{ position: "absolute", bottom: 8, left: 8, right: 8 }}>
-                      <Text style={{ color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall }} numberOfLines={1}>{item.title}</Text>
-                      {item.year ? <Text style={{ color: colors.zinc500, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontTiny, marginTop: 1 }}>{item.year}</Text> : null}
                     </View>
+                    {IS_TV ? (
+                      <Text style={{ color: colors.zinc500, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontTiny, marginTop: 4, textAlign: "center", opacity: focused ? 0.9 : 0.4 }}>
+                        Hold to {isFav ? "unfavorite" : "favorite"}
+                      </Text>
+                    ) : null}
                   </View>
-                  {IS_TV ? (
-                    <Text style={{ color: colors.zinc500, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontTiny, marginTop: 4, textAlign: "center", opacity: focused ? 0.9 : 0.4 }}>
-                      Hold to {isFav ? "unfavorite" : "favorite"}
-                    </Text>
-                  ) : null}
-                </View>
-              )}
-            </Pressable>
+                )}
+              </Pressable>
+              <Pressable
+                testID={`watchlist-${item.rating_key}`}
+                accessibilityRole="button"
+                accessibilityLabel={isWatchlisted ? `Remove ${item.title} from Watchlist` : `Add ${item.title} to Watchlist`}
+                accessibilityState={{ selected: isWatchlisted }}
+                focusable
+                onPress={() => toggleWatchlist.mutate(item)}
+                style={({ focused }) => [styles.watchlistButton, focused && styles.watchlistButtonFocused]}
+              >
+                <Ionicons name={isWatchlisted ? "bookmark" : "bookmark-outline"} size={ms(17)} color={isWatchlisted ? colors.cyan : "#fff"} />
+              </Pressable>
+            </View>
           );
         }}
       />
@@ -324,6 +398,41 @@ const styles = StyleSheet.create({
   sortChipFocused: { borderColor: colors.purple, backgroundColor: "rgba(139,92,246,0.24)" },
   sortChipLabel: { color: colors.zinc300, fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall },
   sortChipLabelActive: { color: colors.cyan, fontFamily: "Unbounded_700Bold" },
+  watchlistButton: {
+    position: "absolute",
+    top: 40,
+    right: 8,
+    width: ms(34),
+    height: ms(34),
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(5,6,20,0.78)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.35)",
+    zIndex: 2,
+    elevation: 4,
+  },
+  watchlistButtonFocused: { borderColor: colors.cyan, backgroundColor: "rgba(6,182,212,0.3)" },
+  resumeBadge: {
+    position: "absolute",
+    left: 8,
+    bottom: 42,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 5,
+    backgroundColor: "rgba(5,6,20,0.82)",
+  },
+  resumeBadgeLabel: { color: colors.cyan, fontFamily: "Unbounded_700Bold", fontSize: SIZES.fontTiny },
+  progressTrack: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 4,
+    backgroundColor: "rgba(255,255,255,0.3)",
+  },
+  progressFill: { height: 4, backgroundColor: colors.cyan },
 });
 
 export default LibraryGrid;

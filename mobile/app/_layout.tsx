@@ -11,7 +11,16 @@ import UpdatesToast from "../src/UpdatesToast";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-const qc = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } } });
+const qc = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+      staleTime: 30_000,
+      gcTime: 10 * 60 * 1000,
+    },
+  },
+});
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({

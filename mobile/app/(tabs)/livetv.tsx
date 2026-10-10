@@ -5,7 +5,8 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
 import client, { BACKEND, colors } from "../../src/api";
 import BrandBackground from "../../src/BrandBackground";
 import { SAFE, SIZES, IS_TV, vs, ms, s, SCREEN_W } from "../../src/responsive";
@@ -111,6 +112,7 @@ function shortCategoryLabel(name: string): string {
 }
 
 export default function LiveTV() {
+  const isFocused = useIsFocused();
   const router = useRouter();
   const qc = useQueryClient();
 
@@ -123,10 +125,13 @@ export default function LiveTV() {
     retry: 2,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     refetchOnReconnect: true,
-    refetchInterval: CHANNEL_REFRESH_MS,
+    refetchInterval: isFocused ? CHANNEL_REFRESH_MS : false,
     refetchOnWindowFocus: true,
     refetchIntervalInBackground: false,
   });
+  useFocusEffect(useCallback(() => {
+    if (dataUpdatedAt && Date.now() - dataUpdatedAt > CHANNEL_REFRESH_MS) void refetch();
+  }, [dataUpdatedAt, refetch]));
   const favQ = useQuery({
     queryKey: ["live-favorites"],
     queryFn: async () => (await client.get("/me/live/favorites")).data as { items: Channel[] },

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Image } from "react-native";
 import ImageWithFallback from "../../src/ImageWithFallback";
 import { useQuery } from "@tanstack/react-query";
@@ -14,10 +14,16 @@ import { useParentalGate, isAdultCategory } from "../../src/useParentalGate";
 export default function Search() {
   const router = useRouter();
   const [q, setQ] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQ(q.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [q]);
   const { data, isFetching } = useQuery({
-    enabled: q.length >= 2,
-    queryKey: ["search", q],
-    queryFn: async () => (await client.get(`/search?q=${encodeURIComponent(q)}`)).data,
+    enabled: debouncedQ.length >= 2,
+    queryKey: ["search", debouncedQ],
+    queryFn: async () => (await client.get(`/search?q=${encodeURIComponent(debouncedQ)}`)).data,
+    staleTime: 30_000,
   });
   const { requiresPin } = useParentalGate();
 
@@ -26,7 +32,7 @@ export default function Search() {
   const items = requiresPin
     ? allItems.filter((item) => !isAdultCategory(item.genre, item.category_name ?? item.category, item.title))
     : allItems;
-  const searched = q.trim().length >= 2;
+  const searched = debouncedQ.length >= 2 && debouncedQ === q.trim();
   const foundCount = Number(data?.total_found ?? items.length ?? 0);
 
   const openItem = (item: any) => {
@@ -76,7 +82,7 @@ export default function Search() {
             </Text>
           </View>
         ) : null}
-        {isFetching && <ActivityIndicator color={colors.cyan} style={{ marginTop: 24 }} />}
+        {(isFetching || (q.trim().length >= 2 && debouncedQ !== q.trim())) && <ActivityIndicator color={colors.cyan} style={{ marginTop: 24 }} />}
         <FlatList
           contentContainerStyle={{ paddingHorizontal: SAFE.left, paddingBottom: SIZES.tabBarH + vs(40), paddingTop: vs(20) }}
           data={items}

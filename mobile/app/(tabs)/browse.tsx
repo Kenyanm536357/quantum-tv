@@ -1,10 +1,10 @@
 import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl, ActivityIndicator, FlatList, TVFocusGuideView, Image } from "react-native";
 import ImageWithFallback from "../../src/ImageWithFallback";
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import client, { BACKEND, colors } from "../../src/api";
 import BrandBackground from "../../src/BrandBackground";
 import { SAFE, SIZES, IS_TV, s, vs, ms, FOCUSED_CARD } from "../../src/responsive";
@@ -203,10 +203,14 @@ function Hero({ item }: { item: BrowseItem }) {
 // ---------- Screen ---------------------------------------------------------
 export default function Browse() {
   const [refreshing, setRefreshing] = useState(false);
-  const { data, isLoading, refetch } = useQuery({
+  const { data, dataUpdatedAt, isLoading, refetch } = useQuery({
     queryKey: ["browse-rows"],
     queryFn: async () => (await client.get("/browse/rows?per_row=20")).data as { rows: BrowseRow[] },
+    staleTime: 60_000,
   });
+  useFocusEffect(useCallback(() => {
+    if (dataUpdatedAt && Date.now() - dataUpdatedAt > 60_000) void refetch();
+  }, [dataUpdatedAt, refetch]));
   const { requiresPin } = useParentalGate();
 
   const rawRows = data?.rows || [];

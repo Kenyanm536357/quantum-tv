@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useVideoPlayer, VideoView, type VideoPlayerStatus } from "expo-video";
+import { useKeepAwake } from "expo-keep-awake";
 import client, { colors } from "../../src/api";
 import { SAFE, SIZES, ms, vs, s as scale, IS_TV } from "../../src/responsive";
 import {
@@ -28,6 +29,11 @@ type Phase =
   | "launched"
   | "no-player"
   | "error";
+
+function PlaybackKeepAwake() {
+  useKeepAwake("quantum-tv-playback");
+  return null;
+}
 
 export default function Player() {
   const { rk, title } = useLocalSearchParams<{ rk: string; title: string }>();
@@ -336,6 +342,8 @@ export default function Player() {
   return (
     <View style={s.root}>
       <LinearGradient colors={["#0B0518", "#170634", "#0B0518"]} style={StyleSheet.absoluteFill} />
+
+      {phase === "in-app" && isPlaying && <PlaybackKeepAwake />}
 
       {phase === "in-app" && (
         <VideoView

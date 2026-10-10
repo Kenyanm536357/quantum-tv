@@ -33,7 +33,7 @@ function TVSideRail({ state, descriptors, navigation }: BottomTabBarProps) {
   // hasTVPreferredFocus without re-triggering it on every render.
   const initialTabKey = useRef(state.routes[state.index]?.key);
   const visibleRoutes = state.routes.filter(
-    (route) => descriptors[route.key]?.options?.href !== null && !HIDDEN_TAB_ROUTES.has(route.name),
+    (route) => (descriptors[route.key]?.options as unknown as { href?: string | null } | undefined)?.href !== null && !HIDDEN_TAB_ROUTES.has(route.name),
   );
 
   useEffect(() => () => { if (collapseTimer.current) clearTimeout(collapseTimer.current); }, []);
@@ -164,7 +164,7 @@ function TVSideRail({ state, descriptors, navigation }: BottomTabBarProps) {
 // ============================================================
 function BottomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const visibleRoutes = state.routes.filter(
-    (route) => descriptors[route.key]?.options?.href !== null && !HIDDEN_TAB_ROUTES.has(route.name),
+    (route) => (descriptors[route.key]?.options as unknown as { href?: string | null } | undefined)?.href !== null && !HIDDEN_TAB_ROUTES.has(route.name),
   );
   return (
     <View style={[styles.bar, { height: SIZES.tabBarH + SAFE.bottom, paddingBottom: SAFE.bottom + 2 }]}>
@@ -174,11 +174,13 @@ function BottomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
           const { options } = descriptors[route.key];
           const active = state.routes[state.index]?.key === route.key;
           const label = (options.title ?? route.name) as string;
+          const displayLabel = route.name === "search" ? "Master" : label;
           const iconRender = options.tabBarIcon;
           return (
             <Pressable
               key={route.key}
               testID={`tab-${route.name}`}
+              accessibilityLabel={options.tabBarAccessibilityLabel ?? label}
               focusable
               onPress={() => {
                 const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
@@ -196,7 +198,7 @@ function BottomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
                 return (
                   <>
                     {iconRender ? iconRender({ focused, color, size: SIZES.iconSm }) : null}
-                    <Text numberOfLines={1} style={[styles.label, { color, fontFamily: focused || active ? "Unbounded_700Bold" : "Outfit_500Medium" }]}>{label}</Text>
+                    <Text numberOfLines={1} style={[styles.label, { color, fontFamily: focused || active ? "Unbounded_700Bold" : "Outfit_500Medium" }]}>{displayLabel}</Text>
                   </>
                 );
               }}
@@ -221,7 +223,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="series"    options={{ title: "Series",    tabBarIcon: ({ color, size }) => <Ionicons name="albums-outline"   size={size ?? SIZES.iconMd} color={color} /> }} />
       <Tabs.Screen name="watchlist" options={{ title: "Watchlist", tabBarIcon: ({ color, size }) => <Ionicons name="bookmark-outline" size={size ?? SIZES.iconMd} color={color} /> }} />
       <Tabs.Screen name="favorites" options={{ title: "Favorites", tabBarIcon: ({ color, size }) => <Ionicons name="heart-outline"    size={size ?? SIZES.iconMd} color={color} /> }} />
-      <Tabs.Screen name="search"    options={{ title: "Search",    tabBarIcon: ({ color, size }) => <Ionicons name="search-outline"   size={size ?? SIZES.iconMd} color={color} /> }} />
+      <Tabs.Screen name="search"    options={{ title: "Master Search", tabBarAccessibilityLabel: "Master Search", tabBarIcon: ({ color, size }) => <Ionicons name="search-outline" size={size ?? SIZES.iconMd} color={color} /> }} />
       <Tabs.Screen name="more"      options={{ title: "Settings",  tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size ?? SIZES.iconMd} color={color} /> }} />
     </Tabs>
   );

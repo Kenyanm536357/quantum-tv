@@ -53,7 +53,7 @@ const ImageWithFallback: React.FC<Props> = ({
         // Prefer faster resize method to avoid partial-draw artifacts
         resizeMethod={Platform.OS === "android" ? "resize" : "auto"}
         // Ensure border rendering is solid to avoid missing seam pixels
-        style={[styles.image, style]}
+        style={style}
       />
     </View>
   );
@@ -62,10 +62,6 @@ const ImageWithFallback: React.FC<Props> = ({
 const styles = StyleSheet.create({
   container: {
     backgroundColor: "transparent",
-  },
-  image: {
-    // ensure solid border style to avoid hairline gaps when combined
-    borderStyle: "solid",
   },
   loader: {
     ...hairline("all"),

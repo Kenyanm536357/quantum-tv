@@ -13,7 +13,6 @@ import { SIZES, SAFE, vs, ms } from "./responsive";
 type Props = React.PropsWithChildren<{ label?: string }>;
 type State = { err: Error | null };
 export class ErrorBoundary extends React.Component<Props, State> {
-  state: State;
   constructor(props: Props) {
     super(props);
     this.state = { err: null };

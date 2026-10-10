@@ -98,7 +98,9 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
     refetchOnWindowFocus: true,
   });
   const progressByKey = useMemo(
-    () => new Map((continueWatching.data?.items || []).map((item) => [String(item.rating_key), item])),
+    () => new Map<string, LibItem>(
+      (continueWatching.data?.items || []).map((item): [string, LibItem] => [String(item.rating_key), item])
+    ),
     [continueWatching.data]
   );
 

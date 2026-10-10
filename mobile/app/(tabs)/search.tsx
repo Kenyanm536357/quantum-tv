@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Image } from "react-native";
+import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Image, ScrollView } from "react-native";
 import ImageWithFallback from "../../src/ImageWithFallback";
 import { useQuery } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
@@ -9,20 +9,33 @@ import client, { BACKEND, colors } from "../../src/api";
 import BrandBackground from "../../src/BrandBackground";
 import TVTextInput from "../../src/TVTextInput";
 import { IS_TV, SAFE, SIZES, vs, ms, s as scale } from "../../src/responsive";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useParentalGate, isAdultCategory } from "../../src/useParentalGate";
 
+type MediaType = "all" | "movie" | "show" | "live";
+
+const MEDIA_FILTERS: Array<{ value: MediaType; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "movie", label: "Movies" },
+  { value: "show", label: "TV Shows" },
+  { value: "live", label: "Live" },
+];
+
 export default function Search() {
+  const insets = useSafeAreaInsets();
+  const safeTop = Math.max(SAFE.top, insets.top + vs(8));
   const router = useRouter();
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
+  const [mediaType, setMediaType] = useState<MediaType>("all");
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQ(q.trim()), 250);
     return () => clearTimeout(timer);
   }, [q]);
-  const { data, isFetching } = useQuery({
+  const { data, isFetching, isError, refetch } = useQuery({
     enabled: debouncedQ.length >= 2,
-    queryKey: ["search", debouncedQ],
-    queryFn: async () => (await client.get(`/search?q=${encodeURIComponent(debouncedQ)}`)).data,
+    queryKey: ["search", mediaType, debouncedQ],
+    queryFn: async () => (await client.get(`/search?q=${encodeURIComponent(debouncedQ)}&media_type=${mediaType}&limit=100`)).data,
     staleTime: 30_000,
   });
   const { requiresPin } = useParentalGate();
@@ -33,7 +46,7 @@ export default function Search() {
     ? allItems.filter((item) => !isAdultCategory(item.genre, item.category_name ?? item.category, item.title))
     : allItems;
   const searched = debouncedQ.length >= 2 && debouncedQ === q.trim();
-  const foundCount = Number(data?.total_found ?? items.length ?? 0);
+  const foundCount = items.length;
 
   const openItem = (item: any) => {
     const isShow = (item.type || "").toLowerCase() === "show";
@@ -46,7 +59,7 @@ export default function Search() {
 
   return (
     <BrandBackground>
-      <View style={{ flex: 1, paddingTop: SAFE.top + vs(10) }}>
+      <View style={{ flex: 1, paddingTop: safeTop + vs(10) }}>
         <View style={{ paddingHorizontal: SAFE.left, flexDirection: "row", alignItems: "center", gap: 12 }}>
           <Image
             source={require("../../assets/logo.png")}
@@ -54,8 +67,8 @@ export default function Search() {
             resizeMode="contain"
           />
           <View style={{ flex: 1 }}>
-            <Text style={styles.kicker}>FIND</Text>
-            <Text style={styles.title}>Search</Text>
+            <Text style={styles.kicker}>MOVIES · TV · LIVE</Text>
+            <Text style={styles.title}>Master Search</Text>
           </View>
         </View>
         <View style={{ paddingHorizontal: SAFE.left, marginTop: vs(14) }}>
@@ -63,9 +76,20 @@ export default function Search() {
             testID="search-input"
             value={q}
             onChangeText={setQ}
-            placeholder="Search movies, shows, channels…"
+            placeholder="Search titles, channels, genres..."
             placeholderTextColor={colors.zinc500}
             left={<Ionicons name="search" size={ms(18)} color={colors.zinc500} />}
+            right={q ? (
+              <Pressable
+                testID="master-search-clear"
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+                onPress={() => setQ("")}
+                style={{ padding: 8 }}
+              >
+                <Ionicons name="close-circle" size={ms(18)} color={colors.zinc400} />
+              </Pressable>
+            ) : null}
             wrapperStyle={styles.searchBox}
             style={styles.searchInput}
             autoCapitalize="none"
@@ -73,31 +97,82 @@ export default function Search() {
             returnKeyType="search"
           />
         </View>
-        {searched && !isFetching ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterContent}>
+          {MEDIA_FILTERS.map((filter) => {
+            const selected = mediaType === filter.value;
+            return (
+              <Pressable
+                key={filter.value}
+                testID={`master-search-filter-${filter.value}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Filter ${filter.label}`}
+                accessibilityState={{ selected }}
+                onPress={() => setMediaType(filter.value)}
+                style={[styles.filterChip, selected && styles.filterChipSelected]}
+              >
+                <Text style={[styles.filterChipText, selected && styles.filterChipTextSelected]}>{filter.label}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+        {!q.trim() ? (
+          <Pressable
+            testID="master-search-sports-live"
+            accessibilityRole="button"
+            accessibilityLabel="Find live sports channels"
+            onPress={() => {
+              setMediaType("live");
+              setQ("sports");
+            }}
+            style={styles.sportsShortcut}
+          >
+            <Ionicons name="football-outline" size={ms(18)} color={colors.cyan} />
+            <Text style={styles.sportsShortcutText}>Sports Live</Text>
+            <Ionicons name="arrow-forward" size={ms(15)} color={colors.zinc500} />
+          </Pressable>
+        ) : null}
+        {searched && !isFetching && !isError ? (
           <View style={{ paddingHorizontal: SAFE.left, marginTop: vs(8) }}>
             <Text style={styles.resultMeta}>
-              {foundCount > 0
-                ? `${foundCount} result${foundCount === 1 ? "" : "s"} found for "${q.trim()}"`
-                : `No results found for "${q.trim()}"`}
+              {foundCount} {foundCount === 1 ? "match" : "matches"} in {MEDIA_FILTERS.find((filter) => filter.value === mediaType)?.label}
             </Text>
           </View>
         ) : null}
         {(isFetching || (q.trim().length >= 2 && debouncedQ !== q.trim())) && <ActivityIndicator color={colors.cyan} style={{ marginTop: 24 }} />}
+        {isError ? (
+          <View style={styles.errorNotice}>
+            <Text style={styles.errorText}>Search could not load right now.</Text>
+            <Pressable testID="master-search-retry" onPress={() => void refetch()} style={styles.retryButton}>
+              <Ionicons name="refresh" size={ms(15)} color="#050614" />
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
+          </View>
+        ) : null}
         <FlatList
           contentContainerStyle={{ paddingHorizontal: SAFE.left, paddingBottom: SIZES.tabBarH + vs(40), paddingTop: vs(20) }}
           data={items}
           keyExtractor={(it) => String(it.rating_key)}
           ListEmptyComponent={() => (
-            searched && !isFetching ? (
+            searched && !isFetching && !isError ? (
               <View style={styles.emptyWrap}>
                 <Ionicons name="search-outline" size={ms(30)} color={colors.zinc500} />
                 <Text style={styles.emptyTxt}>We could not find anything for "{q.trim()}".</Text>
               </View>
+            ) : !q.trim() ? (
+              <View style={styles.emptyWrap}>
+                <Ionicons name="compass-outline" size={ms(30)} color={colors.zinc500} />
+                <Text style={styles.emptyTxt}>Search the full catalog</Text>
+              </View>
             ) : null
           )}
-          renderItem={({ item }) => (
+          renderItem={({ item }) => {
+            const itemType = item.type === "live" ? "LIVE TV" : item.type === "show" ? "TV SHOW" : "MOVIE";
+            const detail = [item.year, item.genre || item.category_name].filter(Boolean).join(" · ");
+            return (
             <Pressable
               testID={`result-${item.rating_key}`}
+              accessibilityRole="button"
+              accessibilityLabel={`${item.title}, ${itemType}${detail ? `, ${detail}` : ""}`}
               focusable
               onPress={() => openItem(item)}
               style={({ focused }) => [
@@ -114,11 +189,12 @@ export default function Search() {
               </View>
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
-                <Text style={styles.rowSub} numberOfLines={1}>{item.type} {item.year ? `· ${item.year}` : ""}</Text>
+                <Text style={styles.rowSub} numberOfLines={1}>{itemType}{detail ? ` · ${detail}` : ""}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={ms(18)} color={colors.zinc500} />
+              <Ionicons name={item.type === "live" ? "play-circle-outline" : "chevron-forward"} size={ms(18)} color={colors.zinc500} />
             </Pressable>
-          )}
+            );
+          }}
         />
       </View>
     </BrandBackground>
@@ -135,6 +211,23 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: "rgba(139,92,246,0.30)",
   },
   searchInput: { flex: 1, color: "#fff", fontFamily: "Outfit_400Regular", fontSize: SIZES.fontBody },
+  filterScroll: { maxHeight: vs(44), marginTop: vs(12) },
+  filterContent: { paddingHorizontal: SAFE.left, gap: 8, alignItems: "center" },
+  filterChip: {
+    minHeight: vs(36), justifyContent: "center", paddingHorizontal: scale(14),
+    borderRadius: SIZES.radius, borderWidth: 1, borderColor: "rgba(255,255,255,0.14)",
+    backgroundColor: "rgba(255,255,255,0.05)",
+  },
+  filterChipSelected: { backgroundColor: colors.cyan, borderColor: colors.cyan },
+  filterChipText: { color: colors.zinc300, fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall },
+  filterChipTextSelected: { color: "#050614" },
+  sportsShortcut: {
+    alignSelf: "flex-start", marginHorizontal: SAFE.left, marginTop: vs(12),
+    minHeight: vs(40), flexDirection: "row", alignItems: "center", gap: 8,
+    paddingHorizontal: scale(12), borderWidth: 1, borderColor: "rgba(6,182,212,0.35)",
+    borderRadius: SIZES.radius, backgroundColor: "rgba(6,182,212,0.08)",
+  },
+  sportsShortcutText: { color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall },
   resultMeta: {
     color: colors.zinc400,
     fontFamily: "Outfit_400Regular",
@@ -161,4 +254,8 @@ const styles = StyleSheet.create({
     fontSize: SIZES.fontSmall,
     textAlign: "center",
   },
+  errorNotice: { paddingHorizontal: SAFE.left, marginTop: vs(20), alignItems: "center", gap: vs(10) },
+  errorText: { color: colors.zinc300, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall },
+  retryButton: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: colors.cyan, borderRadius: SIZES.radius, paddingHorizontal: scale(14), paddingVertical: vs(8) },
+  retryText: { color: "#050614", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontSmall },
 });

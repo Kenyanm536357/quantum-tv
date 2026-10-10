@@ -16,6 +16,7 @@ import asyncio
 import base64
 import logging
 import hashlib
+import unicodedata
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional, Any
@@ -566,6 +567,40 @@ _SEARCH_INDEX: dict[str, Any] = {
 _search_index_lock = asyncio.Lock()
 
 
+def _normalize_search_text(value: Any) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or "")).casefold()
+    without_marks = "".join(char for char in normalized if not unicodedata.combining(char))
+    return re.sub(r"[^\w]+", " ", without_marks).strip()
+
+
+def _score_search_item(item: dict, needle: str, terms: list[str]) -> Optional[tuple[int, int, int]]:
+    title = item.get("_title_search") or _normalize_search_text(item.get("title"))
+    searchable = item.get("_search_text") or title
+    title_words = title.split()
+    searchable_words = searchable.split()
+    if not terms or any(not any(term in word for word in searchable_words) for term in terms):
+        return None
+
+    title_matches = sum(any(term in word for word in title_words) for term in terms)
+    if title == needle:
+        relevance = 0
+    elif title.startswith(needle):
+        relevance = 1
+    elif title_matches == len(terms):
+        relevance = 2
+    elif needle in title:
+        relevance = 3
+    elif title_matches:
+        relevance = 4
+    else:
+        relevance = 5
+
+    position = title.find(needle)
+    if position < 0:
+        position = min((searchable.find(term) for term in terms if searchable.find(term) >= 0), default=len(searchable))
+    return relevance, position, len(title)
+
+
 async def _iptv_cache_set(kind: str, streams: list[dict], cat_by_id: dict[str, str]) -> None:
     """Stores large catalogs (VOD/series can be tens of thousands of items)
     split across multiple chunk documents, since a single doc holding every
@@ -789,12 +824,17 @@ async def _rebuild_search_index_once() -> None:
     This never calls the provider directly; it only consumes already-cached
     documents so searches stay fast and provider-safe.
     """
-    if _search_index_lock.locked():
-        return
     async with _search_index_lock:
         live_doc = await _iptv_cache_get_doc("live")
         vod_doc = await _iptv_cache_get_doc("vod")
         series_doc = await _iptv_cache_get_doc("series")
+        source_cache_updated_at = {
+            "live": (live_doc or {}).get("updated_at"),
+            "vod": (vod_doc or {}).get("updated_at"),
+            "series": (series_doc or {}).get("updated_at"),
+        }
+        if _SEARCH_INDEX["items"] and _SEARCH_INDEX["source_cache_updated_at"] == source_cache_updated_at:
+            return
 
         out: list[dict] = []
         seen: set[str] = set()
@@ -820,6 +860,8 @@ async def _rebuild_search_index_once() -> None:
                 "rating_key": rating_key,
                 "title": title,
                 "title_lc": title.lower(),
+                "_title_search": _normalize_search_text(title),
+                "_search_text": _normalize_search_text(" ".join(str(value) for value in (title, cls.get("genre"), cat_name) if value is not None)),
                 "type": "live",
                 "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
                 "year": None,
@@ -847,6 +889,8 @@ async def _rebuild_search_index_once() -> None:
                 "rating_key": rating_key,
                 "title": title,
                 "title_lc": title.lower(),
+                "_title_search": _normalize_search_text(title),
+                "_search_text": _normalize_search_text(" ".join(str(value) for value in (title, s.get("genre"), vod_cat_by_id.get(cid), s.get("year")) if value is not None)),
                 "type": "movie",
                 "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
                 "year": s.get("year"),
@@ -874,6 +918,8 @@ async def _rebuild_search_index_once() -> None:
                 "rating_key": rating_key,
                 "title": title,
                 "title_lc": title.lower(),
+                "_title_search": _normalize_search_text(title),
+                "_search_text": _normalize_search_text(" ".join(str(value) for value in (title, s.get("genre"), series_cat_by_id.get(cid), s.get("release_date")) if value is not None)),
                 "type": "show",
                 "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
                 "year": str(s.get("release_date") or "")[:4] or None,
@@ -884,11 +930,7 @@ async def _rebuild_search_index_once() -> None:
 
         _SEARCH_INDEX["items"] = out
         _SEARCH_INDEX["updated_at"] = now_iso()
-        _SEARCH_INDEX["source_cache_updated_at"] = {
-            "live": (live_doc or {}).get("updated_at"),
-            "vod": (vod_doc or {}).get("updated_at"),
-            "series": (series_doc or {}).get("updated_at"),
-        }
+        _SEARCH_INDEX["source_cache_updated_at"] = source_cache_updated_at
         log.info("Search index: refreshed %d items", len(out))
 
 
@@ -2573,14 +2615,19 @@ async def browse_rows(user: dict = Depends(get_current_user), per_row: int = 20,
 
 
 @api.get("/search")
-async def search(q: str, user: dict = Depends(get_current_user), limit: int = 50):
+async def search(q: str, user: dict = Depends(get_current_user), limit: int = 50, media_type: str = "all"):
     """Search IPTV live channels, VOD movies, and series by title.
 
     Uses the in-memory search index refreshed every SEARCH_INDEX_REFRESH_SECONDS.
     """
-    needle = (q or "").strip().lower()
+    needle = _normalize_search_text(q)
     if not needle:
         return {"items": [], "query": "", "total_found": 0, "index_updated_at": _SEARCH_INDEX.get("updated_at")}
+
+    media_type = media_type.strip().lower()
+    media_type = {"movies": "movie", "shows": "show", "series": "show", "tv": "show", "channels": "live"}.get(media_type, media_type)
+    if media_type not in {"all", "movie", "show", "live"}:
+        raise HTTPException(400, "type must be all, movie, show, or live")
 
     # If the process has just booted and index is still empty, do a one-off
     # synchronous rebuild so the first search still returns results.
@@ -2588,15 +2635,15 @@ async def search(q: str, user: dict = Depends(get_current_user), limit: int = 50
         await _rebuild_search_index_once()
 
     max_items = max(1, min(int(limit or 50), 200))
-    ranked: list[tuple[int, dict]] = []
+    terms = needle.split()
+    ranked: list[tuple[tuple[int, int, int], dict]] = []
     for item in (_SEARCH_INDEX.get("items") or []):
-        title_lc = item.get("title_lc") or ""
-        pos = title_lc.find(needle)
-        if pos < 0:
+        if media_type != "all" and item.get("type") != media_type:
             continue
-        # Prefer exact title starts and shorter titles for relevance.
-        score = (0 if title_lc.startswith(needle) else 1, pos, len(title_lc))
-        payload = {k: v for k, v in item.items() if k != "title_lc"}
+        score = _score_search_item(item, needle, terms)
+        if score is None:
+            continue
+        payload = {k: v for k, v in item.items() if not k.startswith("_") and k != "title_lc"}
         ranked.append((score, payload))
 
     ranked.sort(key=lambda x: x[0])

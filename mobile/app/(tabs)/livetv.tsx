@@ -235,7 +235,7 @@ export default function LiveTV() {
   const [category, setCategory] = useState<string>("All");
   const [filterOpen, setFilterOpen] = useState(false);
 
-  const { list, counts, countries, genres, categories } = useMemo(() => {
+  const { channels, counts, countries, genres, categories } = useMemo(() => {
       const raw: Channel[] = data?.channels || [];
       const deduped = Array.from(new Map(raw.map((c) => [String(c.key), c])).values());
       // Adult channels stay hidden while the parental gate is active
@@ -260,12 +260,16 @@ export default function LiveTV() {
         .map(([name, count]) => ({ name, count }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 18);
-      let filtered = all;
-      if (country !== "All") filtered = filtered.filter((x) => (x.country || "Other") === country);
-      if (genre !== "All") filtered = filtered.filter((x) => (x.genre || "General") === genre);
-      if (category !== "All") filtered = filtered.filter((x) => (x.category_name || x.genre || "Other") === category);
-      return { list: filtered.slice(0, MAX_CHANNELS), counts: { all: all.length }, countries, genres, categories };
-    }, [data, country, genre, category, requiresPin]);
+      return { channels: all, counts: { all: all.length }, countries, genres, categories };
+    }, [data, requiresPin]);
+
+  const list = useMemo(() => {
+    let filtered = channels;
+    if (country !== "All") filtered = filtered.filter((x) => (x.country || "Other") === country);
+    if (genre !== "All") filtered = filtered.filter((x) => (x.genre || "General") === genre);
+    if (category !== "All") filtered = filtered.filter((x) => (x.category_name || x.genre || "Other") === category);
+    return filtered.slice(0, MAX_CHANNELS);
+  }, [channels, country, genre, category]);
 
   // ---- Time slots (updates every minute) ----
   // Anchor at the last :00 or :30 boundary; render VISIBLE_SLOTS slots

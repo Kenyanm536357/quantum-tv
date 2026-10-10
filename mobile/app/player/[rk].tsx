@@ -64,6 +64,7 @@ export default function Player() {
   // visible/focusable play/pause or seek buttons on Android TV). We render
   // our own focusable control bar instead and drive it off the player API.
   const [isPlaying, setIsPlaying] = useState(true);
+  const [playerStatus, setPlayerStatus] = useState<VideoPlayerStatus>("idle");
   const [, setTick] = useState(0);
   const [controlsVisible, setControlsVisible] = useState(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -292,6 +293,7 @@ export default function Player() {
   // external player exactly once per attempt.
   useEffect(() => {
     const sub = player.addListener("statusChange", (status: VideoPlayerStatus) => {
+      setPlayerStatus(status);
       if (status === "error" && !fellBackRef.current) {
         const cancelledRef = { current: false };
         const canRetryWithTs = String(rk || "").startsWith("iptv-live-") && !triedTransportStreamRef.current;
@@ -354,6 +356,14 @@ export default function Player() {
           allowsPictureInPicture
           contentFit="contain"
         />
+      )}
+
+      {phase === "in-app" && playerStatus !== "readyToPlay" && playerStatus !== "error" && (
+        <View style={s.bufferingOverlay} pointerEvents="none">
+          <ActivityIndicator color={colors.cyan} size="large" />
+          <Text style={s.statusTitle}>Buffering stream…</Text>
+          <Text style={s.statusSub}>Waiting for the video provider and your connection.</Text>
+        </View>
       )}
 
       {/* Invisible full-screen target so a D-pad press/OK or a touch tap
@@ -608,6 +618,13 @@ export default function Player() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#0B0518" },
+  bufferingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(11,5,24,0.58)",
+  },
   backBtn: {
     position: "absolute",
     zIndex: 10,

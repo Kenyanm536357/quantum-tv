@@ -8,19 +8,36 @@ import client, { BACKEND, colors } from "./api";
 import BrandBackground from "./BrandBackground";
 import { SAFE, SIZES, GRID_COLS, IS_TV, vs, ms, s, FOCUSED_CARD } from "./responsive";
 
-export function ListScreen({ endpoint, title, removeLabel, removeFromList, emptyText }: any) {
+export function ListScreen({ endpoint, additionalEndpoints = [], title, removeLabel, removeFromList, emptyText }: any) {
   const router = useRouter();
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: [endpoint],
-    queryFn: async () => (await client.get(endpoint)).data,
+    queryFn: async () => {
+      const responses = await Promise.all([endpoint, ...additionalEndpoints].map((url: string) => client.get(url)));
+      const items = responses.flatMap((response: any, index: number) => {
+        const rows = response.data?.items || [];
+        if (index === 0) return rows;
+        return rows.map((item: any) => ({
+          ...item,
+          rating_key: String(item.rating_key || item.key),
+          type: "live",
+          thumb: item.thumb || item.logo || null,
+          favorite_source: "live",
+        }));
+      });
+      return { items: Array.from(new Map(items.map((item: any) => [String(item.rating_key), item])).values()) };
+    },
     refetchOnMount: "always",
     refetchOnReconnect: true,
     refetchOnWindowFocus: true,
   });
   const remove = useMutation({
-    mutationFn: async (rk: string) => removeFromList(rk),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [endpoint] }),
+    mutationFn: async (item: any) => removeFromList(item),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [endpoint] });
+      additionalEndpoints.forEach((url: string) => qc.invalidateQueries({ queryKey: [url] }));
+    },
   });
 
   const openItem = (item: any) => {
@@ -50,7 +67,7 @@ export function ListScreen({ endpoint, title, removeLabel, removeFromList, empty
         <FlatList
           contentContainerStyle={{ paddingHorizontal: SAFE.left, paddingBottom: SIZES.tabBarH + vs(40), paddingTop: vs(16) }}
           data={data?.items || []}
-          keyExtractor={(it: any) => String(it.rating_key)}
+          keyExtractor={(it: any) => String(it.rating_key || it.key)}
           numColumns={GRID_COLS.posters}
           columnWrapperStyle={{ gap: SIZES.gap }}
           ItemSeparatorComponent={() => <View style={{ height: SIZES.gap }} />}
@@ -67,11 +84,11 @@ export function ListScreen({ endpoint, title, removeLabel, removeFromList, empty
               focusable
               hasTVPreferredFocus={index === 0}
               onPress={() => openItem(item)}
-              onLongPress={() => remove.mutate(String(item.rating_key))}
+              onLongPress={() => remove.mutate(item)}
             >
               <View style={styles.card}>
                 {item.thumb ? (
-                  <Image source={{ uri: `${BACKEND}${item.thumb}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                  <Image source={{ uri: item.thumb.startsWith("http") ? item.thumb : `${BACKEND}${item.thumb}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                 ) : (
                   <LinearGradient colors={["#2A0F5A", "#0B0518"]} style={StyleSheet.absoluteFill} />
                 )}

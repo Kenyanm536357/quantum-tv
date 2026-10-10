@@ -128,7 +128,7 @@ export default function Index() {
   }, []);
 
   // Once ready, redirect to correct screen
-  if (phase === "ready" && token !== undefined) {
+  if (token !== undefined) {
     return token ? <Redirect href="/(tabs)/livetv" /> : <Redirect href="/login" />;
   }
 

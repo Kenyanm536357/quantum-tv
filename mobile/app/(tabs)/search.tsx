@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Image, ScrollView } from "react-native";
 import ImageWithFallback from "../../src/ImageWithFallback";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -25,6 +25,7 @@ export default function Search() {
   const insets = useSafeAreaInsets();
   const safeTop = Math.max(SAFE.top, insets.top + vs(8));
   const router = useRouter();
+  const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [mediaType, setMediaType] = useState<MediaType>("all");
@@ -37,6 +38,51 @@ export default function Search() {
     queryKey: ["search", mediaType, debouncedQ],
     queryFn: async () => (await client.get(`/search?q=${encodeURIComponent(debouncedQ)}&media_type=${mediaType}&limit=100`)).data,
     staleTime: 30_000,
+  });
+  const favorites = useQuery({
+    queryKey: ["/me/favorites"],
+    queryFn: async () => (await client.get("/me/favorites")).data as { items: Array<{ rating_key: string }> },
+    staleTime: 30_000,
+  });
+  const liveFavorites = useQuery({
+    queryKey: ["/me/live/favorites"],
+    queryFn: async () => (await client.get("/me/live/favorites")).data as { items: Array<{ key: string }> },
+    staleTime: 30_000,
+  });
+  const favoriteKeys = useMemo(
+    () => new Set((favorites.data?.items || []).map((item) => String(item.rating_key))),
+    [favorites.data]
+  );
+  const liveFavoriteKeys = useMemo(
+    () => new Set((liveFavorites.data?.items || []).map((item) => String(item.key))),
+    [liveFavorites.data]
+  );
+  const toggleFavorite = useMutation({
+    mutationFn: async (item: any) => {
+      const ratingKey = String(item.rating_key);
+      if (item.type === "live") {
+        if (liveFavoriteKeys.has(ratingKey)) {
+          return client.delete(`/me/live/favorites/${encodeURIComponent(ratingKey)}`);
+        }
+        return client.post("/me/live/favorites", {
+          key: ratingKey,
+          title: item.title || "",
+          logo: item.thumb || null,
+          number: item.number ?? null,
+          source: "iptv",
+        });
+      }
+      if (favoriteKeys.has(ratingKey)) {
+        return client.delete(`/me/favorites/${encodeURIComponent(ratingKey)}`);
+      }
+      return client.post("/me/favorites", { rating_key: ratingKey });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/me/favorites"] });
+      qc.invalidateQueries({ queryKey: ["/me/live/favorites"] });
+      qc.invalidateQueries({ queryKey: ["favs"] });
+      qc.invalidateQueries({ queryKey: ["live-favorites"] });
+    },
   });
   const { requiresPin } = useParentalGate();
 
@@ -168,31 +214,44 @@ export default function Search() {
           renderItem={({ item }) => {
             const itemType = item.type === "live" ? "LIVE TV" : item.type === "show" ? "TV SHOW" : "MOVIE";
             const detail = [item.year, item.genre || item.category_name].filter(Boolean).join(" · ");
+            const isFavorite = item.type === "live"
+              ? liveFavoriteKeys.has(String(item.rating_key))
+              : favoriteKeys.has(String(item.rating_key));
             return (
-            <Pressable
-              testID={`result-${item.rating_key}`}
-              accessibilityRole="button"
-              accessibilityLabel={`${item.title}, ${itemType}${detail ? `, ${detail}` : ""}`}
-              focusable
-              onPress={() => openItem(item)}
-              style={({ focused }) => [
-                styles.row,
-                focused && { backgroundColor: "rgba(139,92,246,0.14)", borderColor: colors.cyan, borderWidth: 2 },
-              ]}
-            >
-              <View style={styles.thumb}>
-                {item.thumb ? (
-                  <Image source={{ uri: `${BACKEND}${item.thumb}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                ) : (
-                  <LinearGradient colors={["#2A0F5A", "#0B0518"]} style={StyleSheet.absoluteFill} />
-                )}
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
-                <Text style={styles.rowSub} numberOfLines={1}>{itemType}{detail ? ` · ${detail}` : ""}</Text>
-              </View>
-              <Ionicons name={item.type === "live" ? "play-circle-outline" : "chevron-forward"} size={ms(18)} color={colors.zinc500} />
-            </Pressable>
+            <View style={styles.row}>
+              <Pressable
+                testID={`result-${item.rating_key}`}
+                accessibilityRole="button"
+                accessibilityLabel={`${item.title}, ${itemType}${detail ? `, ${detail}` : ""}`}
+                focusable
+                onPress={() => openItem(item)}
+                style={({ focused }) => [styles.resultMain, focused && styles.resultFocused]}
+              >
+                <View style={styles.thumb}>
+                  {item.thumb ? (
+                    <Image source={{ uri: `${BACKEND}${item.thumb}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                  ) : (
+                    <LinearGradient colors={["#2A0F5A", "#0B0518"]} style={StyleSheet.absoluteFill} />
+                  )}
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
+                  <Text style={styles.rowSub} numberOfLines={1}>{itemType}{detail ? ` · ${detail}` : ""}</Text>
+                </View>
+                <Ionicons name={item.type === "live" ? "play-circle-outline" : "chevron-forward"} size={ms(18)} color={colors.zinc500} />
+              </Pressable>
+              <Pressable
+                testID={`favorite-${item.rating_key}`}
+                accessibilityRole="button"
+                accessibilityLabel={`${isFavorite ? "Remove" : "Add"} ${item.title} ${isFavorite ? "from" : "to"} favorites`}
+                accessibilityState={{ checked: isFavorite, disabled: toggleFavorite.isPending }}
+                disabled={toggleFavorite.isPending}
+                onPress={() => toggleFavorite.mutate(item)}
+                style={({ focused }) => [styles.favoriteButton, focused && styles.favoriteButtonFocused]}
+              >
+                <Ionicons name={isFavorite ? "heart" : "heart-outline"} size={ms(21)} color={isFavorite ? colors.magenta : colors.zinc400} />
+              </Pressable>
+            </View>
             );
           }}
         />
@@ -234,11 +293,20 @@ const styles = StyleSheet.create({
     fontSize: SIZES.fontSmall,
   },
   row: {
-    flexDirection: "row", alignItems: "center",
-    paddingVertical: vs(10), paddingHorizontal: 10,
-    borderRadius: SIZES.radius, marginBottom: vs(6),
-    borderWidth: 2, borderColor: "transparent",
+    flexDirection: "row", alignItems: "center", marginBottom: vs(6),
   },
+  resultMain: {
+    flex: 1, flexDirection: "row", alignItems: "center",
+    paddingVertical: vs(10), paddingHorizontal: 10,
+    borderRadius: SIZES.radius, borderWidth: 2, borderColor: "transparent",
+  },
+  resultFocused: { backgroundColor: "rgba(139,92,246,0.14)", borderColor: colors.cyan },
+  favoriteButton: {
+    width: ms(46), height: ms(46), marginLeft: 4,
+    alignItems: "center", justifyContent: "center",
+    borderRadius: SIZES.radius, borderWidth: 2, borderColor: "transparent",
+  },
+  favoriteButtonFocused: { borderColor: colors.cyan, backgroundColor: "rgba(139,92,246,0.14)" },
   thumb: { width: scale(60), height: vs(80), borderRadius: 8, overflow: "hidden", backgroundColor: "#1C0A38" },
   rowTitle: { color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontBody },
   rowSub: { color: colors.zinc500, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall, marginTop: 2, textTransform: "capitalize" },

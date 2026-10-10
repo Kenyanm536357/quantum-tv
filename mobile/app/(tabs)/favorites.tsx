@@ -4,10 +4,13 @@ export default function Favorites() {
   return (
     <ListScreen
       endpoint="/me/favorites"
+      additionalEndpoints={["/me/live/favorites"]}
       title="Favorites"
       removeLabel="unfavorite"
-      removeFromList={(rk: string) => client.delete(`/me/favorites/${rk}`)}
-      emptyText={"No favorites yet.\nTap the heart on any title to add it here."}
+      removeFromList={(item: any) => item.favorite_source === "live"
+        ? client.delete(`/me/live/favorites/${encodeURIComponent(String(item.rating_key))}`)
+        : client.delete(`/me/favorites/${encodeURIComponent(String(item.rating_key))}`)}
+      emptyText={"No favorites yet.\nFavorite any movie, show, episode, or live channel to add it here."}
     />
   );
 }

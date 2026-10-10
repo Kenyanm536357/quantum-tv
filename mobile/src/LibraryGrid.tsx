@@ -36,6 +36,7 @@ function releaseYear(item: LibItem): number | null {
 
 const LIBRARY_REFRESH_MS = 90 * 1000;
 const LIBRARY_FETCH_LIMIT = 12000;
+const TITLE_COLLATOR = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
 
 export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: string }) {
   const { width: screenWidth } = useWindowDimensions();
@@ -153,17 +154,17 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
     const sorted = [...allItems];
     sorted.sort((a, b) => {
       if (sortOrder === "az") {
-        return String(a.title || "").localeCompare(String(b.title || ""), undefined, { sensitivity: "base", numeric: true });
+        return TITLE_COLLATOR.compare(String(a.title || ""), String(b.title || ""));
       }
       const yearA = releaseYear(a);
       const yearB = releaseYear(b);
       // Keep entries with no release year at the end for either date order.
       if (yearA === null || yearB === null) {
-        if (yearA === yearB) return String(a.title || "").localeCompare(String(b.title || ""), undefined, { sensitivity: "base", numeric: true });
+        if (yearA === yearB) return TITLE_COLLATOR.compare(String(a.title || ""), String(b.title || ""));
         return yearA === null ? 1 : -1;
       }
       const byYear = sortOrder === "newest" ? yearB - yearA : yearA - yearB;
-      return byYear || String(a.title || "").localeCompare(String(b.title || ""), undefined, { sensitivity: "base", numeric: true });
+      return byYear || TITLE_COLLATOR.compare(String(a.title || ""), String(b.title || ""));
     });
     return sorted;
   }, [allItems, sortOrder]);
@@ -284,9 +285,9 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
         numColumns={columns}
         columnWrapperStyle={{ gap: SIZES.gap }}
         ItemSeparatorComponent={() => <View style={{ height: SIZES.gap }} />}
-        initialNumToRender={20}
-        maxToRenderPerBatch={20}
-        windowSize={7}
+        initialNumToRender={12}
+        maxToRenderPerBatch={8}
+        windowSize={5}
         removeClippedSubviews
         renderItem={({ item, index }: { item: LibItem; index: number }) => {
           const isFav = favSet.has(String(item.rating_key));

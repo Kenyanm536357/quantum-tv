@@ -3,6 +3,7 @@ import { View, Text, FlatList, Pressable, Image, StyleSheet, ActivityIndicator, 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { useIsFocused } from "@react-navigation/native";
 import { useFocusEffect, useRouter } from "expo-router";
 import client, { BACKEND, colors } from "./api";
 import BrandBackground from "./BrandBackground";
@@ -38,6 +39,7 @@ const LIBRARY_FETCH_LIMIT = 12000;
 
 export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: string }) {
   const { width: screenWidth } = useWindowDimensions();
+  const isFocused = useIsFocused();
   const router = useRouter();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
@@ -55,16 +57,16 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
       ? `${endpoint}?exclude_adult=${requiresPin ? "true" : "false"}&limit=${LIBRARY_FETCH_LIMIT}&include_stream_url=false`
       : `${endpoint}?exclude_adult=${requiresPin ? "true" : "false"}&limit=${LIBRARY_FETCH_LIMIT}`;
 
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, dataUpdatedAt, isLoading, isError, refetch } = useQuery({
     queryKey: ["iptv-grid", type, requiresPin],
     queryFn: async () => (await client.get(fetchUrl, { timeout: 60000 })).data as { items: LibItem[]; total: number },
     // Keep Movies/TV fresh for customers even when users stay on these tabs.
-    staleTime: 60 * 1000,
-    refetchInterval: LIBRARY_REFRESH_MS,
-    refetchIntervalInBackground: true,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: isFocused ? LIBRARY_REFRESH_MS : false,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
-    refetchOnMount: "always",
+    refetchOnMount: true,
     retry: 3,
     retryDelay: (attempt) => Math.min(6000, 1000 * attempt),
   });
@@ -91,8 +93,8 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
   const continueWatching = useQuery({
     queryKey: ["continue-watching"],
     queryFn: async () => (await client.get("/continue-watching")).data as { items: LibItem[] },
-    staleTime: 30_000,
-    refetchInterval: 30_000,
+    staleTime: 60_000,
+    refetchInterval: isFocused ? 60_000 : false,
     refetchOnWindowFocus: true,
   });
   const progressByKey = useMemo(
@@ -103,7 +105,8 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
   useFocusEffect(useCallback(() => {
     void watchlist.refetch();
     void continueWatching.refetch();
-  }, [watchlist.refetch, continueWatching.refetch]));
+    if (Date.now() - dataUpdatedAt > 5 * 60 * 1000) void refetch();
+  }, [watchlist.refetch, continueWatching.refetch, dataUpdatedAt, refetch]));
 
   const toggleFav = useMutation({
     mutationFn: async (it: LibItem) => {
@@ -143,14 +146,9 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
     return raw.filter((it) => !isAdultCategory(undefined, it.category_name, it.title));
   }, [data, requiresPin]);
 
-  // Apply search, then sort the matching catalog.
-  const filtered = useMemo(() => {
-    let list = allItems;
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      list = list.filter((it) => (it.title || "").toLowerCase().includes(q));
-    }
-    const sorted = [...list];
+  // Keep sorting out of the keystroke path; searching only scans this ordered array.
+  const sortedItems = useMemo(() => {
+    const sorted = [...allItems];
     sorted.sort((a, b) => {
       if (sortOrder === "az") {
         return String(a.title || "").localeCompare(String(b.title || ""), undefined, { sensitivity: "base", numeric: true });
@@ -166,7 +164,14 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
       return byYear || String(a.title || "").localeCompare(String(b.title || ""), undefined, { sensitivity: "base", numeric: true });
     });
     return sorted;
-  }, [allItems, search, sortOrder]);
+  }, [allItems, sortOrder]);
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return query
+      ? sortedItems.filter((item) => (item.title || "").toLowerCase().includes(query))
+      : sortedItems;
+  }, [sortedItems, search]);
 
   const columns = GRID_COLS.posters;
   const gridGap = SIZES.gap;

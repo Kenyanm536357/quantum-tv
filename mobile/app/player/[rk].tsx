@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -7,28 +7,8 @@ import { useVideoPlayer, VideoView, type VideoPlayerStatus } from "expo-video";
 import { useKeepAwake } from "expo-keep-awake";
 import client, { colors } from "../../src/api";
 import { SAFE, SIZES, ms, vs, s as scale, IS_TV } from "../../src/responsive";
-import {
-  launchExternalPlayer,
-  openPlayerStore,
-  probeInstalledPlayers,
-  type PlayerProbe,
-} from "../../src/externalPlayer";
 
-// ============================================================
-// Player — plays the stream with the built-in high-quality
-// in-app player (expo-video) first. Only if that player reports
-// an error do we fall back to probing/launching an installed
-// external player (VLC, MX Player, etc.) on the device.
-// ============================================================
-
-type Phase =
-  | "loading"
-  | "in-app"
-  | "checking-player"
-  | "launching"
-  | "launched"
-  | "no-player"
-  | "error";
+type Phase = "loading" | "in-app" | "error";
 
 function PlaybackKeepAwake() {
   useKeepAwake("quantum-tv-playback");
@@ -41,12 +21,7 @@ export default function Player() {
   const [phase, setPhase] = useState<Phase>("loading");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [url, setUrl] = useState<string | null>(null);
-  const [directUrl, setDirectUrl] = useState<string | null>(null);
   const [retries, setRetries] = useState(0);
-  const [players, setPlayers] = useState<PlayerProbe[]>([]);
-  const [launchMethod, setLaunchMethod] = useState<string | null>(null);
-  const [playerLabel, setPlayerLabel] = useState<string | null>(null);
-  const fellBackRef = useRef(false);
   const triedTransportStreamRef = useRef(false);
   const resumeAppliedRef = useRef(false);
   const progressSaveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -188,99 +163,30 @@ export default function Player() {
     };
   }, [canTrackProgress, phase]);
 
-  // Runs the external-player probe/launch flow. Used both as the initial
-  // fallback when the in-app player errors, and when the user manually
-  // asks to switch players.
-  const fallbackToExternal = async (cancelledRef: { current: boolean }) => {
-    try {
-      // Release the in-app player's connection BEFORE requesting/launching an
-      // external one. Many providers (including this account's Xtream
-      // backend) only allow a single concurrent connection per line — if the
-      // in-app player is left playing/buffering in the background, the
-      // external player's brand-new connection gets rejected with HTTP 458
-      // ("too many connections") even though the stream itself is fine.
-      // Pausing alone isn't enough to guarantee the native player closes its
-      // socket, so we also clear the source, which forces useVideoPlayer to
-      // dispose of the old native player instance entirely.
-      if (player.playing) player.pause();
-      setUrl(null);
-      // Give the backend a moment to notice the client socket closed and
-      // actually tear down its upstream connection to the provider. Some
-      // providers hold a live line's slot for a brief grace period after the
-      // last byte, so requesting a new stream immediately can still race
-      // into an HTTP 458 rejection even though we already released our side.
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      if (cancelledRef.current) return;
-      const isLiveChannel = /^(iptv|public)-live-/.test(String(rk || ""));
-      const { data } = await client.get(`/stream/${rk}`, {
-        // Some providers reject the TV's direct request (HTTP 458). Keep live
-        // fallback traffic on the authenticated TS proxy so the provider sees
-        // the backend connection while MX Player still gets a TV-friendly URL.
-        params: isLiveChannel
-          ? { direct: "false", external: "false", live_format: "ts" }
-          : { direct: "true", external: "true" },
-      });
-      if (cancelledRef.current) return;
-      if (!data?.url || typeof data.url !== "string" || !data.url.length) {
-        setErrorMsg("No stream URL returned by the server.");
-        setPhase("error");
-        return;
-      }
-      const streamUrl = data.url as string;
-      setDirectUrl(streamUrl);
-
-      setPhase("checking-player");
-      const probed = await probeInstalledPlayers();
-      if (cancelledRef.current) return;
-      setPlayers(probed);
-
-      setPhase("launching");
-      const result = await launchExternalPlayer(streamUrl);
-      if (cancelledRef.current) return;
-      if (!result.ok) {
-        setPhase("no-player");
-        return;
-      }
-      setLaunchMethod(result.method);
-      setPlayerLabel(result.playerLabel || null);
-      setPhase("launched");
-    } catch (e: any) {
-      if (cancelledRef.current) return;
-      setErrorMsg(e?.response?.data?.detail || e?.message || "Could not retrieve stream.");
-      setPhase("error");
-    }
-  };
-
   useEffect(() => {
     const cancelledRef = { current: false };
-    fellBackRef.current = false;
     triedTransportStreamRef.current = false;
     setPhase("loading");
     setErrorMsg(null);
     setUrl(null);
-    setDirectUrl(null);
-    setLaunchMethod(null);
-    setPlayerLabel(null);
 
     (async () => {
       try {
-        // Built-in player uses the app-proxied URL (works reliably in-app
-        // and keeps auth/HLS-rewriting on our side).
         const { data } = await client.get(`/stream/${rk}`, {
           params: { direct: "false", external: "false" },
         });
         if (cancelledRef.current) return;
         if (!data?.url || typeof data.url !== "string" || !data.url.length) {
-          // No proxied URL available — go straight to external player flow.
-          await fallbackToExternal(cancelledRef);
+          setErrorMsg("Quantum TV could not get a stream URL. Check your connection and try again.");
+          setPhase("error");
           return;
         }
         setUrl(data.url as string);
         setPhase("in-app");
-      } catch {
+      } catch (error: any) {
         if (cancelledRef.current) return;
-        // Proxy resolution failed — try the external player flow instead.
-        await fallbackToExternal(cancelledRef);
+        setErrorMsg(error?.response?.data?.detail || error?.message || "Could not retrieve the stream. Check your connection and try again.");
+        setPhase("error");
       }
     })();
 
@@ -289,57 +195,41 @@ export default function Player() {
     };
   }, [rk, retries]);
 
-  // If the built-in player reports an error, fall back to an installed
-  // external player exactly once per attempt.
+  // Retry live streams with the provider's transport-stream format if HLS fails.
   useEffect(() => {
     const sub = player.addListener("statusChange", (status: VideoPlayerStatus) => {
       setPlayerStatus(status);
-      if (status === "error" && !fellBackRef.current) {
-        const cancelledRef = { current: false };
-        const canRetryWithTs = String(rk || "").startsWith("iptv-live-") && !triedTransportStreamRef.current;
-        if (canRetryWithTs) {
-          triedTransportStreamRef.current = true;
-          setPhase("loading");
-          client.get(`/stream/${rk}`, {
-            params: { direct: "false", external: "false", live_format: "ts" },
-          }).then((response: { data: { url?: unknown } }) => {
-            const { data } = response;
-            if (data?.url && typeof data.url === "string") {
-              setUrl(data.url);
-              setPhase("in-app");
-            } else {
-              fellBackRef.current = true;
-              fallbackToExternal(cancelledRef);
-            }
-          }).catch(() => {
-            fellBackRef.current = true;
-            fallbackToExternal(cancelledRef);
-          });
-          return;
-        }
-        fellBackRef.current = true;
-        fallbackToExternal(cancelledRef);
+      if (status !== "error") return;
+
+      const canRetryWithTs = String(rk || "").startsWith("iptv-live-") && !triedTransportStreamRef.current;
+      if (canRetryWithTs) {
+        triedTransportStreamRef.current = true;
+        setPhase("loading");
+        client.get(`/stream/${rk}`, {
+          params: { direct: "false", external: "false", live_format: "ts" },
+        }).then((response: { data: { url?: unknown } }) => {
+          const { data } = response;
+          if (data?.url && typeof data.url === "string") {
+            setUrl(data.url);
+            setPhase("in-app");
+          } else {
+            setErrorMsg("This live stream could not be played in Quantum TV.");
+            setPhase("error");
+          }
+        }).catch((error: any) => {
+          setErrorMsg(error?.response?.data?.detail || error?.message || "This live stream could not be played in Quantum TV.");
+          setPhase("error");
+        });
+        return;
       }
+
+      setErrorMsg("This stream could not be played in Quantum TV. Check your connection and try again.");
+      setPhase("error");
     });
     return () => sub.remove();
   }, [player, rk]);
 
   const retry = () => setRetries((r) => r + 1);
-
-  const relaunch = async () => {
-    if (!directUrl) return;
-    setPhase("launching");
-    const result = await launchExternalPlayer(directUrl);
-    if (!result.ok) {
-      setPhase("no-player");
-      return;
-    }
-    setLaunchMethod(result.method);
-    setPlayerLabel(result.playerLabel || null);
-    setPhase("launched");
-  };
-
-  const knownInstalled = players.filter((p) => p.installed === true);
 
   return (
     <View style={s.root}>
@@ -393,7 +283,7 @@ export default function Player() {
         testID="player-back"
         onPress={() => { saveProgress(); router.back(); }}
         focusable
-        hasTVPreferredFocus={phase !== "loading" && phase !== "launching" && phase !== "checking-player"}
+        hasTVPreferredFocus={phase !== "loading"}
         style={({ focused }) => [
           s.backBtn,
           { top: SAFE.top + 10, left: SAFE.left + 10 },
@@ -417,26 +307,6 @@ export default function Player() {
       >
         {title}
       </Text>
-
-      {phase === "in-app" && controlsVisible && (
-        <Pressable
-          testID="player-switch-external"
-          focusable
-          onPress={() => {
-            const cancelledRef = { current: false };
-            setPhase("checking-player");
-            fallbackToExternal(cancelledRef);
-          }}
-          style={({ focused }) => [
-            s.switchBtn,
-            { top: SAFE.top + 10, right: SAFE.right + 10 },
-            focused && s.actionBtnFocused,
-          ]}
-        >
-          <Ionicons name="swap-horizontal-outline" size={ms(16)} color={colors.cyan} />
-          <Text style={s.actionBtnTxt}>External Player</Text>
-        </Pressable>
-      )}
 
       {phase === "in-app" && (
         <LinearGradient
@@ -489,110 +359,12 @@ export default function Player() {
         </View>
       )}
 
-      {(phase === "loading" || phase === "launching" || phase === "checking-player") && (
+      {phase === "loading" && (
         <View style={s.center}>
           <ActivityIndicator color={colors.cyan} size="large" />
-          <Text style={s.statusTitle}>
-            {phase === "loading"
-              ? "Resolving stream…"
-              : phase === "checking-player"
-                ? "Checking installed players…"
-                : "Launching player…"}
-          </Text>
-          <Text style={s.statusSub}>
-            {phase === "checking-player"
-              ? "Running a quick system check for VLC, MX Player, and other apps."
-              : "Handing off to your external video player."}
-          </Text>
+          <Text style={s.statusTitle}>Resolving stream…</Text>
+          <Text style={s.statusSub}>Connecting to Quantum TV.</Text>
         </View>
-      )}
-
-      {phase === "launched" && (
-        <View style={s.center}>
-          <View style={s.iconCircle}>
-            <Ionicons name="checkmark" size={ms(36)} color="#050614" />
-          </View>
-          <Text style={s.statusTitle}>Playing in External Player</Text>
-          <Text style={s.statusSub}>
-            {playerLabel
-              ? `Opened with ${playerLabel}.`
-              : "Your video player app has opened."}
-            {"\n"}
-            Use your remote Home/Apps button if it is behind Quantum TV.
-            {launchMethod ? `\nMethod: ${launchMethod}` : ""}
-          </Text>
-          <Pressable
-            focusable
-            hasTVPreferredFocus={IS_TV}
-            onPress={relaunch}
-            style={({ focused }) => [s.actionBtn, focused && s.actionBtnFocused]}
-          >
-            <Ionicons name="play-circle-outline" size={ms(18)} color={colors.cyan} />
-            <Text style={s.actionBtnTxt}>Re-launch Player</Text>
-          </Pressable>
-          <Pressable
-            focusable
-            onPress={() => router.back()}
-            style={({ focused }) => [s.ghostBtn, focused && s.ghostBtnFocused]}
-          >
-            <Text style={s.ghostBtnTxt}>Go Back</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {phase === "no-player" && (
-        <ScrollView contentContainerStyle={s.centerScroll}>
-          <View style={[s.iconCircle, { backgroundColor: colors.purple }]}>
-            <Ionicons name="alert-circle-outline" size={ms(36)} color="#fff" />
-          </View>
-          <Text style={s.statusTitle}>Could Not Open a Video Player</Text>
-          <Text style={s.statusSub}>
-            System check could not hand the stream to an installed player.
-            {"\n\n"}
-            If VLC / MX Player is installed, press Try Launch Again.
-            On Fire TV, open that player once from Apps so Android can unlock it.
-          </Text>
-
-          {knownInstalled.length > 0 ? (
-            <Text style={s.probeOk}>Detected: {knownInstalled.map((p) => p.label).join(", ")}</Text>
-          ) : (
-            <Text style={s.probeWarn}>
-              No known player package was confirmed yet. Quantum TV will still try VLC, MX Player, Kodi, and others.
-            </Text>
-          )}
-
-          <Pressable
-            focusable
-            hasTVPreferredFocus={IS_TV}
-            onPress={relaunch}
-            style={({ focused }) => [s.actionBtn, focused && s.actionBtnFocused]}
-          >
-            <Ionicons name="play-circle-outline" size={ms(18)} color={colors.cyan} />
-            <Text style={s.actionBtnTxt}>Try Launch Again</Text>
-          </Pressable>
-          <Pressable
-            focusable
-            onPress={() => openPlayerStore("vlc")}
-            style={({ focused }) => [s.actionBtn, focused && s.actionBtnFocused]}
-          >
-            <Ionicons name="download-outline" size={ms(18)} color={colors.cyan} />
-            <Text style={s.actionBtnTxt}>Get VLC</Text>
-          </Pressable>
-          <Pressable
-            focusable
-            onPress={() => openPlayerStore("mx")}
-            style={({ focused }) => [s.ghostBtn, focused && s.ghostBtnFocused]}
-          >
-            <Text style={s.ghostBtnTxt}>Get MX Player</Text>
-          </Pressable>
-          <Pressable
-            focusable
-            onPress={retry}
-            style={({ focused }) => [s.ghostBtn, focused && s.ghostBtnFocused]}
-          >
-            <Text style={s.ghostBtnTxt}>Re-check System</Text>
-          </Pressable>
-        </ScrollView>
       )}
 
       {phase === "error" && (
@@ -665,19 +437,6 @@ const s = StyleSheet.create({
     right: 0,
     zIndex: 8,
   },
-  switchBtn: {
-    position: "absolute",
-    zIndex: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingVertical: vs(8),
-    paddingHorizontal: ms(14),
-    borderRadius: 999,
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.18)",
-    backgroundColor: "rgba(11,5,24,0.7)",
-  },
   controlBar: {
     position: "absolute",
     zIndex: 11,
@@ -740,27 +499,6 @@ const s = StyleSheet.create({
     paddingHorizontal: ms(IS_TV ? 80 : 32),
     paddingTop: vs(60),
   },
-  centerScroll: {
-    flexGrow: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: ms(IS_TV ? 80 : 32),
-    paddingTop: vs(80),
-    paddingBottom: vs(40),
-  },
-  iconCircle: {
-    width: ms(72),
-    height: ms(72),
-    borderRadius: 999,
-    backgroundColor: colors.cyan,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: vs(18),
-    shadowColor: colors.cyan,
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 12,
-  },
   statusTitle: {
     color: "#fff",
     fontFamily: "Unbounded_700Bold",
@@ -776,21 +514,6 @@ const s = StyleSheet.create({
     lineHeight: ms(IS_TV ? 22 : 18),
     marginBottom: vs(20),
     maxWidth: ms(560),
-  },
-  probeOk: {
-    color: colors.cyan,
-    fontFamily: "Outfit_600SemiBold",
-    fontSize: ms(12),
-    marginBottom: vs(14),
-    textAlign: "center",
-  },
-  probeWarn: {
-    color: colors.zinc400,
-    fontFamily: "Outfit_400Regular",
-    fontSize: ms(12),
-    marginBottom: vs(14),
-    textAlign: "center",
-    maxWidth: ms(520),
   },
   actionBtn: {
     flexDirection: "row",
@@ -817,22 +540,6 @@ const s = StyleSheet.create({
     color: colors.cyan,
     fontFamily: "Outfit_600SemiBold",
     fontSize: ms(IS_TV ? 15 : 13),
-  },
-  ghostBtn: {
-    paddingHorizontal: ms(20),
-    paddingVertical: vs(10),
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    minWidth: ms(160),
-    alignItems: "center",
-    marginBottom: vs(10),
-  },
-  ghostBtnFocused: { borderColor: colors.cyan },
-  ghostBtnTxt: {
-    color: colors.zinc300,
-    fontFamily: "Outfit_600SemiBold",
-    fontSize: ms(IS_TV ? 14 : 12),
   },
   errTitle: {
     color: "#fca5a5",

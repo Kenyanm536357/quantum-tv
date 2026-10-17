@@ -235,7 +235,7 @@ export default function Player() {
     <View style={s.root}>
       <LinearGradient colors={["#0B0518", "#170634", "#0B0518"]} style={StyleSheet.absoluteFill} />
 
-      {phase === "in-app" && isPlaying && <PlaybackKeepAwake />}
+      <PlaybackKeepAwake />
 
       {phase === "in-app" && (
         <VideoView

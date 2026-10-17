@@ -1,0 +1,33 @@
+name: Publish OTA update
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "Update message"
+        required: false
+        default: "OTA update"
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - run: yarn install --frozen-lockfile
+      - name: Publish update
+        env:
+          UPDATE_MESSAGE: ${{ inputs.message }}
+        run: eas update --branch production --platform android --non-interactive --message "$UPDATE_MESSAGE"

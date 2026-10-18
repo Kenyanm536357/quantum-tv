@@ -453,7 +453,7 @@ async def _iptv_get(action: Optional[str] = None, params: Optional[dict] = None)
 # minutes, one request at a time, and all user-facing endpoints read from
 # that cache. This is both faster for users and far more reliable.
 # ---------------------------------------------------------------------------
-IPTV_CACHE_REFRESH_SECONDS = 90  # refresh live/VOD/series every 90 seconds
+IPTV_CACHE_REFRESH_SECONDS = 30  # pause between full refresh passes (a pass itself is serial and takes longer)
 SEARCH_INDEX_REFRESH_SECONDS = 30  # refresh in-memory search index every 30 seconds
 PUBLIC_M3U_CACHE_REFRESH_SECONDS = 6 * 60 * 60
 PUBLIC_M3U_SOURCES = [
@@ -776,7 +776,7 @@ async def _iptv_cache_refresh_loop() -> None:
 # ---------------------------------------------------------------------------
 _iptv_refresh_lock = asyncio.Lock()
 _last_agent_kick_ts = 0.0
-AGENT_KICK_COOLDOWN_SECONDS = 90  # don't hammer the single-connection provider on every login
+AGENT_KICK_COOLDOWN_SECONDS = 30  # min gap between user-triggered refresh kicks
 
 
 async def _iptv_refresh_all_once_locked() -> None:
@@ -1111,8 +1111,8 @@ async def admin_audit_livetv_vod(admin: dict = Depends(get_current_admin)):
         issues.append(f"Live TV: {live_missing_id} provider channel(s) missing a stream_id (unplayable, skipped by the app).")
     if live_dupes:
         issues.append(f"Live TV: {live_dupes} duplicate stream_id(s) in the provider cache.")
-    if live_age is not None and live_age > IPTV_CACHE_REFRESH_SECONDS * 3:
-        issues.append(f"Live TV: provider cache hasn't refreshed in {int(live_age // 60)} min (expected every {IPTV_CACHE_REFRESH_SECONDS // 60} min).")
+    if live_age is not None and live_age > IPTV_CACHE_REFRESH_SECONDS * 10:
+        issues.append(f"Live TV: provider cache hasn't refreshed in {int(live_age // 60)} min (expected every {IPTV_CACHE_REFRESH_SECONDS}s).")
 
     # ---- Public US backup channels ----
     public_raw = (public_doc.get("streams") if public_doc else None) or []
@@ -1157,8 +1157,8 @@ async def admin_audit_livetv_vod(admin: dict = Depends(get_current_admin)):
         issues.append(f"VOD: {vod_missing_id} title(s) missing a stream_id (unplayable, skipped by the app).")
     if vod_dupes:
         issues.append(f"VOD: {vod_dupes} duplicate stream_id(s) in the provider cache.")
-    if vod_age is not None and vod_age > IPTV_CACHE_REFRESH_SECONDS * 3:
-        issues.append(f"VOD: provider cache hasn't refreshed in {int(vod_age // 60)} min (expected every {IPTV_CACHE_REFRESH_SECONDS // 60} min).")
+    if vod_age is not None and vod_age > IPTV_CACHE_REFRESH_SECONDS * 10:
+        issues.append(f"VOD: provider cache hasn't refreshed in {int(vod_age // 60)} min (expected every {IPTV_CACHE_REFRESH_SECONDS}s).")
 
     if not cfg:
         issues.append("No IPTV provider is configured — connect one on the IPTV Provider page.")

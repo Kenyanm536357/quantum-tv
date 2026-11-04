@@ -2776,7 +2776,11 @@ async def search(q: str, user: dict = Depends(get_current_user), limit: int = 50
     # If the process has just booted and index is still empty, do a one-off
     # synchronous rebuild so the first search still returns results.
     if not _SEARCH_INDEX.get("items"):
-        await _rebuild_search_index_once()
+        try:
+            await asyncio.wait_for(asyncio.shield(_rebuild_search_index_once()), timeout=20)
+        except asyncio.TimeoutError:
+            # Index is still building after a restart; answer fast so the app can retry.
+            return {"items": [], "query": q, "corrected_query": None, "total_found": 0, "warming": True, "index_updated_at": None}
 
     max_items = max(1, min(int(limit or 50), 200))
     terms = needle.split()

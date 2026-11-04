@@ -566,6 +566,10 @@ _SEARCH_INDEX: dict[str, Any] = {
 }
 _search_index_lock = asyncio.Lock()
 
+# (stream_id, limit) -> (expires_at, programs). One lookup at a time keeps the provider's single slot free.
+_EPG_CACHE: dict[tuple[int, int], tuple[float, list]] = {}
+_epg_semaphore = asyncio.Semaphore(1)
+
 
 def _normalize_search_text(value: Any) -> str:
     normalized = unicodedata.normalize("NFKD", str(value or "")).casefold()
@@ -573,32 +577,79 @@ def _normalize_search_text(value: Any) -> str:
     return re.sub(r"[^\w]+", " ", without_marks).strip()
 
 
+# Provider titles carry noise like "EN - ", "|US|", "[4K]" or "(2002)"; strip it so
+# "Spider-Man (2002)" ranks as an exact match for "spider man".
+_TITLE_PREFIX_RE = re.compile(r"^\s*(?:[\[\(\{|][^\]\)\}|]{1,8}[\]\)\}|]\s*[-:|]?\s*|[A-Za-z0-9]{2,5}\s*[-|:]\s+)+")
+_TITLE_TAGS_RE = re.compile(r"[\[\{][^\]\}]*[\]\}]|\(\s*(?:19|20)\d{2}\s*\)")
+
+
+def _core_title(title: Any) -> str:
+    text = _TITLE_PREFIX_RE.sub("", str(title or ""))
+    text = _TITLE_TAGS_RE.sub(" ", text)
+    return _normalize_search_text(text)
+
+
+def _to_float(value: Any) -> Optional[float]:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if 0 < number <= 10 else None
+
+
+def _to_year(value: Any) -> Optional[int]:
+    match = re.search(r"\b((?:19|20)\d{2})\b", str(value or ""))
+    return int(match.group(1)) if match else None
+
+
+def _to_epoch(value: Any) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _score_search_item(item: dict, needle: str, terms: list[str]) -> Optional[tuple[int, int, int]]:
-    title = item.get("_title_search") or _normalize_search_text(item.get("title"))
+    title = item.get("_title_search") or _core_title(item.get("title"))
     searchable = item.get("_search_text") or title
+    compact_needle = needle.replace(" ", "")
+    compact_title = title.replace(" ", "")
     title_words = title.split()
     searchable_words = searchable.split()
-    if not terms or any(not any(term in word for word in searchable_words) for term in terms):
+    compact_hit = len(compact_needle) >= 4 and compact_needle in searchable.replace(" ", "")
+    if not terms or (
+        not compact_hit
+        and any(not any(term in word for word in searchable_words) for term in terms)
+    ):
         return None
 
-    title_matches = sum(any(term in word for word in title_words) for term in terms)
-    if title == needle:
+    title_matches = sum(any(word.startswith(term) for word in title_words) for term in terms)
+    if title == needle or compact_title == compact_needle:
         relevance = 0
-    elif title.startswith(needle):
+    elif title.startswith(needle) or compact_title.startswith(compact_needle):
         relevance = 1
     elif title_matches == len(terms):
         relevance = 2
-    elif needle in title:
+    elif needle in title or (len(compact_needle) >= 4 and compact_needle in compact_title):
         relevance = 3
-    elif title_matches:
+    elif sum(any(term in word for word in title_words) for term in terms) == len(terms):
         relevance = 4
-    else:
+    elif title_matches:
         relevance = 5
+    else:
+        relevance = 6
 
     position = title.find(needle)
     if position < 0:
         position = min((searchable.find(term) for term in terms if searchable.find(term) >= 0), default=len(searchable))
     return relevance, position, len(title)
+
+
+def _search_sort_key(score: tuple[int, int, int], item: dict) -> tuple:
+    relevance, position, length = score
+    # Same relevance tier: movies/shows before live channels, then best rated, then newest.
+    type_rank = 1 if item.get("type") == "live" else 0
+    return (relevance, type_rank, -(item.get("_rating_num") or 5.0), -(item.get("_year_num") or 0), position, length)
 
 
 async def _iptv_cache_set(kind: str, streams: list[dict], cat_by_id: dict[str, str]) -> None:
@@ -860,7 +911,7 @@ async def _rebuild_search_index_once() -> None:
                 "rating_key": rating_key,
                 "title": title,
                 "title_lc": title.lower(),
-                "_title_search": _normalize_search_text(title),
+                "_title_search": _core_title(title) or _normalize_search_text(title),
                 "_search_text": _normalize_search_text(" ".join(str(value) for value in (title, cls.get("genre"), cat_name) if value is not None)),
                 "type": "live",
                 "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
@@ -889,12 +940,15 @@ async def _rebuild_search_index_once() -> None:
                 "rating_key": rating_key,
                 "title": title,
                 "title_lc": title.lower(),
-                "_title_search": _normalize_search_text(title),
+                "_title_search": _core_title(title) or _normalize_search_text(title),
                 "_search_text": _normalize_search_text(" ".join(str(value) for value in (title, s.get("genre"), vod_cat_by_id.get(cid), s.get("year")) if value is not None)),
                 "type": "movie",
                 "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
                 "year": s.get("year"),
                 "audience_rating": s.get("rating"),
+                "added": _to_epoch(s.get("added")) or None,
+                "_rating_num": _to_float(s.get("rating")),
+                "_year_num": _to_year(s.get("year")) or _to_year(title),
                 "genre": s.get("genre"),
                 "category_name": vod_cat_by_id.get(cid) or None,
             })
@@ -918,17 +972,21 @@ async def _rebuild_search_index_once() -> None:
                 "rating_key": rating_key,
                 "title": title,
                 "title_lc": title.lower(),
-                "_title_search": _normalize_search_text(title),
+                "_title_search": _core_title(title) or _normalize_search_text(title),
                 "_search_text": _normalize_search_text(" ".join(str(value) for value in (title, s.get("genre"), series_cat_by_id.get(cid), s.get("release_date")) if value is not None)),
                 "type": "show",
                 "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None,
                 "year": str(s.get("release_date") or "")[:4] or None,
                 "audience_rating": s.get("rating"),
+                "added": _to_epoch(s.get("last_modified")) or None,
+                "_rating_num": _to_float(s.get("rating")),
+                "_year_num": _to_year(s.get("release_date")) or _to_year(title),
                 "genre": s.get("genre"),
                 "category_name": series_cat_by_id.get(cid) or None,
             })
 
         _SEARCH_INDEX["items"] = out
+        _SEARCH_INDEX["vocab"] = sorted({word for item in out for word in (item.get("_title_search") or "").split() if len(word) >= 3})
         _SEARCH_INDEX["updated_at"] = now_iso()
         _SEARCH_INDEX["source_cache_updated_at"] = source_cache_updated_at
         log.info("Search index: refreshed %d items", len(out))
@@ -1226,10 +1284,20 @@ async def livetv_epg(
         stream_id = int(channel_key.split("-", 2)[2])
     except (IndexError, ValueError):
         raise HTTPException(400, "bad channel_key")
+    cache_key = (stream_id, max(1, min(limit, 24)))
+    cached = _EPG_CACHE.get(cache_key)
+    if cached and cached[0] > time.time():
+        return {"programs": cached[1]}
     try:
-        raw = await _iptv_get("get_short_epg", {"stream_id": stream_id, "limit": max(1, min(limit, 24))})
+        # The provider allows one connection at a time; serialize EPG lookups and cache results.
+        async with _epg_semaphore:
+            cached = _EPG_CACHE.get(cache_key)
+            if cached and cached[0] > time.time():
+                return {"programs": cached[1]}
+            raw = await _iptv_get("get_short_epg", {"stream_id": stream_id, "limit": cache_key[1]})
     except Exception as e:
         log.warning("epg fetch failed for %s: %s", channel_key, e)
+        _EPG_CACHE[cache_key] = (time.time() + 60, [])
         return {"programs": []}
     # Xtream implementations vary — some return a bare list of dicts, others
     # wrap it in {"epg_listings": [...]}, and a few return unexpected shapes.
@@ -1276,6 +1344,10 @@ async def livetv_epg(
             "start_ts": start_ts,
             "end_ts": end_ts,
         })
+    _EPG_CACHE[cache_key] = (time.time() + (300 if out else 90), out)
+    if len(_EPG_CACHE) > 4000:
+        for stale_key in [k for k, v in _EPG_CACHE.items() if v[0] < time.time()]:
+            _EPG_CACHE.pop(stale_key, None)
     return {"programs": out}
 
 
@@ -1416,6 +1488,7 @@ async def iptv_vod_streams(
             "year": s.get("year"),
             "rating": s.get("rating"),
             "audience_rating": s.get("rating"),  # mirrors rating for API schema compatibility
+            "added": _to_epoch(s.get("added")) or None,
             "category_id": cid or None,
             "category_name": cat_name,
             "source": "iptv",
@@ -1466,6 +1539,7 @@ async def iptv_series_streams(
             "year": release[:4] if release else None,
             "rating": s.get("rating"),
             "audience_rating": s.get("rating"),
+            "added": _to_epoch(s.get("last_modified")) or None,
             "category_id": cid or None,
             "category_name": cat_name,
             "source": "iptv",
@@ -2338,23 +2412,44 @@ async def _iptv_item_meta(rating_key: str, user: dict) -> Optional[dict]:
         except (ValueError, TypeError):
             return None
         try:
-            action = "get_live_streams" if kind == "live" else "get_vod_streams"
-            raw = await _iptv_get(action)
+            if kind == "live":
+                raw = await _iptv_get("get_live_streams")
+            else:
+                raw, _ = await _iptv_cached("vod")
             hit = next((s for s in (raw or []) if int(s.get("stream_id", -1)) == sid_int), None)
         except Exception:
             hit = None
+        info: dict = {}
+        if kind == "movie":
+            try:
+                detail = await _iptv_get("get_vod_info", {"vod_id": sid_int})
+                info = (detail or {}).get("info") or {}
+            except Exception as e:
+                log.info("VOD detail fetch failed for %s: %s", sid_int, e)
         title = (hit or {}).get("name") or ("Live Channel" if kind == "live" else "Movie")
-        thumb_raw = (hit or {}).get("stream_icon")
+        thumb_raw = info.get("movie_image") or (hit or {}).get("stream_icon")
         thumb = f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None
+        cast_raw = info.get("cast") or info.get("actors") or []
+        if isinstance(cast_raw, str):
+            cast = [name.strip() for name in re.split(r"[,;/]", cast_raw) if name.strip()]
+        elif isinstance(cast_raw, list):
+            cast = [str(name).strip() for name in cast_raw if str(name).strip()]
+        else:
+            cast = []
+        release = str(info.get("releasedate") or info.get("release_date") or "")
         return {
             "rating_key": rating_key,
             "title": title,
             "type": "live" if kind == "live" else "movie",
             "thumb": thumb,
             "art": None,
-            "year": (hit or {}).get("year"),
-            "summary": None,
-            "audience_rating": (hit or {}).get("rating"),
+            "year": (hit or {}).get("year") or (release[:4] if release else None),
+            "summary": info.get("plot") or (hit or {}).get("plot"),
+            "cast": cast,
+            "director": info.get("director"),
+            "genre": info.get("genre"),
+            "audience_rating": info.get("rating") or (hit or {}).get("rating"),
+            "duration_seconds": info.get("duration_secs"),
             "duration": tracked_duration or None,
             "view_offset": view_offset or None,
             "in_watchlist": in_wl,
@@ -2490,11 +2585,40 @@ async def metadata_children(rating_key: str, user: dict = Depends(get_current_us
 
 
 @api.get("/recently-added")
-async def recently_added(user: dict = Depends(get_current_user), limit: int = 30):
-    """Return a safe sample of non-adult IPTV VOD for the home screen."""
+async def recently_added(user: dict = Depends(get_current_user), limit: int = 30, kind: str = "movie"):
+    """Newest non-adult VOD titles (or series with kind=show), newest first."""
     try:
-        catalog = await iptv_vod_streams(exclude_adult=True, limit=limit, user=user)
-        return {"items": (catalog.get("items") or [])[:limit]}
+        want_show = kind == "show"
+        raw, cat_by_id = await _iptv_cached("series" if want_show else "vod")
+        id_key = "series_id" if want_show else "stream_id"
+        stamp_key = "last_modified" if want_show else "added"
+        ordered = sorted(raw or [], key=lambda s: _to_epoch(s.get(stamp_key)), reverse=True)
+        items: list[dict] = []
+        for s in ordered:
+            cid = str(s.get("category_id") or "")
+            cat_name = cat_by_id.get(cid) or None
+            title = s.get("name")
+            if not title or s.get(id_key) is None:
+                continue
+            if _is_adult_category_name(cat_name) or _is_adult_category_name(title):
+                continue
+            thumb_raw = s.get("cover") if want_show else s.get("stream_icon")
+            if not thumb_raw:
+                continue  # skip poster-less junk entries on the home rows
+            release = str(s.get("release_date") or "")
+            items.append({
+                "rating_key": f"iptv-{'series' if want_show else 'movie'}-{s.get(id_key)}",
+                "title": title,
+                "type": "show" if want_show else "movie",
+                "thumb": f"/api/iptv/logo?u={quote(thumb_raw, safe='')}",
+                "year": (release[:4] or None) if want_show else s.get("year"),
+                "added": _to_epoch(s.get(stamp_key)) or None,
+                "category_name": cat_name,
+                "source": "iptv",
+            })
+            if len(items) >= max(1, min(int(limit), 100)):
+                break
+        return {"items": items}
     except Exception as e:
         log.warning("recently-added failed: %s", e)
         return {"items": []}
@@ -2545,9 +2669,10 @@ async def browse_rows(user: dict = Depends(get_current_user), per_row: int = 20,
 
     deck_task = on_deck(user, limit=per_row)
     live_task = live_channels(user)
-    vod_task = recently_added(user, limit=per_row)
+    vod_task = recently_added(user, limit=per_row, kind="movie")
+    series_task = recently_added(user, limit=per_row, kind="show")
 
-    deck_resp, live_resp, vod_resp = await asyncio.gather(deck_task, live_task, vod_task, return_exceptions=False)
+    deck_resp, live_resp, vod_resp, series_resp = await asyncio.gather(deck_task, live_task, vod_task, series_task, return_exceptions=False)
 
     # --- Continue watching ---------------------------------------------------
     try:
@@ -2604,12 +2729,24 @@ async def browse_rows(user: dict = Depends(get_current_user), per_row: int = 20,
         if vod_items:
             rows.append({
                 "id": "vod",
-                "title": "Movies",
+                "title": "Latest Movies",
                 "kind": "poster",
                 "items": vod_items[:per_row],
             })
     except Exception as e:
         log.info("VOD row failed: %s", e)
+
+    try:
+        series_items = (series_resp or {}).get("items", []) or []
+        if series_items:
+            rows.append({
+                "id": "series",
+                "title": "Latest TV Shows",
+                "kind": "poster",
+                "items": series_items[:per_row],
+            })
+    except Exception as e:
+        log.info("Series row failed: %s", e)
 
     return {"rows": rows}
 
@@ -2636,21 +2773,48 @@ async def search(q: str, user: dict = Depends(get_current_user), limit: int = 50
 
     max_items = max(1, min(int(limit or 50), 200))
     terms = needle.split()
-    ranked: list[tuple[tuple[int, int, int], dict]] = []
-    for item in (_SEARCH_INDEX.get("items") or []):
-        if media_type != "all" and item.get("type") != media_type:
-            continue
-        score = _score_search_item(item, needle, terms)
-        if score is None:
-            continue
-        payload = {k: v for k, v in item.items() if not k.startswith("_") and k != "title_lc"}
-        ranked.append((score, payload))
 
-    ranked.sort(key=lambda x: x[0])
-    items = [payload for _, payload in ranked[:max_items]]
+    def rank(search_needle: str, search_terms: list[str]) -> list[tuple[tuple, dict]]:
+        hits: list[tuple[tuple, dict]] = []
+        for item in (_SEARCH_INDEX.get("items") or []):
+            if media_type != "all" and item.get("type") != media_type:
+                continue
+            score = _score_search_item(item, search_needle, search_terms)
+            if score is None:
+                continue
+            hits.append((_search_sort_key(score, item), item))
+        hits.sort(key=lambda hit: hit[0])
+        return hits
+
+    ranked = rank(needle, terms)
+    corrected_query = None
+    if not ranked and len(needle) >= 4:
+        # Typo fallback ("spidrman" -> "spiderman"): snap each unknown word to the closest title word.
+        import difflib
+        vocab = _SEARCH_INDEX.get("vocab") or []
+        fixed = []
+        for term in terms:
+            close = difflib.get_close_matches(term, vocab, n=1, cutoff=0.75) if len(term) >= 3 else []
+            fixed.append(close[0] if close else term)
+        if fixed != terms:
+            corrected_query = " ".join(fixed)
+            ranked = rank(corrected_query, fixed)
+
+    # Providers often list the same title several times (languages/qualities); keep the best copy.
+    items: list[dict] = []
+    seen_titles: set[tuple] = set()
+    for _, item in ranked:
+        dedupe_key = (item.get("type"), item.get("_title_search"), item.get("year"))
+        if item.get("type") != "live" and dedupe_key in seen_titles:
+            continue
+        seen_titles.add(dedupe_key)
+        items.append({k: v for k, v in item.items() if not k.startswith("_") and k != "title_lc"})
+        if len(items) >= max_items:
+            break
     return {
         "items": items,
         "query": q,
+        "corrected_query": corrected_query,
         "total_found": len(ranked),
         "index_updated_at": _SEARCH_INDEX.get("updated_at"),
     }

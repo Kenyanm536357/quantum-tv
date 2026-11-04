@@ -985,8 +985,15 @@ async def _rebuild_search_index_once() -> None:
                 "category_name": series_cat_by_id.get(cid) or None,
             })
 
+        def _vocab_for(title_search: str) -> set[str]:
+            words = title_search.split()
+            known = {w for w in words if len(w) >= 3}
+            # Joined neighbours let "spidrman" snap to "spiderman" (titles are stored as "spider man").
+            known.update(a + b for a, b in zip(words, words[1:]) if len(a + b) >= 5 and len(a) >= 3)
+            return known
+
         _SEARCH_INDEX["items"] = out
-        _SEARCH_INDEX["vocab"] = sorted({word for item in out for word in (item.get("_title_search") or "").split() if len(word) >= 3})
+        _SEARCH_INDEX["vocab"] = sorted({word for item in out if item.get("type") != "live" for word in _vocab_for(item.get("_title_search") or "")})
         _SEARCH_INDEX["updated_at"] = now_iso()
         _SEARCH_INDEX["source_cache_updated_at"] = source_cache_updated_at
         log.info("Search index: refreshed %d items", len(out))
@@ -2794,7 +2801,7 @@ async def search(q: str, user: dict = Depends(get_current_user), limit: int = 50
         vocab = _SEARCH_INDEX.get("vocab") or []
         fixed = []
         for term in terms:
-            close = difflib.get_close_matches(term, vocab, n=1, cutoff=0.75) if len(term) >= 3 else []
+            close = difflib.get_close_matches(term, vocab, n=1, cutoff=0.8) if len(term) >= 4 else []
             fixed.append(close[0] if close else term)
         if fixed != terms:
             corrected_query = " ".join(fixed)
@@ -2804,7 +2811,7 @@ async def search(q: str, user: dict = Depends(get_current_user), limit: int = 50
     items: list[dict] = []
     seen_titles: set[tuple] = set()
     for _, item in ranked:
-        dedupe_key = (item.get("type"), item.get("_title_search"), item.get("year"))
+        dedupe_key = (item.get("type"), item.get("_title_search"), item.get("_year_num"))
         if item.get("type") != "live" and dedupe_key in seen_titles:
             continue
         seen_titles.add(dedupe_key)

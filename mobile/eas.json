@@ -12,17 +12,6 @@
       },
       "channel": "development"
     },
-    "firetv": {
-      "distribution": "internal",
-      "channel": "production",
-      "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://quantum-tv-production.up.railway.app"
-      },
-      "android": {
-        "buildType": "apk",
-        "gradleCommand": ":app:assembleRelease"
-      }
-    },
     "preview": {
       "distribution": "internal",
       "channel": "preview",
@@ -44,6 +33,17 @@
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"
+      },
+      "ios": {
+        "simulator": false
+      }
+    },
+    "appstore": {
+      "autoIncrement": true,
+      "distribution": "store",
+      "channel": "production",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://quantum-tv-production.up.railway.app"
       },
       "ios": {
         "simulator": false

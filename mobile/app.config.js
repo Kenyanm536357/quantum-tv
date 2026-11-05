@@ -12,5 +12,6 @@ module.exports = ({ config }) => {
       return true;
     });
   }
+  config.plugins = [...(config.plugins || []), require("./plugins/withAutoBoot")];
   return config;
 };

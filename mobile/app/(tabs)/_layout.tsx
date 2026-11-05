@@ -2,7 +2,8 @@ import { Tabs } from "expo-router";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet, Platform, Image } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform, Image, useWindowDimensions } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ImageWithFallback from "../../src/ImageWithFallback";
 import { LinearGradient } from "expo-linear-gradient";
 import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
@@ -163,11 +164,15 @@ function TVSideRail({ state, descriptors, navigation }: BottomTabBarProps) {
 // Phone layout — traditional bottom tab bar
 // ============================================================
 function BottomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const compact = width < 390;
+  const bottomInset = Math.max(SAFE.bottom, insets.bottom);
   const visibleRoutes = state.routes.filter(
     (route) => (descriptors[route.key]?.options as unknown as { href?: string | null } | undefined)?.href !== null && !HIDDEN_TAB_ROUTES.has(route.name),
   );
   return (
-    <View style={[styles.bar, { height: SIZES.tabBarH + SAFE.bottom, paddingBottom: SAFE.bottom + 2 }]}>
+    <View style={[styles.bar, { height: SIZES.tabBarH + bottomInset, paddingBottom: bottomInset + 2 }]}>
       <BlurView tint="dark" intensity={40} style={StyleSheet.absoluteFill} />
       <View style={styles.row}>
         {visibleRoutes.map((route) => {
@@ -198,7 +203,7 @@ function BottomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
                 return (
                   <>
                     {iconRender ? iconRender({ focused, color, size: SIZES.iconSm }) : null}
-                    <Text numberOfLines={1} style={[styles.label, { color, fontFamily: focused || active ? "Unbounded_700Bold" : "Outfit_500Medium" }]}>{displayLabel}</Text>
+                    {(!compact || active) && <Text numberOfLines={1} style={[styles.label, { color, fontFamily: focused || active ? "Unbounded_700Bold" : "Outfit_500Medium" }]}>{displayLabel}</Text>}
                   </>
                 );
               }}

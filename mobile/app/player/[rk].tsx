@@ -1,27 +1,37 @@
 import { useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, useWindowDimensions, useTVEventHandler } from "react-native";
+import { getAdjacentChannel } from "../../src/channelContext";
+import { useKeepAwake } from "expo-keep-awake";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useVideoPlayer, VideoView, type VideoPlayerStatus } from "expo-video";
-import { useKeepAwake } from "expo-keep-awake";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import client, { colors } from "../../src/api";
 import { SAFE, SIZES, ms, vs, s as scale, IS_TV } from "../../src/responsive";
 
-type Phase = "loading" | "in-app" | "error";
+// ============================================================
+// Player — plays the stream with the built-in in-app player
+// (expo-video). On error a retry screen is shown; live channels
+// auto-reconnect.
+// ============================================================
 
-function PlaybackKeepAwake() {
-  useKeepAwake("quantum-tv-playback");
-  return null;
-}
+type Phase =
+  | "loading"
+  | "in-app"
+  | "error";
 
 export default function Player() {
+  useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const safeTop = Math.max(SAFE.top, insets.top + vs(8));
   const { rk, title } = useLocalSearchParams<{ rk: string; title: string }>();
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("loading");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [retries, setRetries] = useState(0);
+  const fellBackRef = useRef(false);
   const triedTransportStreamRef = useRef(false);
   const resumeAppliedRef = useRef(false);
   const progressSaveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -32,6 +42,21 @@ export default function Player() {
   });
 
   const ratingKey = String(rk || "");
+  const isLiveKey = ratingKey.startsWith("iptv-live-");
+  useKeepAwake();
+
+  // Live streams never give up: on error/end/stall, reconnect after a short delay.
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleReconnect = () => {
+    if (reconnectTimer.current) return;
+    reconnectTimer.current = setTimeout(() => {
+      reconnectTimer.current = null;
+      setRetries((r) => r + 1);
+    }, 4000);
+  };
+  useEffect(() => () => {
+    if (reconnectTimer.current) { clearTimeout(reconnectTimer.current); reconnectTimer.current = null; }
+  }, [rk]);
   const canTrackProgress = /^(iptv-(movie|ep)-)/.test(ratingKey);
 
   // Custom playback controls — expo-video's `nativeControls` overlay is
@@ -39,7 +64,6 @@ export default function Player() {
   // visible/focusable play/pause or seek buttons on Android TV). We render
   // our own focusable control bar instead and drive it off the player API.
   const [isPlaying, setIsPlaying] = useState(true);
-  const [playerStatus, setPlayerStatus] = useState<VideoPlayerStatus>("idle");
   const [, setTick] = useState(0);
   const [controlsVisible, setControlsVisible] = useState(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -163,8 +187,14 @@ export default function Player() {
     };
   }, [canTrackProgress, phase]);
 
+  const showStreamError = (message: string) => {
+    setErrorMsg(message);
+    setPhase("error");
+  };
+
   useEffect(() => {
     const cancelledRef = { current: false };
+    fellBackRef.current = false;
     triedTransportStreamRef.current = false;
     setPhase("loading");
     setErrorMsg(null);
@@ -172,21 +202,23 @@ export default function Player() {
 
     (async () => {
       try {
+        // Built-in player uses the app-proxied URL (works reliably in-app
+        // and keeps auth/HLS-rewriting on our side).
         const { data } = await client.get(`/stream/${rk}`, {
           params: { direct: "false", external: "false" },
         });
         if (cancelledRef.current) return;
         if (!data?.url || typeof data.url !== "string" || !data.url.length) {
-          setErrorMsg("Quantum TV could not get a stream URL. Check your connection and try again.");
-          setPhase("error");
+          if (isLiveKey) { scheduleReconnect(); return; }
+          showStreamError("No stream URL returned by the server.");
           return;
         }
         setUrl(data.url as string);
         setPhase("in-app");
-      } catch (error: any) {
+      } catch {
         if (cancelledRef.current) return;
-        setErrorMsg(error?.response?.data?.detail || error?.message || "Could not retrieve the stream. Check your connection and try again.");
-        setPhase("error");
+        if (isLiveKey) { scheduleReconnect(); return; }
+        showStreamError("Could not retrieve stream.");
       }
     })();
 
@@ -195,47 +227,77 @@ export default function Player() {
     };
   }, [rk, retries]);
 
-  // Retry live streams with the provider's transport-stream format if HLS fails.
+  const giveUp = () => {
+    if (isLiveKey) { scheduleReconnect(); return; }
+    fellBackRef.current = true;
+    showStreamError("The video could not be played.");
+  };
   useEffect(() => {
     const sub = player.addListener("statusChange", (status: VideoPlayerStatus) => {
-      setPlayerStatus(status);
-      if (status !== "error") return;
-
-      const canRetryWithTs = String(rk || "").startsWith("iptv-live-") && !triedTransportStreamRef.current;
-      if (canRetryWithTs) {
-        triedTransportStreamRef.current = true;
-        setPhase("loading");
-        client.get(`/stream/${rk}`, {
-          params: { direct: "false", external: "false", live_format: "ts" },
-        }).then((response: { data: { url?: unknown } }) => {
-          const { data } = response;
-          if (data?.url && typeof data.url === "string") {
-            setUrl(data.url);
-            setPhase("in-app");
-          } else {
-            setErrorMsg("This live stream could not be played in Quantum TV.");
-            setPhase("error");
-          }
-        }).catch((error: any) => {
-          setErrorMsg(error?.response?.data?.detail || error?.message || "This live stream could not be played in Quantum TV.");
-          setPhase("error");
-        });
-        return;
+      if (status === "error" && !fellBackRef.current) {
+        const canRetryWithTs = String(rk || "").startsWith("iptv-live-") && !triedTransportStreamRef.current;
+        if (canRetryWithTs) {
+          triedTransportStreamRef.current = true;
+          setPhase("loading");
+          client.get(`/stream/${rk}`, {
+            params: { direct: "false", external: "false", live_format: "ts" },
+          }).then((response: { data: { url?: unknown } }) => {
+            const { data } = response;
+            if (data?.url && typeof data.url === "string") {
+              setUrl(data.url);
+              setPhase("in-app");
+            } else {
+              giveUp();
+            }
+          }).catch(() => {
+            giveUp();
+          });
+          return;
+        }
+        giveUp();
       }
-
-      setErrorMsg("This stream could not be played in Quantum TV. Check your connection and try again.");
-      setPhase("error");
     });
     return () => sub.remove();
   }, [player, rk]);
 
   const retry = () => setRetries((r) => r + 1);
 
+  // Stall watchdog + end-of-stream recovery for live channels.
+  useEffect(() => {
+    if (!isLiveKey || phase !== "in-app") return;
+    let lastTime = -1;
+    let lastChange = Date.now();
+    const id = setInterval(() => {
+      const t = player.currentTime || 0;
+      if (t !== lastTime || !player.playing) { lastTime = t; lastChange = Date.now(); return; }
+      if (Date.now() - lastChange > 25000) { lastChange = Date.now(); scheduleReconnect(); }
+    }, 3000);
+    const endSub = player.addListener("playToEnd", () => scheduleReconnect());
+    return () => { clearInterval(id); endSub.remove(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLiveKey, phase, player]);
+
+  // Channel surfing: D-pad up/down (or remote channel keys) switch to the
+  // previous/next channel of the list the user came from.
+  const isLive = String(rk || "").startsWith("iptv-live-");
+  const surf = (dir: 1 | -1) => {
+    const next = getAdjacentChannel(String(rk || ""), dir);
+    if (!next) return;
+    saveProgress();
+    client.post("/me/live/recent", { key: next.key, title: next.title }).catch(() => {});
+    router.setParams({ rk: next.key, title: next.title });
+  };
+  const surfRef = useRef(surf);
+  surfRef.current = surf;
+  useTVEventHandler((evt: any) => {
+    if (!isLive || !evt || evt.eventKeyAction === 0) return;
+    if (evt.eventType === "up" || evt.eventType === "channelUp") surfRef.current(-1);
+    else if (evt.eventType === "down" || evt.eventType === "channelDown") surfRef.current(1);
+  });
+
   return (
     <View style={s.root}>
       <LinearGradient colors={["#0B0518", "#170634", "#0B0518"]} style={StyleSheet.absoluteFill} />
-
-      <PlaybackKeepAwake />
 
       {phase === "in-app" && (
         <VideoView
@@ -246,14 +308,6 @@ export default function Player() {
           allowsPictureInPicture
           contentFit="contain"
         />
-      )}
-
-      {phase === "in-app" && playerStatus !== "readyToPlay" && playerStatus !== "error" && (
-        <View style={s.bufferingOverlay} pointerEvents="none">
-          <ActivityIndicator color={colors.cyan} size="large" />
-          <Text style={s.statusTitle}>Buffering stream…</Text>
-          <Text style={s.statusSub}>Waiting for the video provider and your connection.</Text>
-        </View>
       )}
 
       {/* Invisible full-screen target so a D-pad press/OK or a touch tap
@@ -286,7 +340,7 @@ export default function Player() {
         hasTVPreferredFocus={phase !== "loading"}
         style={({ focused }) => [
           s.backBtn,
-          { top: SAFE.top + 10, left: SAFE.left + 10 },
+          { top: safeTop + 10, left: SAFE.left + 10 },
           focused && s.backBtnFocused,
         ]}
       >
@@ -296,14 +350,14 @@ export default function Player() {
       {(phase === "in-app" ? controlsVisible : true) && (
         <LinearGradient
           colors={["rgba(5,3,15,0.85)", "transparent"]}
-          style={[s.topScrim, { height: SAFE.top + vs(90) }]}
+          style={[s.topScrim, { height: safeTop + vs(90) }]}
           pointerEvents="none"
         />
       )}
 
       <Text
         numberOfLines={2}
-        style={[s.titleText, { top: SAFE.top + 12, left: ms(60) + SAFE.left, right: SAFE.right }]}
+        style={[s.titleText, { top: safeTop + 12, left: ms(60) + SAFE.left, right: SAFE.right }]}
       >
         {title}
       </Text>
@@ -327,6 +381,17 @@ export default function Player() {
             <Text style={s.timeText}>{formatTime(duration)}</Text>
           </View>
           <View style={s.transportRow}>
+            {isLive && (
+              <Pressable
+                testID="player-ch-prev"
+                focusable
+                onFocus={showControlsTemporarily}
+                onPress={() => surf(-1)}
+                style={({ focused }) => [s.transportBtn, focused && s.actionBtnFocused]}
+              >
+                <Ionicons name="chevron-up" size={ms(22)} color="#fff" />
+              </Pressable>
+            )}
             <Pressable
               testID="player-rewind"
               focusable
@@ -355,6 +420,17 @@ export default function Player() {
             >
               <Ionicons name="play-forward" size={ms(22)} color="#fff" />
             </Pressable>
+            {isLive && (
+              <Pressable
+                testID="player-ch-next"
+                focusable
+                onFocus={showControlsTemporarily}
+                onPress={() => surf(1)}
+                style={({ focused }) => [s.transportBtn, focused && s.actionBtnFocused]}
+              >
+                <Ionicons name="chevron-down" size={ms(22)} color="#fff" />
+              </Pressable>
+            )}
           </View>
         </View>
       )}
@@ -362,8 +438,12 @@ export default function Player() {
       {phase === "loading" && (
         <View style={s.center}>
           <ActivityIndicator color={colors.cyan} size="large" />
-          <Text style={s.statusTitle}>Resolving stream…</Text>
-          <Text style={s.statusSub}>Connecting to Quantum TV.</Text>
+          <Text style={s.statusTitle}>{isLiveKey && retries >= 2 ? "Reconnecting…" : "Resolving stream…"}</Text>
+          {isLiveKey && retries >= 2 ? (
+            <Text style={s.statusSub}>
+              This channel isn't responding yet. Event and PPV channels (like FloSports) only stream while an event is live. Retrying automatically.
+            </Text>
+          ) : null}
         </View>
       )}
 
@@ -390,13 +470,6 @@ export default function Player() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#0B0518" },
-  bufferingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 4,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(11,5,24,0.58)",
-  },
   backBtn: {
     position: "absolute",
     zIndex: 10,
@@ -436,6 +509,19 @@ const s = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 8,
+  },
+  switchBtn: {
+    position: "absolute",
+    zIndex: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: vs(8),
+    paddingHorizontal: ms(14),
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(11,5,24,0.7)",
   },
   controlBar: {
     position: "absolute",
@@ -499,6 +585,27 @@ const s = StyleSheet.create({
     paddingHorizontal: ms(IS_TV ? 80 : 32),
     paddingTop: vs(60),
   },
+  centerScroll: {
+    flexGrow: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: ms(IS_TV ? 80 : 32),
+    paddingTop: vs(80),
+    paddingBottom: vs(40),
+  },
+  iconCircle: {
+    width: ms(72),
+    height: ms(72),
+    borderRadius: 999,
+    backgroundColor: colors.cyan,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: vs(18),
+    shadowColor: colors.cyan,
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 12,
+  },
   statusTitle: {
     color: "#fff",
     fontFamily: "Unbounded_700Bold",
@@ -514,6 +621,21 @@ const s = StyleSheet.create({
     lineHeight: ms(IS_TV ? 22 : 18),
     marginBottom: vs(20),
     maxWidth: ms(560),
+  },
+  probeOk: {
+    color: colors.cyan,
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: ms(12),
+    marginBottom: vs(14),
+    textAlign: "center",
+  },
+  probeWarn: {
+    color: colors.zinc400,
+    fontFamily: "Outfit_400Regular",
+    fontSize: ms(12),
+    marginBottom: vs(14),
+    textAlign: "center",
+    maxWidth: ms(520),
   },
   actionBtn: {
     flexDirection: "row",
@@ -540,6 +662,22 @@ const s = StyleSheet.create({
     color: colors.cyan,
     fontFamily: "Outfit_600SemiBold",
     fontSize: ms(IS_TV ? 15 : 13),
+  },
+  ghostBtn: {
+    paddingHorizontal: ms(20),
+    paddingVertical: vs(10),
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+    minWidth: ms(160),
+    alignItems: "center",
+    marginBottom: vs(10),
+  },
+  ghostBtnFocused: { borderColor: colors.cyan },
+  ghostBtnTxt: {
+    color: colors.zinc300,
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: ms(IS_TV ? 14 : 12),
   },
   errTitle: {
     color: "#fca5a5",

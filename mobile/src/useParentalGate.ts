@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQuery } from "@tanstack/react-query";
 import client from "./api";
@@ -19,6 +20,10 @@ export const PARENTAL_UNLOCKED_KEY = "qtv_parental_unlocked";
 export const PARENTAL_UNLOCK_TTL = 15 * 60 * 1000; // 15 minutes
 /** Device preference: adult channels are OFF by default until the user enables them. */
 export const ADULT_CHANNELS_ENABLED_KEY = "qtv_adult_channels_enabled";
+
+const listeners = new Set<() => void>();
+/** Call after changing the adult/unlock prefs so mounted screens refresh immediately. */
+export const notifyParentalPrefsChanged = () => listeners.forEach((fn) => fn());
 
 /** Returns true if a channel genre/category string looks like adult content. */
 export function isAdultCategory(genre?: string, category?: string, title?: string): boolean {
@@ -47,24 +52,31 @@ export function isAdultCategory(genre?: string, category?: string, title?: strin
 export function useParentalGate() {
   const [sessionUnlocked, setSessionUnlocked] = useState(false);
   const [adultChannelsEnabled, setAdultChannelsEnabledState] = useState(false);
-  const checkedRef = useRef(false);
 
-  // Check stored unlock timestamp + adult visibility preference on mount
-  useEffect(() => {
-    if (checkedRef.current) return;
-    checkedRef.current = true;
+  // Re-read device prefs on mount, on screen focus and whenever Settings changes them,
+  // so tabs that stayed mounted never keep a stale adult on/off value.
+  const load = useCallback(() => {
     AsyncStorage.multiGet([PARENTAL_UNLOCKED_KEY, ADULT_CHANNELS_ENABLED_KEY]).then((pairs) => {
       const map = Object.fromEntries(pairs);
       const unlockVal = map[PARENTAL_UNLOCKED_KEY];
+      let unlocked = false;
       if (unlockVal) {
         const ts = parseInt(unlockVal, 10);
-        if (Date.now() - ts < PARENTAL_UNLOCK_TTL) setSessionUnlocked(true);
+        if (Date.now() - ts < PARENTAL_UNLOCK_TTL) unlocked = true;
         else AsyncStorage.removeItem(PARENTAL_UNLOCKED_KEY);
       }
+      setSessionUnlocked(unlocked);
       // Default OFF unless explicitly set to "1"
       setAdultChannelsEnabledState(map[ADULT_CHANNELS_ENABLED_KEY] === "1");
     });
   }, []);
+
+  useEffect(() => {
+    load();
+    listeners.add(load);
+    return () => { listeners.delete(load); };
+  }, [load]);
+  useFocusEffect(load);
 
   const parentalQ = useQuery({
     queryKey: ["parental-settings"],
@@ -91,6 +103,7 @@ export function useParentalGate() {
       await AsyncStorage.removeItem(PARENTAL_UNLOCKED_KEY);
       setSessionUnlocked(false);
     }
+    notifyParentalPrefsChanged();
   }, []);
 
   return {

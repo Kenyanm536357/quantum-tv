@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from "react";
-import { View, Text, FlatList, Pressable, Image, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
+import React, { useCallback, useMemo, useState } from "react";
+import { View, Text, FlatList, Pressable, Image, StyleSheet, ActivityIndicator, ScrollView, useWindowDimensions } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import client, { BACKEND, colors } from "../../src/api";
 import BrandBackground from "../../src/BrandBackground";
 import { SAFE, SIZES, IS_TV, vs, ms, s, FOCUSED_CARD } from "../../src/responsive";
@@ -29,13 +30,16 @@ type MetaItem = {
 // season the user has selected. This keeps the initial payload small
 // even for shows with thousands of episodes.
 export default function ShowDetail() {
+  useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const safeTop = Math.max(SAFE.top, insets.top + vs(8));
   const { rk, title: paramTitle } = useLocalSearchParams<{ rk: string; title?: string }>();
   const router = useRouter();
   const qc = useQueryClient();
 
   const meta = useQuery({
     queryKey: ["meta", rk],
-    queryFn: async () => (await client.get(`/metadata/${rk}`)).data as MetaItem & { in_favorites?: boolean },
+    queryFn: async () => (await client.get(`/metadata/${rk}`)).data as MetaItem & { in_favorites?: boolean; in_watchlist?: boolean },
   });
 
   const seasons = useQuery({
@@ -52,6 +56,37 @@ export default function ShowDetail() {
     queryFn: async () => (await client.get(`/metadata/${activeSeasonRk}/children`)).data as { items: MetaItem[] },
   });
 
+  useFocusEffect(useCallback(() => {
+    if (activeSeasonRk) void episodes.refetch();
+  }, [activeSeasonRk, episodes.refetch]));
+
+  const favorites = useQuery({
+    queryKey: ["favs"],
+    queryFn: async () => (await client.get("/me/favorites")).data as { items: Array<{ rating_key: string }> },
+  });
+  const favoriteKeys = useMemo(
+    () => new Set((favorites.data?.items || []).map((item) => String(item.rating_key))),
+    [favorites.data]
+  );
+  const toggleEpisodeFavorite = useMutation({
+    mutationFn: async (episode: MetaItem) => {
+      const episodeKey = String(episode.rating_key);
+      if (favoriteKeys.has(episodeKey)) {
+        return client.delete(`/me/favorites/${encodeURIComponent(episodeKey)}`);
+      }
+      return client.post("/me/favorites", {
+        rating_key: episodeKey,
+        title: `${displayTitle} · ${episode.title}`,
+        type: "episode",
+        thumb: episode.thumb || null,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["favs"] });
+      qc.invalidateQueries({ queryKey: ["/me/favorites"] });
+    },
+  });
+
   const isFav = !!meta.data?.in_favorites;
   const toggleFav = useMutation({
     mutationFn: async () => {
@@ -62,6 +97,18 @@ export default function ShowDetail() {
       qc.invalidateQueries({ queryKey: ["meta", rk] });
       qc.invalidateQueries({ queryKey: ["favs"] });
       qc.invalidateQueries({ queryKey: ["/me/favorites"] });
+    },
+  });
+
+  const inWatchlist = !!meta.data?.in_watchlist;
+  const toggleWatchlist = useMutation({
+    mutationFn: async () => {
+      if (inWatchlist) return client.delete(`/me/watchlist/${encodeURIComponent(String(rk))}`);
+      return client.post("/me/watchlist", { rating_key: String(rk) });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["meta", rk] });
+      qc.invalidateQueries({ queryKey: ["/me/watchlist"] });
     },
   });
 
@@ -102,7 +149,7 @@ export default function ShowDetail() {
             colors={["rgba(6,7,20,0.30)", "rgba(6,7,20,0.75)", "rgba(6,7,20,1)"]}
             style={StyleSheet.absoluteFill}
           />
-          <View style={{ position: "absolute", top: SAFE.top, left: SAFE.left, right: SAFE.right }}>
+          <View style={{ position: "absolute", top: safeTop, left: SAFE.left, right: SAFE.right }}>
             <Pressable
               testID="show-back"
               focusable
@@ -124,7 +171,7 @@ export default function ShowDetail() {
             {meta.data?.summary ? (
               <Text style={styles.showSummary} numberOfLines={3}>{meta.data.summary}</Text>
             ) : null}
-            <View style={{ flexDirection: "row", gap: 10, marginTop: vs(12) }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: vs(12) }}>
               <Pressable
                 testID="show-fav"
                 focusable
@@ -141,6 +188,24 @@ export default function ShowDetail() {
                 <Text style={[styles.actionLabel, { color: isFav ? "#050614" : "#fff" }]}>
                   {isFav ? "Favorited" : "Favorite"}
                 </Text>
+              </Pressable>
+              <Pressable
+                testID="show-watchlist"
+                accessibilityRole="button"
+                accessibilityLabel={inWatchlist ? "Remove show from Watchlist" : "Add show to Watchlist"}
+                accessibilityState={{ selected: inWatchlist }}
+                focusable
+                onPress={() => toggleWatchlist.mutate()}
+                style={({ focused }) => [
+                  styles.actionBtn,
+                  {
+                    backgroundColor: inWatchlist ? "rgba(103,232,249,0.18)" : "rgba(255,255,255,0.08)",
+                    borderColor: focused ? colors.cyan : (inWatchlist ? colors.cyan : "rgba(255,255,255,0.15)"),
+                  },
+                ]}
+              >
+                <Ionicons name={inWatchlist ? "bookmark" : "bookmark-outline"} size={ms(18)} color={inWatchlist ? colors.cyan : "#fff"} />
+                <Text style={styles.actionLabel}>{inWatchlist ? "In Watchlist" : "Add to Watchlist"}</Text>
               </Pressable>
             </View>
           </View>
@@ -199,52 +264,65 @@ export default function ShowDetail() {
           <View style={{ paddingHorizontal: SAFE.left, gap: vs(8) }}>
             {episodeList.map((ep, idx) => {
               const pct = progressPct(ep);
+              const hasResume = Number(ep.view_offset || 0) > 5_000;
               const resumeMins = Number(ep.view_offset || 0) > 0 ? Math.floor(Number(ep.view_offset || 0) / 60000) : 0;
+              const isEpisodeFavorite = favoriteKeys.has(String(ep.rating_key));
               return (
-              <Pressable
-                key={String(ep.rating_key)}
-                testID={`episode-${ep.rating_key}`}
-                focusable
-                hasTVPreferredFocus={idx === 0}
-                onPress={() => playEpisode(ep)}
-                style={({ focused }) => [
-                  styles.epRow,
-                  focused && FOCUSED_CARD,
-                  focused && { borderColor: colors.cyan, borderWidth: 2 },
-                ]}
-              >
-                <View style={styles.epThumb}>
-                  {ep.thumb ? (
-                    <Image
-                      source={{ uri: ep.thumb.startsWith("http") ? ep.thumb : `${BACKEND}${ep.thumb}` }}
-                      style={StyleSheet.absoluteFill}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <LinearGradient colors={["#1A1C3A", "#0D0E23"]} style={StyleSheet.absoluteFill} />
-                  )}
-                  <View style={styles.epPlayBadge}>
-                    <Ionicons name="play" size={ms(16)} color="#050614" />
-                  </View>
-                </View>
-                <View style={{ flex: 1, marginLeft: 14 }}>
-                  <Text style={styles.epTitle} numberOfLines={1}>
-                    {ep.index ? `${ep.index}. ` : ""}{ep.title}
-                  </Text>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 2 }}>
-                    {ep.duration ? <Text style={styles.epMeta}>{Math.round(Number(ep.duration) / 60000)} min</Text> : null}
-                    {pct > 0 ? <Text style={styles.epResume}>Resume at {resumeMins}m</Text> : null}
-                  </View>
-                  {pct > 0 ? (
-                    <View style={styles.epProgressTrack}>
-                      <View style={[styles.epProgressFill, { width: `${pct}%` }]} />
+                <View key={String(ep.rating_key)} style={styles.epRow}>
+                  <Pressable
+                    testID={`episode-${ep.rating_key}`}
+                    focusable
+                    hasTVPreferredFocus={idx === 0}
+                    onPress={() => playEpisode(ep)}
+                    style={({ focused }) => [
+                      styles.epMain,
+                      focused && FOCUSED_CARD,
+                      focused && { borderColor: colors.cyan, borderWidth: 2 },
+                    ]}
+                  >
+                    <View style={styles.epThumb}>
+                      {ep.thumb ? (
+                        <Image
+                          source={{ uri: ep.thumb.startsWith("http") ? ep.thumb : `${BACKEND}${ep.thumb}` }}
+                          style={StyleSheet.absoluteFill}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <LinearGradient colors={["#1A1C3A", "#0D0E23"]} style={StyleSheet.absoluteFill} />
+                      )}
+                      <View style={styles.epPlayBadge}>
+                        <Ionicons name="play" size={ms(16)} color="#050614" />
+                      </View>
                     </View>
-                  ) : null}
-                  {ep.summary ? (
-                    <Text style={styles.epSummary} numberOfLines={2}>{ep.summary}</Text>
-                  ) : null}
+                    <View style={{ flex: 1, marginLeft: 14 }}>
+                      <Text style={styles.epTitle} numberOfLines={1}>
+                        {ep.index ? `${ep.index}. ` : ""}{ep.title}
+                      </Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 2 }}>
+                        {ep.duration ? <Text style={styles.epMeta}>{Math.round(Number(ep.duration) / 60000)} min</Text> : null}
+                        {hasResume ? <Text style={styles.epResume}>RESUME · {resumeMins}m{pct > 0 ? ` · ${Math.round(pct)}%` : ""}</Text> : null}
+                      </View>
+                      {pct > 0 ? (
+                        <View style={styles.epProgressTrack}>
+                          <View style={[styles.epProgressFill, { width: `${pct}%` }]} />
+                        </View>
+                      ) : null}
+                      {ep.summary ? (
+                        <Text style={styles.epSummary} numberOfLines={2}>{ep.summary}</Text>
+                      ) : null}
+                    </View>
+                  </Pressable>
+                  <Pressable
+                    testID={`episode-fav-${ep.rating_key}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={isEpisodeFavorite ? "Remove episode from Favorites" : "Add episode to Favorites"}
+                    focusable
+                    onPress={() => toggleEpisodeFavorite.mutate(ep)}
+                    style={({ focused }) => [styles.episodeFavorite, focused && { borderColor: colors.cyan }]}
+                  >
+                    <Ionicons name={isEpisodeFavorite ? "star" : "star-outline"} size={ms(18)} color={isEpisodeFavorite ? "#FACC15" : "#fff"} />
+                  </Pressable>
                 </View>
-              </Pressable>
               );
             })}
           </View>
@@ -284,9 +362,18 @@ const styles = StyleSheet.create({
   },
   epRow: {
     flexDirection: "row", alignItems: "center",
-    padding: 10, borderRadius: SIZES.radius,
+    padding: 8, borderRadius: SIZES.radius, gap: 8,
     backgroundColor: "rgba(255,255,255,0.04)",
-    borderWidth: 2, borderColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.05)",
+  },
+  epMain: {
+    flex: 1, flexDirection: "row", alignItems: "center",
+    padding: 2, borderRadius: SIZES.radiusSm, borderWidth: 2, borderColor: "transparent",
+  },
+  episodeFavorite: {
+    width: ms(42), height: ms(42), alignItems: "center", justifyContent: "center",
+    borderRadius: 999, borderWidth: 2, borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.06)",
   },
   epThumb: {
     width: IS_TV ? s(150) : s(110),

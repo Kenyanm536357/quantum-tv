@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Image, ScrollView } from "react-native";
+import { useEffect, useState } from "react";
+import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Image, useWindowDimensions, ScrollView } from "react-native";
 import ImageWithFallback from "../../src/ImageWithFallback";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -9,7 +9,7 @@ import client, { BACKEND, colors } from "../../src/api";
 import BrandBackground from "../../src/BrandBackground";
 import TVTextInput from "../../src/TVTextInput";
 import { IS_TV, SAFE, SIZES, vs, ms, s as scale } from "../../src/responsive";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeTopInset } from "../../src/useSafeTopInset";
 import { useParentalGate, isAdultCategory } from "../../src/useParentalGate";
 
 type MediaType = "all" | "movie" | "show" | "live";
@@ -22,10 +22,9 @@ const MEDIA_FILTERS: Array<{ value: MediaType; label: string }> = [
 ];
 
 export default function Search() {
-  const insets = useSafeAreaInsets();
-  const safeTop = Math.max(SAFE.top, insets.top + vs(8));
+  useWindowDimensions();
+  const safeTop = useSafeTopInset();
   const router = useRouter();
-  const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [mediaType, setMediaType] = useState<MediaType>("all");
@@ -38,51 +37,8 @@ export default function Search() {
     queryKey: ["search", mediaType, debouncedQ],
     queryFn: async () => (await client.get(`/search?q=${encodeURIComponent(debouncedQ)}&media_type=${mediaType}&limit=100`)).data,
     staleTime: 30_000,
-  });
-  const favorites = useQuery({
-    queryKey: ["/me/favorites"],
-    queryFn: async () => (await client.get("/me/favorites")).data as { items: Array<{ rating_key: string }> },
-    staleTime: 30_000,
-  });
-  const liveFavorites = useQuery({
-    queryKey: ["/me/live/favorites"],
-    queryFn: async () => (await client.get("/me/live/favorites")).data as { items: Array<{ key: string }> },
-    staleTime: 30_000,
-  });
-  const favoriteKeys = useMemo(
-    () => new Set((favorites.data?.items || []).map((item) => String(item.rating_key))),
-    [favorites.data]
-  );
-  const liveFavoriteKeys = useMemo(
-    () => new Set((liveFavorites.data?.items || []).map((item) => String(item.key))),
-    [liveFavorites.data]
-  );
-  const toggleFavorite = useMutation({
-    mutationFn: async (item: any) => {
-      const ratingKey = String(item.rating_key);
-      if (item.type === "live") {
-        if (liveFavoriteKeys.has(ratingKey)) {
-          return client.delete(`/me/live/favorites/${encodeURIComponent(ratingKey)}`);
-        }
-        return client.post("/me/live/favorites", {
-          key: ratingKey,
-          title: item.title || "",
-          logo: item.thumb || null,
-          number: item.number ?? null,
-          source: "iptv",
-        });
-      }
-      if (favoriteKeys.has(ratingKey)) {
-        return client.delete(`/me/favorites/${encodeURIComponent(ratingKey)}`);
-      }
-      return client.post("/me/favorites", { rating_key: ratingKey });
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/me/favorites"] });
-      qc.invalidateQueries({ queryKey: ["/me/live/favorites"] });
-      qc.invalidateQueries({ queryKey: ["favs"] });
-      qc.invalidateQueries({ queryKey: ["live-favorites"] });
-    },
+    // The server briefly answers "warming" after a restart; keep retrying until the index is ready.
+    refetchInterval: (query) => (query.state.data?.warming ? 4000 : false),
   });
   const { requiresPin } = useParentalGate();
 
@@ -98,6 +54,8 @@ export default function Search() {
     const isShow = (item.type || "").toLowerCase() === "show";
     if (isShow) {
       router.push({ pathname: "/show/[rk]", params: { rk: String(item.rating_key), title: item.title } });
+    } else if ((item.type || "").toLowerCase() === "movie") {
+      router.push({ pathname: "/movie/[rk]", params: { rk: String(item.rating_key), title: item.title } });
     } else {
       router.push({ pathname: "/player/[rk]", params: { rk: String(item.rating_key), title: item.title } });
     }
@@ -143,7 +101,12 @@ export default function Search() {
             returnKeyType="search"
           />
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterContent}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterScroll}
+          contentContainerStyle={styles.filterContent}
+        >
           {MEDIA_FILTERS.map((filter) => {
             const selected = mediaType === filter.value;
             return (
@@ -177,10 +140,16 @@ export default function Search() {
             <Ionicons name="arrow-forward" size={ms(15)} color={colors.zinc500} />
           </Pressable>
         ) : null}
-        {searched && !isFetching && !isError ? (
+        {data?.warming ? (
+          <View style={{ paddingHorizontal: SAFE.left, marginTop: vs(8) }}>
+            <Text style={styles.resultMeta}>Search is warming up — results will appear in a moment…</Text>
+          </View>
+        ) : null}
+        {searched && !isFetching && !isError && !data?.warming ? (
           <View style={{ paddingHorizontal: SAFE.left, marginTop: vs(8) }}>
             <Text style={styles.resultMeta}>
               {foundCount} {foundCount === 1 ? "match" : "matches"} in {MEDIA_FILTERS.find((filter) => filter.value === mediaType)?.label}
+              {data?.corrected_query ? ` · showing results for "${data.corrected_query}"` : ""}
             </Text>
           </View>
         ) : null}
@@ -189,7 +158,7 @@ export default function Search() {
           <View style={styles.errorNotice}>
             <Text style={styles.errorText}>Search could not load right now.</Text>
             <Pressable testID="master-search-retry" onPress={() => void refetch()} style={styles.retryButton}>
-              <Ionicons name="refresh" size={ms(15)} color="#050614" />
+              <Ionicons name="refresh" size={ms(15)} color={"#050614"} />
               <Text style={styles.retryText}>Retry</Text>
             </Pressable>
           </View>
@@ -199,7 +168,7 @@ export default function Search() {
           data={items}
           keyExtractor={(it) => String(it.rating_key)}
           ListEmptyComponent={() => (
-            searched && !isFetching && !isError ? (
+            searched && !isFetching && !isError && !data?.warming ? (
               <View style={styles.emptyWrap}>
                 <Ionicons name="search-outline" size={ms(30)} color={colors.zinc500} />
                 <Text style={styles.emptyTxt}>We could not find anything for "{q.trim()}".</Text>
@@ -214,44 +183,31 @@ export default function Search() {
           renderItem={({ item }) => {
             const itemType = item.type === "live" ? "LIVE TV" : item.type === "show" ? "TV SHOW" : "MOVIE";
             const detail = [item.year, item.genre || item.category_name].filter(Boolean).join(" · ");
-            const isFavorite = item.type === "live"
-              ? liveFavoriteKeys.has(String(item.rating_key))
-              : favoriteKeys.has(String(item.rating_key));
             return (
-            <View style={styles.row}>
-              <Pressable
-                testID={`result-${item.rating_key}`}
-                accessibilityRole="button"
-                accessibilityLabel={`${item.title}, ${itemType}${detail ? `, ${detail}` : ""}`}
-                focusable
-                onPress={() => openItem(item)}
-                style={({ focused }) => [styles.resultMain, focused && styles.resultFocused]}
-              >
-                <View style={styles.thumb}>
-                  {item.thumb ? (
-                    <Image source={{ uri: `${BACKEND}${item.thumb}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                  ) : (
-                    <LinearGradient colors={["#2A0F5A", "#0B0518"]} style={StyleSheet.absoluteFill} />
-                  )}
-                </View>
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
+            <Pressable
+              testID={`result-${item.rating_key}`}
+              accessibilityRole="button"
+              accessibilityLabel={`${item.title}, ${itemType}${detail ? `, ${detail}` : ""}`}
+              focusable
+              onPress={() => openItem(item)}
+              style={({ focused }) => [
+                styles.row,
+                focused && { backgroundColor: "rgba(139,92,246,0.14)", borderColor: colors.cyan, borderWidth: 2 },
+              ]}
+            >
+              <View style={styles.thumb}>
+                {item.thumb ? (
+                  <Image source={{ uri: `${BACKEND}${item.thumb}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                ) : (
+                  <LinearGradient colors={["#2A0F5A", "#0B0518"]} style={StyleSheet.absoluteFill} />
+                )}
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
                   <Text style={styles.rowSub} numberOfLines={1}>{itemType}{detail ? ` · ${detail}` : ""}</Text>
-                </View>
-                <Ionicons name={item.type === "live" ? "play-circle-outline" : "chevron-forward"} size={ms(18)} color={colors.zinc500} />
-              </Pressable>
-              <Pressable
-                testID={`favorite-${item.rating_key}`}
-                accessibilityRole="button"
-                accessibilityLabel={`${isFavorite ? "Remove" : "Add"} ${item.title} ${isFavorite ? "from" : "to"} favorites`}
-                accessibilityState={{ checked: isFavorite, disabled: toggleFavorite.isPending }}
-                disabled={toggleFavorite.isPending}
-                onPress={() => toggleFavorite.mutate(item)}
-                style={({ focused }) => [styles.favoriteButton, focused && styles.favoriteButtonFocused]}
-              >
-                <Ionicons name={isFavorite ? "heart" : "heart-outline"} size={ms(21)} color={isFavorite ? colors.magenta : colors.zinc400} />
-              </Pressable>
-            </View>
+              </View>
+              <Ionicons name={item.type === "live" ? "play-circle-outline" : "chevron-forward"} size={ms(18)} color={colors.zinc500} />
+            </Pressable>
             );
           }}
         />
@@ -293,20 +249,11 @@ const styles = StyleSheet.create({
     fontSize: SIZES.fontSmall,
   },
   row: {
-    flexDirection: "row", alignItems: "center", marginBottom: vs(6),
-  },
-  resultMain: {
-    flex: 1, flexDirection: "row", alignItems: "center",
+    flexDirection: "row", alignItems: "center",
     paddingVertical: vs(10), paddingHorizontal: 10,
-    borderRadius: SIZES.radius, borderWidth: 2, borderColor: "transparent",
+    borderRadius: SIZES.radius, marginBottom: vs(6),
+    borderWidth: 2, borderColor: "transparent",
   },
-  resultFocused: { backgroundColor: "rgba(139,92,246,0.14)", borderColor: colors.cyan },
-  favoriteButton: {
-    width: ms(46), height: ms(46), marginLeft: 4,
-    alignItems: "center", justifyContent: "center",
-    borderRadius: SIZES.radius, borderWidth: 2, borderColor: "transparent",
-  },
-  favoriteButtonFocused: { borderColor: colors.cyan, backgroundColor: "rgba(139,92,246,0.14)" },
   thumb: { width: scale(60), height: vs(80), borderRadius: 8, overflow: "hidden", backgroundColor: "#1C0A38" },
   rowTitle: { color: "#fff", fontFamily: "Outfit_600SemiBold", fontSize: SIZES.fontBody },
   rowSub: { color: colors.zinc500, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall, marginTop: 2, textTransform: "capitalize" },

@@ -3,7 +3,7 @@
     "name": "Quantum TV",
     "slug": "quantum-tv",
     "version": "1.0.14",
-    "orientation": "landscape",
+    "orientation": "default",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "dark",
     "scheme": "quantumtv",
@@ -14,11 +14,15 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.quantumtv.app"
+      "bundleIdentifier": "com.quantumtv.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "buildNumber": "9"
     },
     "android": {
       "package": "com.quantumtv.app",
-      "versionCode": 52,
+      "versionCode": 56,
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#060714"

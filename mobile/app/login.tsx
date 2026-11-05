@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { View, Text, Image, Pressable, ActivityIndicator, StyleSheet, TextInput, useWindowDimensions, Platform } from "react-native";
+import { View, Text, Image, Pressable, ActivityIndicator, StyleSheet, TextInput, ScrollView, useWindowDimensions, Platform } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
@@ -9,6 +9,7 @@ import * as Application from "expo-application";
 import client, { colors } from "../src/api";
 import { s, vs, ms, SAFE, IS_TV, SIZES } from "../src/responsive";
 import TVTextInput from "../src/TVTextInput";
+import { useSafeTopInset } from "../src/useSafeTopInset";
 
 /**
  * Produce a stable per-install device id. We persist a UUID-style string in
@@ -41,6 +42,7 @@ async function getDeviceId(): Promise<string> {
  */
 export default function Login() {
   const router = useRouter();
+  const safeTop = useSafeTopInset();
   const { width: W, height: H } = useWindowDimensions();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -81,12 +83,20 @@ export default function Login() {
   };
 
   return (
-    <View style={[styles.root, { paddingHorizontal: SAFE.right, paddingVertical: SAFE.top }]}>
+    <View style={styles.root}>
       <LinearGradient
         colors={["rgba(139,92,246,0.18)", "transparent"]}
         style={{ position: "absolute", top: 0, left: 0, right: 0, height: H * 0.55 }}
       />
-      <View style={[styles.center, isLandscape && IS_TV ? { flexDirection: "row", gap: s(60) } : null]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.center,
+          { paddingHorizontal: SAFE.right, paddingTop: Math.max(safeTop, vs(24)), paddingBottom: vs(24) },
+          isLandscape && IS_TV ? { flexDirection: "row", gap: s(60) } : null,
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={{ alignItems: "center", justifyContent: "center", flex: isLandscape && IS_TV ? 1 : undefined }}>
           <Image source={require("../assets/logo.png")} style={{ width: ms(110), height: ms(110), borderRadius: ms(28), marginBottom: vs(16) }} />
           <Text style={[styles.brand, { fontSize: SIZES.fontTitle * 1.4 }]}>Quantum <Text style={{ color: colors.cyan }}>TV</Text></Text>
@@ -160,14 +170,15 @@ export default function Login() {
 
           {error && <Text testID="login-error" style={[styles.err, { fontSize: SIZES.fontSmall, marginTop: vs(12) }]}>{error}</Text>}
         </View>
-      </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  scroll: { flex: 1 },
+  center: { flexGrow: 1, alignItems: "center", justifyContent: "center" },
   brand: { fontFamily: "Unbounded_800ExtraBold", color: colors.purple, textAlign: "center" },
   tag: { fontFamily: "Outfit_400Regular", color: colors.zinc400, marginTop: 6, textAlign: "center" },
   card: { backgroundColor: "rgba(13,14,35,0.6)", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", borderRadius: 24 },

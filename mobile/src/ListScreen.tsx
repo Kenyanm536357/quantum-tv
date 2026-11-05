@@ -1,4 +1,9 @@
-import { View, Text, FlatList, ActivityIndicator, Pressable, StyleSheet, Image } from "react-native";
+import { useRef } from "react";
+import { View, Text, FlatList, ActivityIndicator, Pressable, StyleSheet, Image, useWindowDimensions } from "react-native";
+import { useIsFocused } from "@react-navigation/native";
+import { useChannelScroll } from "./useChannelScroll";
+import { useParentalGate, isAdultCategory } from "./useParentalGate";
+import { setChannelContext } from "./channelContext";
 import ImageWithFallback from "./ImageWithFallback";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
@@ -6,11 +11,16 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import client, { BACKEND, colors } from "./api";
 import BrandBackground from "./BrandBackground";
+import { useSafeTopInset } from "./useSafeTopInset";
 import { SAFE, SIZES, GRID_COLS, IS_TV, vs, ms, s, FOCUSED_CARD } from "./responsive";
 
 export function ListScreen({ endpoint, additionalEndpoints = [], title, removeLabel, removeFromList, emptyText }: any) {
+  const { width: screenWidth } = useWindowDimensions();
+  const safeTop = useSafeTopInset();
   const router = useRouter();
   const qc = useQueryClient();
+  const isFocused = useIsFocused();
+  const listRef = useRef<FlatList<any>>(null);
   const { data, isLoading } = useQuery({
     queryKey: [endpoint],
     queryFn: async () => {
@@ -31,6 +41,10 @@ export function ListScreen({ endpoint, additionalEndpoints = [], title, removeLa
     refetchOnMount: "always",
     refetchOnReconnect: true,
     refetchOnWindowFocus: true,
+    // Poll every 5s while visible so new favorites/watchlist items appear without restarting.
+    refetchInterval: isFocused ? 5000 : false,
+    refetchIntervalInBackground: false,
+    staleTime: 0,
   });
   const remove = useMutation({
     mutationFn: async (item: any) => removeFromList(item),
@@ -40,10 +54,34 @@ export function ListScreen({ endpoint, additionalEndpoints = [], title, removeLa
     },
   });
 
+  const columns = GRID_COLS.posters;
+  const gridGap = SIZES.gap;
+  const cardWidth = Math.max(96, (screenWidth - SAFE.left - SAFE.right - gridGap * (columns - 1)) / columns);
+  const cardHeight = cardWidth * 1.5;
+
+  const { requiresPin } = useParentalGate();
+  const visibleItems = (data?.items || []).filter(
+    (it: any) => !requiresPin || !isAdultCategory(it.genre, it.category_name, it.title),
+  );
+  const itemCount = visibleItems.length;
+  const { preferIndex, onItemFocus } = useChannelScroll({
+    enabled: isFocused,
+    count: itemCount,
+    step: columns * 2,
+    scrollToIndex: (index) => listRef.current?.scrollToIndex({ index: Math.floor(index / columns) * columns, viewPosition: 0.3, animated: false }),
+  });
+
   const openItem = (item: any) => {
+    setChannelContext(
+      visibleItems
+        .filter((it: any) => it.favorite_source === "live")
+        .map((it: any) => ({ key: String(it.rating_key), title: it.title })),
+    );
     // Shows must first show a season/episode picker.
     if ((item.type || "").toLowerCase() === "show") {
       router.push({ pathname: "/show/[rk]", params: { rk: String(item.rating_key), title: item.title } });
+    } else if ((item.type || "").toLowerCase() === "movie") {
+      router.push({ pathname: "/movie/[rk]", params: { rk: String(item.rating_key), title: item.title } });
     } else {
       router.push({ pathname: "/player/[rk]", params: { rk: String(item.rating_key), title: item.title } });
     }
@@ -51,7 +89,7 @@ export function ListScreen({ endpoint, additionalEndpoints = [], title, removeLa
 
   return (
     <BrandBackground>
-      <View style={{ flex: 1, paddingTop: SAFE.top }}>
+      <View style={{ flex: 1, paddingTop: safeTop }}>
         <View style={{ paddingHorizontal: SAFE.left, flexDirection: "row", alignItems: "center", gap: 12, marginBottom: vs(4) }}>
           <Image
             source={require("../assets/logo.png")}
@@ -65,10 +103,13 @@ export function ListScreen({ endpoint, additionalEndpoints = [], title, removeLa
         </View>
         {isLoading && <ActivityIndicator color={colors.cyan} style={{ marginTop: 40 }} />}
         <FlatList
-          contentContainerStyle={{ paddingHorizontal: SAFE.left, paddingBottom: SIZES.tabBarH + vs(40), paddingTop: vs(16) }}
-          data={data?.items || []}
+          ref={listRef}
+          onScrollToIndexFailed={(info) => listRef.current?.scrollToOffset({ offset: info.averageItemLength * Math.floor(info.index / columns), animated: false })}
+          contentContainerStyle={{ paddingLeft: SAFE.left, paddingRight: SAFE.right, paddingBottom: SIZES.tabBarH + vs(40), paddingTop: vs(16) }}
+          data={visibleItems}
           keyExtractor={(it: any) => String(it.rating_key || it.key)}
-          numColumns={GRID_COLS.posters}
+          numColumns={columns}
+          key={`list-grid-${columns}`}
           columnWrapperStyle={{ gap: SIZES.gap }}
           ItemSeparatorComponent={() => <View style={{ height: SIZES.gap }} />}
           ListEmptyComponent={() => !isLoading && (
@@ -80,13 +121,14 @@ export function ListScreen({ endpoint, additionalEndpoints = [], title, removeLa
           renderItem={({ item, index }) => (
             <Pressable
               testID={`item-${item.rating_key}`}
-              style={({ focused }) => [{ flex: 1, borderRadius: SIZES.radius }, focused && FOCUSED_CARD]}
+              style={({ focused }) => [{ width: cardWidth, borderRadius: SIZES.radius }, focused && FOCUSED_CARD]}
               focusable
-              hasTVPreferredFocus={index === 0}
+              hasTVPreferredFocus={index === preferIndex}
+              onFocus={() => onItemFocus(index)}
               onPress={() => openItem(item)}
               onLongPress={() => remove.mutate(item)}
             >
-              <View style={styles.card}>
+              <View style={[styles.card, { width: cardWidth, height: cardHeight }]}>
                 {item.thumb ? (
                   <Image source={{ uri: item.thumb.startsWith("http") ? item.thumb : `${BACKEND}${item.thumb}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                 ) : (
@@ -111,7 +153,6 @@ const styles = StyleSheet.create({
   kicker: { color: colors.zinc500, letterSpacing: 2, textTransform: "uppercase", fontSize: SIZES.fontTiny, fontFamily: "Outfit_400Regular" },
   title: { color: "#fff", fontSize: SIZES.fontTitle, fontFamily: "Unbounded_800ExtraBold", marginTop: 4 },
   card: {
-    height: IS_TV ? vs(220) : vs(170),
     borderRadius: SIZES.radius,
     overflow: "hidden",
     backgroundColor: "rgba(255,255,255,0.04)",

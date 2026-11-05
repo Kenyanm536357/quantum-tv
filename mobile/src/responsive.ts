@@ -20,8 +20,16 @@ const BASE_H = 844;   // iPhone reference height
 const TV_BASE_W = 1280; // 720p TV reference width (we lerp toward this on TV)
 
 const win = Dimensions.get("window");
-export const SCREEN_W = win.width;
-export const SCREEN_H = win.height;
+export let SCREEN_W = win.width;
+export let SCREEN_H = win.height;
+
+// Keep scaling helpers current when a phone rotates or the app moves between
+// windows (split-screen/tablet). Screens using useWindowDimensions rerender on
+// the same event and pick up these latest measurements.
+Dimensions.addEventListener("change", ({ window }) => {
+  SCREEN_W = window.width;
+  SCREEN_H = window.height;
+});
 
 // Detect a TV-like environment: Android TV / Fire TV / tvOS / very wide aspect.
 // Platform.isTV is `true` on the react-native-tvos fork when running on a TV.
@@ -32,13 +40,17 @@ export const IS_TV =
 // Horizontal scaling: stretches to the screen width
 export const s = (size: number): number => {
   const base = IS_TV ? TV_BASE_W : BASE_W;
-  return Math.round((SCREEN_W / base) * size);
+  const rawScale = SCREEN_W / base;
+  const scale = IS_TV ? rawScale : Math.max(0.82, Math.min(rawScale, 1.12));
+  return Math.round(scale * size);
 };
 
 // Vertical scaling
 export const vs = (size: number): number => {
   const base = IS_TV ? 720 : BASE_H;
-  return Math.round((SCREEN_H / base) * size);
+  const rawScale = SCREEN_H / base;
+  const scale = IS_TV ? rawScale : Math.max(0.78, Math.min(rawScale, 1.12));
+  return Math.round(scale * size);
 };
 
 // Moderate scaling — better for fonts (avoids over-scaling on huge screens)
@@ -52,46 +64,49 @@ export const ms = (size: number, factor = 0.5): number => {
 // width. The expanded rail overlays content Netflix-style.
 export const SIDE_RAIL_W = IS_TV ? 68 : 0; // collapsed icon-only width
 export const SIDE_RAIL_EXPANDED_W = 230;
-const safePct = IS_TV ? 0.055 : 0.02;
 export const SAFE = {
-  top: Math.round(SCREEN_H * safePct),
-  bottom: Math.round(SCREEN_H * safePct),
-  left: Math.round(SCREEN_W * safePct) + SIDE_RAIL_W,
-  right: Math.round(SCREEN_W * safePct),
+  get top() { return Math.round(SCREEN_H * (IS_TV ? 0.055 : 0.02)); },
+  get bottom() { return Math.round(SCREEN_H * (IS_TV ? 0.055 : 0.02)); },
+  get left() { return Math.round(SCREEN_W * (IS_TV ? 0.055 : 0.02)) + SIDE_RAIL_W; },
+  get right() { return Math.round(SCREEN_W * (IS_TV ? 0.055 : 0.02)); },
 };
 
 // Card grid columns based on screen width
 export const GRID_COLS = {
-  posters: IS_TV ? (SCREEN_W >= 1600 ? 7 : SCREEN_W >= 1200 ? 6 : 5) : 3,
-  channels: IS_TV ? (SCREEN_W >= 1600 ? 5 : 4) : 2,
+  get posters() {
+    return IS_TV
+      ? (SCREEN_W >= 1600 ? 7 : SCREEN_W >= 1200 ? 6 : 5)
+      : Math.max(2, Math.min(5, Math.floor((SCREEN_W - 32) / 112)));
+  },
+  get channels() { return IS_TV ? (SCREEN_W >= 1600 ? 5 : 4) : (SCREEN_W < 360 ? 1 : 2); },
 };
 
 // Standard sizes used everywhere
 export const SIZES = {
   // Slight TV-specific upscale for readability on large screens
-  fontTitle: ms(28) * (IS_TV ? 1.12 : 1),
-  fontH1: ms(22) * (IS_TV ? 1.12 : 1),
-  fontH2: ms(18) * (IS_TV ? 1.12 : 1),
-  fontBody: ms(14) * (IS_TV ? 1.12 : 1),
-  fontSmall: ms(11) * (IS_TV ? 1.12 : 1),
-  fontTiny: ms(9) * (IS_TV ? 1.12 : 1),
+  get fontTitle() { return ms(28) * (IS_TV ? 1.12 : 1); },
+  get fontH1() { return ms(22) * (IS_TV ? 1.12 : 1); },
+  get fontH2() { return ms(18) * (IS_TV ? 1.12 : 1); },
+  get fontBody() { return ms(14) * (IS_TV ? 1.12 : 1); },
+  get fontSmall() { return ms(11) * (IS_TV ? 1.12 : 1); },
+  get fontTiny() { return ms(9) * (IS_TV ? 1.12 : 1); },
 
-  radius: s(14),
-  radiusSm: s(10),
-  radiusLg: s(20),
+  get radius() { return s(14); },
+  get radiusSm() { return s(10); },
+  get radiusLg() { return s(20); },
 
-  gap: s(12),
-  gapLg: s(20),
+  get gap() { return s(12); },
+  get gapLg() { return s(20); },
 
   // Touch targets
-  btnH: vs(IS_TV ? 56 : 48),
-  cardW: IS_TV ? s(180) : s(140),
-  cardH: IS_TV ? vs(270) : vs(210),
+  get btnH() { return vs(IS_TV ? 56 : 48); },
+  get cardW() { return IS_TV ? s(180) : s(140); },
+  get cardH() { return IS_TV ? vs(270) : vs(210); },
 
-  tabBarH: IS_TV ? vs(78) : vs(62),
-  iconSm: ms(16),
-  iconMd: ms(22),
-  iconLg: ms(32),
+  get tabBarH() { return IS_TV ? vs(78) : vs(62); },
+  get iconSm() { return ms(16); },
+  get iconMd() { return ms(22); },
+  get iconLg() { return ms(32); },
 };
 
 // Convenience focus-ring style (for D-pad navigation on TV)

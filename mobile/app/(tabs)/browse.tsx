@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl, ActivityIndicator, FlatList, TVFocusGuideView, Image } from "react-native";
+import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl, ActivityIndicator, FlatList, TVFocusGuideView, Image, useWindowDimensions } from "react-native";
 import ImageWithFallback from "../../src/ImageWithFallback";
 import React, { useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -8,6 +8,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import client, { BACKEND, colors } from "../../src/api";
 import BrandBackground from "../../src/BrandBackground";
 import { SAFE, SIZES, IS_TV, s, vs, ms, FOCUSED_CARD } from "../../src/responsive";
+import { useSafeTopInset } from "../../src/useSafeTopInset";
 import { useParentalGate, isAdultCategory } from "../../src/useParentalGate";
 
 type BrowseItem = {
@@ -56,9 +57,14 @@ function PosterCard({ item, onPress, initialFocus }: { item: BrowseItem; onPress
         )}
         <LinearGradient colors={["transparent", "rgba(0,0,0,0.85)"]} style={styles.cardShade} />
         {pct > 0 ? (
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${pct}%` }]} />
-          </View>
+          <>
+            <View style={{ position: "absolute", left: 8, bottom: 42, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 5, backgroundColor: "rgba(5,6,20,0.82)" }}>
+              <Text style={{ color: colors.cyan, fontFamily: "Unbounded_700Bold", fontSize: SIZES.fontTiny }}>RESUME · {Math.round(pct)}%</Text>
+            </View>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${pct}%` }]} />
+            </View>
+          </>
         ) : null}
         <View style={{ position: "absolute", left: 8, right: 8, bottom: 8 }}>
           <Text numberOfLines={2} style={{ color: "#fff", fontSize: SIZES.fontSmall, fontFamily: "Outfit_600SemiBold" }}>{item.title}</Text>
@@ -114,6 +120,8 @@ function Row({ row, isFirstRow = false }: { row: BrowseRow; isFirstRow?: boolean
     const go = () => {
       if (isShow) {
         router.push({ pathname: "/show/[rk]", params: { rk: String(item.rating_key), title: item.title } });
+      } else if ((item.type || "").toLowerCase() === "movie") {
+        router.push({ pathname: "/movie/[rk]", params: { rk: String(item.rating_key), title: item.title } });
       } else {
         router.push({ pathname: "/player/[rk]", params: { rk: String(item.rating_key), title: item.title } });
       }
@@ -158,6 +166,8 @@ function Hero({ item }: { item: BrowseItem }) {
     const isShow = (item.type || "").toLowerCase() === "show";
     if (isShow) {
       router.push({ pathname: "/show/[rk]", params: { rk: String(item.rating_key), title: item.title } });
+    } else if ((item.type || "").toLowerCase() === "movie") {
+      router.push({ pathname: "/movie/[rk]", params: { rk: String(item.rating_key), title: item.title } });
     } else {
       router.push({ pathname: "/player/[rk]", params: { rk: String(item.rating_key), title: item.title } });
     }
@@ -202,6 +212,8 @@ function Hero({ item }: { item: BrowseItem }) {
 
 // ---------- Screen ---------------------------------------------------------
 export default function Browse() {
+  useWindowDimensions();
+  const safeTop = useSafeTopInset();
   const [refreshing, setRefreshing] = useState(false);
   const { data, dataUpdatedAt, isLoading, refetch } = useQuery({
     queryKey: ["browse-rows"],
@@ -235,7 +247,7 @@ export default function Browse() {
     <BrandBackground>
       <ScrollView
         style={styles.root}
-        contentContainerStyle={{ paddingTop: SAFE.top + vs(10), paddingBottom: SIZES.tabBarH + vs(30) }}
+        contentContainerStyle={{ paddingTop: safeTop + vs(10), paddingBottom: SIZES.tabBarH + vs(30) }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.cyan} />}
       >
         <View style={{ paddingHorizontal: SAFE.left, marginBottom: vs(6), flexDirection: "row", alignItems: "center", gap: 12 }}>

@@ -8,7 +8,10 @@ export default function Favorites() {
       title="Favorites"
       removeLabel="unfavorite"
       removeFromList={(item: any) => item.favorite_source === "live"
-        ? client.delete(`/me/live/favorites/${encodeURIComponent(String(item.rating_key))}`)
+        ? Promise.all([
+          client.delete(`/me/live/favorites/${encodeURIComponent(String(item.rating_key))}`),
+          client.delete(`/me/favorites/${encodeURIComponent(String(item.rating_key))}`),
+        ])
         : client.delete(`/me/favorites/${encodeURIComponent(String(item.rating_key))}`)}
       emptyText={"No favorites yet.\nFavorite any movie, show, episode, or live channel to add it here."}
     />

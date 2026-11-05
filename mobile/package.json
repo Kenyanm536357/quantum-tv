@@ -7,7 +7,6 @@
     "ios": "expo run:ios",
     "android": "expo run:android",
     "web": "expo start --web",
-    "build:firetv": "eas build -p android --profile firetv",
     "build:production": "eas build -p android --profile production",
     "postinstall": "node scripts/fix-hermesc-wrapper.js"
   },

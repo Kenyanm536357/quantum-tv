@@ -30,4 +30,4 @@ jobs:
       - name: Publish update
         env:
           UPDATE_MESSAGE: ${{ inputs.message }}
-        run: eas update --branch production --platform android --non-interactive --message "$UPDATE_MESSAGE"
+        run: eas update --channel production --platform all --non-interactive --message "$UPDATE_MESSAGE"

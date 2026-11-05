@@ -8,6 +8,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import client, { BACKEND, colors } from "./api";
 import BrandBackground from "./BrandBackground";
 import TVTextInput from "./TVTextInput";
+import { useSafeTopInset } from "./useSafeTopInset";
 import { SAFE, SIZES, GRID_COLS, IS_TV, vs, ms, s, FOCUSED_CARD } from "./responsive";
 import { useParentalGate, isAdultCategory } from "./useParentalGate";
 
@@ -15,6 +16,7 @@ type LibItem = {
   rating_key: string;
   title: string;
   year?: string | number;
+  added?: number | null;
   thumb?: string;
   type?: string;
   category_id?: string;
@@ -36,15 +38,15 @@ function releaseYear(item: LibItem): number | null {
 
 const LIBRARY_REFRESH_MS = 90 * 1000;
 const LIBRARY_FETCH_LIMIT = 12000;
-const TITLE_COLLATOR = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
 
 export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: string }) {
   const { width: screenWidth } = useWindowDimensions();
+  const safeTop = useSafeTopInset();
   const isFocused = useIsFocused();
   const router = useRouter();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("az");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
 
   // Parental gate — exclude adult content when disabled
   const { requiresPin } = useParentalGate();
@@ -137,6 +139,8 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
   const openItem = (it: LibItem) => {
     if ((it.type || "").toLowerCase() === "show") {
       router.push({ pathname: "/show/[rk]", params: { rk: String(it.rating_key), title: it.title } });
+    } else if (type === "movie") {
+      router.push({ pathname: "/movie/[rk]", params: { rk: String(it.rating_key), title: it.title } });
     } else {
       router.push({ pathname: "/player/[rk]", params: { rk: String(it.rating_key), title: it.title } });
     }
@@ -154,17 +158,22 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
     const sorted = [...allItems];
     sorted.sort((a, b) => {
       if (sortOrder === "az") {
-        return TITLE_COLLATOR.compare(String(a.title || ""), String(b.title || ""));
+        return String(a.title || "").localeCompare(String(b.title || ""), undefined, { sensitivity: "base", numeric: true });
       }
       const yearA = releaseYear(a);
       const yearB = releaseYear(b);
+      // "Newest" means most recently added to the server first; fall back to release year.
+      if (sortOrder === "newest" && (a.added || b.added)) {
+        const byAdded = Number(b.added || 0) - Number(a.added || 0);
+        if (byAdded) return byAdded;
+      }
       // Keep entries with no release year at the end for either date order.
       if (yearA === null || yearB === null) {
-        if (yearA === yearB) return TITLE_COLLATOR.compare(String(a.title || ""), String(b.title || ""));
+        if (yearA === yearB) return String(a.title || "").localeCompare(String(b.title || ""), undefined, { sensitivity: "base", numeric: true });
         return yearA === null ? 1 : -1;
       }
       const byYear = sortOrder === "newest" ? yearB - yearA : yearA - yearB;
-      return byYear || TITLE_COLLATOR.compare(String(a.title || ""), String(b.title || ""));
+      return byYear || String(a.title || "").localeCompare(String(b.title || ""), undefined, { sensitivity: "base", numeric: true });
     });
     return sorted;
   }, [allItems, sortOrder]);
@@ -183,7 +192,7 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
 
   return (
     <BrandBackground>
-    <View style={{ flex: 1, paddingTop: SAFE.top }}>
+    <View style={{ flex: 1, paddingTop: safeTop }}>
       {/* Header */}
       <View style={{ paddingHorizontal: SAFE.left, marginBottom: vs(10), flexDirection: "row", alignItems: "center", gap: 12 }}>
         <Image
@@ -285,9 +294,9 @@ export function LibraryGrid({ type, label }: { type: "movie" | "show"; label: st
         numColumns={columns}
         columnWrapperStyle={{ gap: SIZES.gap }}
         ItemSeparatorComponent={() => <View style={{ height: SIZES.gap }} />}
-        initialNumToRender={12}
-        maxToRenderPerBatch={8}
-        windowSize={5}
+        initialNumToRender={20}
+        maxToRenderPerBatch={20}
+        windowSize={7}
         removeClippedSubviews
         renderItem={({ item, index }: { item: LibItem; index: number }) => {
           const isFav = favSet.has(String(item.rating_key));

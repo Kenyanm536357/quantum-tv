@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View, Text, FlatList, Pressable, Image, StyleSheet, ActivityIndicator, Modal,
+  View, Text, FlatList, Pressable, Image, StyleSheet, ActivityIndicator, Modal, useWindowDimensions,
 } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
@@ -10,7 +10,52 @@ import { useIsFocused } from "@react-navigation/native";
 import client, { BACKEND, colors } from "../../src/api";
 import BrandBackground from "../../src/BrandBackground";
 import { SAFE, SIZES, IS_TV, vs, ms, s, SCREEN_W } from "../../src/responsive";
+import { useSafeTopInset } from "../../src/useSafeTopInset";
 import { useParentalGate, isAdultCategory } from "../../src/useParentalGate";
+import { useChannelScroll } from "../../src/useChannelScroll";
+import { setChannelContext } from "../../src/channelContext";
+
+const SPORTS_KEY = "__sports__";
+// Friendly sub-categories built from the provider's generic category names.
+// First match wins, so specific sports come before the broad ones.
+const GROUPS: { label: string; sports?: boolean; re: RegExp }[] = [
+  { label: "FloSports", sports: true, re: /flo\s?sports|\bflo\b/i },
+  { label: "NFL Football", sports: true, re: /\bNFL\b|sunday ticket|NCAAF|college football/i },
+  { label: "NBA & Basketball", sports: true, re: /\b(NBA|WNBA|G League|basketball)\b/i },
+  { label: "MLB & Baseball", sports: true, re: /\b(MLB|MILB|baseball|softball)\b/i },
+  { label: "NHL & Hockey", sports: true, re: /\b(NHL|hockey)\b/i },
+  { label: "College Sports", sports: true, re: /\b(NCAA\w*|NJCAA|SEC\+?|ACC|BIG\s?10\+?|NFHS|college)\b/i },
+  { label: "Soccer", sports: true, re: /soccer|premier league|\bEPL\b|\bMLS\b|la ?liga|champions league/i },
+  { label: "UFC, Boxing & WWE", sports: true, re: /\b(MMA|UFC|WWE|boxing|fight\w*|wrestling)\b/i },
+  { label: "PPV & Live Events", sports: true, re: /\bPPV\b|pay per view|ESPN events|olympics|special events|match center/i },
+  { label: "Sports Replays", sports: true, re: /replay/i },
+  { label: "Golf, Tennis & More", sports: true, re: /golf|tennis|rugby|cricket|cycling|lacrosse|handball|motorsport|racing|nascar|\bF1\b/i },
+  { label: "ESPN & Sports Networks", sports: true, re: /\b(ESPN\w*|NBC Sports|bein|DAZN|FANATIZ|Sportsnet|FS1|FS2|fox sports|CBS Sports|TNT Sports|sky sports|sports?)\b/i },
+  { label: "Adult", re: /\b(adults?|xxx|18\+)\b/i },
+  { label: "Local Channels", re: /\blocal\b/i },
+  { label: "News", re: /\bnews\b/i },
+  { label: "Kids & Family", re: /\b(kids|family|cartoon|toddler|children)\b/i },
+  { label: "Movies", re: /\b(movies?|cinema|film)\b/i },
+  { label: "Music & Radio", re: /\b(music|radio)\b/i },
+  { label: "Documentaries", re: /documentar/i },
+  { label: "Religion", re: /religion|church|gospel/i },
+  { label: "Latino / Espa\u00f1ol", re: /latin|spanish|univision|telemundo|galavision|unimas/i },
+  { label: "24/7 Shows & Series", re: /24\s?\/\s?7|christmas|netflix/i },
+  { label: "TV Entertainment", re: /entertainment|premium shows|stirr|peacock|reality|streaming|public us|usa/i },
+  { label: "UK & Ireland", re: /^UK\b|^IRE\b|ireland/i },
+  { label: "Africa", re: /^AF\b|africa/i },
+];
+const OTHER_GROUP = "International";
+const SPORT_LABELS = new Set(GROUPS.filter((g) => g.sports).map((g) => g.label));
+
+const channelGroup = (c: { category_name?: string; title?: string; source?: string }): string => {
+  const cat = c.category_name || "";
+  // Public backup channels share one category, so classify those by name.
+  const text = c.source === "public" ? `${cat} ${c.title || ""}` : `${cat} ${/flo\s?sports/i.test(c.title || "") ? "FloSports" : ""}`;
+  for (const g of GROUPS) if (g.re.test(text)) return g.label;
+  return OTHER_GROUP;
+};
+const isSportsChannel = (c: { category_name?: string; title?: string; source?: string }) => SPORT_LABELS.has(channelGroup(c));
 
 // ============================================================
 // Live TV — Cable-guide-style EPG grid
@@ -57,24 +102,20 @@ type CategoryCount = {
 const MAX_CHANNELS = 20000;
 const CHANNEL_REFRESH_MS = 10 * 60 * 1000; // periodic full reload every 10 min
 const SLOT_MIN = 30;             // minutes per time slot
-const VISIBLE_SLOTS = 4;         // slots visible in the timeline area
 const NUM_BUFFER_TIMEOUT_MS = 2200;
 
-// Timeline layout — everything is derived from SLOT_W so the "NOW" line
-// and program blocks land at consistent pixel positions.
-// LEFT_COL_W must be large enough so that after paddingLeft: SAFE.left
-// (which includes the side-rail width on TV) there is still enough room
-// for the channel number + logo and the channel name label.
-const LEFT_COL_W = IS_TV
+// Recompute the guide geometry from the current window so portrait phones get
+// fewer, narrower time slots while TVs retain their existing four-slot layout.
+const visibleSlotCount = () => IS_TV ? 4 : SCREEN_W < 420 ? 2 : 4;
+const leftColumnWidth = () => IS_TV
   ? Math.max(s(200), SAFE.left + s(100))
-  : Math.max(s(130), SAFE.left + s(90));
-const TIMELINE_W = SCREEN_W - LEFT_COL_W - SAFE.right;
-const SLOT_W = Math.max(120, Math.floor(TIMELINE_W / VISIBLE_SLOTS));
-// Taller rows to fit channel number + logo line AND a channel-name line below.
-const ROW_H = IS_TV ? vs(72) : vs(56);
-const HEADER_H = IS_TV ? vs(38) : vs(30);
-const HERO_H = IS_TV ? vs(170) : vs(130);
-const PX_PER_MIN = SLOT_W / SLOT_MIN;
+  : Math.max(s(110), SAFE.left + s(55));
+const timelineWidth = () => Math.max(1, SCREEN_W - leftColumnWidth() - SAFE.right);
+const slotWidth = () => Math.max(IS_TV ? 120 : 70, Math.floor(timelineWidth() / visibleSlotCount()));
+const rowHeight = () => IS_TV ? vs(72) : vs(56);
+const headerHeight = () => IS_TV ? vs(38) : vs(30);
+const heroHeight = () => IS_TV ? vs(170) : vs(130);
+const pixelsPerMinute = () => slotWidth() / SLOT_MIN;
 
 function formatTime(ts?: number | null): string {
   if (!ts) return "";
@@ -112,6 +153,15 @@ function shortCategoryLabel(name: string): string {
 }
 
 export default function LiveTV() {
+  useWindowDimensions();
+  const safeTop = useSafeTopInset();
+  const compactPhone = !IS_TV && SCREEN_W < 420;
+  const visibleSlots = visibleSlotCount();
+  const leftColW = leftColumnWidth();
+  const timelineW = timelineWidth();
+  const slotW = slotWidth();
+  const rowH = rowHeight();
+  const pxPerMin = pixelsPerMinute();
   const isFocused = useIsFocused();
   const router = useRouter();
   const qc = useQueryClient();
@@ -135,6 +185,9 @@ export default function LiveTV() {
   const favQ = useQuery({
     queryKey: ["live-favorites"],
     queryFn: async () => (await client.get("/me/live/favorites")).data as { items: Channel[] },
+    refetchInterval: isFocused ? 5000 : false,
+    refetchIntervalInBackground: false,
+    staleTime: 0,
   });
   useQuery({
     queryKey: ["live-recent"],
@@ -155,7 +208,11 @@ export default function LiveTV() {
         number: ch.number ?? null, source: ch.source || null,
       });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["live-favorites"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["live-favorites"] });
+      qc.invalidateQueries({ queryKey: ["/me/favorites"] });
+      qc.invalidateQueries({ queryKey: ["favs"] });
+    },
   });
 
   const recordRecent = useMutation({
@@ -175,8 +232,10 @@ export default function LiveTV() {
   const [pinVerifying, setPinVerifying] = useState(false);
   const pendingChannelRef = useRef<Channel | null>(null);
 
+  const surfListRef = useRef<Channel[]>([]);
   const doOpenChannel = useCallback((ch: Channel) => {
     recordRecent.mutate(ch);
+    setChannelContext(surfListRef.current.map((c) => ({ key: String(c.key), title: c.title })));
     router.push({ pathname: "/player/[rk]", params: { rk: String(ch.key), title: ch.title } });
   }, [recordRecent, router]);
 
@@ -235,7 +294,7 @@ export default function LiveTV() {
   const [category, setCategory] = useState<string>("All");
   const [filterOpen, setFilterOpen] = useState(false);
 
-  const { channels, counts, countries, genres, categories } = useMemo(() => {
+  const { list, counts, countries, genres, categories } = useMemo(() => {
       const raw: Channel[] = data?.channels || [];
       const deduped = Array.from(new Map(raw.map((c) => [String(c.key), c])).values());
       // Adult channels stay hidden while the parental gate is active
@@ -249,30 +308,30 @@ export default function LiveTV() {
       for (const c of all) {
         const co = c.country || "Other";
         const ge = c.genre || "General";
-        const cat = c.category_name || c.genre || "Other";
+        const cat = channelGroup(c);
         countryCounts.set(co, (countryCounts.get(co) || 0) + 1);
         genreCounts.set(ge, (genreCounts.get(ge) || 0) + 1);
         categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1);
       }
       const countries = Array.from(countryCounts.entries()).sort((a, b) => b[1] - a[1]);
       const genres = Array.from(genreCounts.entries()).sort((a, b) => b[1] - a[1]);
-      const categories = Array.from(categoryCounts.entries())
-        .map(([name, count]) => ({ name, count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 18);
-      return { channels: all, counts: { all: all.length }, countries, genres, categories };
-    }, [data, requiresPin]);
+      const order = [...GROUPS.map((g) => g.label), OTHER_GROUP];
+      const categories = order
+        .filter((name) => categoryCounts.get(name))
+        .map((name) => ({ name, count: categoryCounts.get(name) || 0 }));
+      let filtered = all;
+      const sportsCount = all.reduce((n, c) => n + (isSportsChannel(c) ? 1 : 0), 0);
+      if (country !== "All") filtered = filtered.filter((x) => (x.country || "Other") === country);
+      if (genre !== "All") filtered = filtered.filter((x) => (x.genre || "General") === genre);
+      if (category === SPORTS_KEY) filtered = filtered.filter(isSportsChannel);
+      else if (category !== "All") filtered = filtered.filter((x) => channelGroup(x) === category);
+      return { list: filtered.slice(0, MAX_CHANNELS), counts: { all: all.length, sports: sportsCount }, countries, genres, categories };
+    }, [data, country, genre, category, requiresPin]);
 
-  const list = useMemo(() => {
-    let filtered = channels;
-    if (country !== "All") filtered = filtered.filter((x) => (x.country || "Other") === country);
-    if (genre !== "All") filtered = filtered.filter((x) => (x.genre || "General") === genre);
-    if (category !== "All") filtered = filtered.filter((x) => (x.category_name || x.genre || "Other") === category);
-    return filtered.slice(0, MAX_CHANNELS);
-  }, [channels, country, genre, category]);
+  surfListRef.current = list;
 
   // ---- Time slots (updates every minute) ----
-  // Anchor at the last :00 or :30 boundary; render VISIBLE_SLOTS slots
+  // Anchor at the last :00 or :30 boundary; render the current visible slots
   // starting there. The "now" line is offset from that anchor.
   const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
   useEffect(() => {
@@ -284,11 +343,11 @@ export default function LiveTV() {
     return Math.floor(nowSec / half) * half;
   }, [nowSec]);
   const slotStarts = useMemo(
-    () => Array.from({ length: VISIBLE_SLOTS + 1 }, (_, i) => timelineStart + i * SLOT_MIN * 60),
-    [timelineStart]
+    () => Array.from({ length: visibleSlots + 1 }, (_, i) => timelineStart + i * SLOT_MIN * 60),
+    [timelineStart, visibleSlots]
   );
   const timelineEnd = slotStarts[slotStarts.length - 1];
-  const nowX = Math.round(((nowSec - timelineStart) / 60) * PX_PER_MIN);
+  const nowX = Math.round(((nowSec - timelineStart) / 60) * pxPerMin);
 
   // ---- Focused program (updates the hero panel) ----
   const [focused, setFocused] = useState<{ channel: Channel; program: Program | null } | null>(null);
@@ -311,20 +370,30 @@ export default function LiveTV() {
     if (focusFrame.current !== null) cancelAnimationFrame(focusFrame.current);
   }, []);
 
+  const listRef = useRef<FlatList<Channel>>(null);
+  const { preferIndex, onItemFocus } = useChannelScroll({
+    enabled: isFocused && !filterOpen && !pinModalVisible,
+    count: list.length,
+    step: IS_TV ? 6 : 8,
+    scrollToIndex: (index) => listRef.current?.scrollToIndex({ index, viewPosition: 0.3, animated: false }),
+  });
+
   const renderGuideRow = useCallback(({ item, index }: { item: Channel; index: number }) => (
     <GuideRow
       channel={item}
       timelineStart={timelineStart}
       timelineEnd={timelineEnd}
+      pxPerMin={pxPerMin}
+      rowHeight={rowH}
       isFav={favKeys.has(String(item.key))}
       loadEpg={focusedChannel?.key === item.key}
       onOpen={openChannel}
       onToggleFav={handleToggleFav}
-      onFocusProgram={(p) => updateFocused(item, p)}
-      onFocusChannel={() => updateFocused(item, null)}
-      hasPreferredFocus={index === 0}
+      onFocusProgram={(p) => { onItemFocus(index); updateFocused(item, p); }}
+      onFocusChannel={() => { onItemFocus(index); updateFocused(item, null); }}
+      hasPreferredFocus={index === preferIndex}
     />
-  ), [favKeys, focusedChannel?.key, handleToggleFav, openChannel, timelineEnd, timelineStart, updateFocused]);
+  ), [favKeys, focusedChannel?.key, handleToggleFav, openChannel, pxPerMin, rowH, timelineEnd, timelineStart, updateFocused, preferIndex, onItemFocus]);
 
   // ---- Channel-number quick jump ----
   const [jumpBuf, setJumpBuf] = useState("");
@@ -355,12 +424,12 @@ export default function LiveTV() {
 
   return (
     <BrandBackground headerGlow={false}>
-      <View style={{ flex: 1, paddingTop: SAFE.top }}>
+      <View style={{ flex: 1, paddingTop: safeTop }}>
         <View style={styles.categoryRailWrap}>
           <FlatList
             horizontal
             showsHorizontalScrollIndicator={false}
-            data={[{ name: "All", count: counts.all }, ...categories] as CategoryCount[]}
+            data={[{ name: "All", count: counts.all }, { name: SPORTS_KEY, count: counts.sports }, ...categories] as CategoryCount[]}
             keyExtractor={(it) => `cat-${it.name}`}
             contentContainerStyle={styles.categoryRailContent}
             renderItem={({ item, index }) => {
@@ -378,7 +447,7 @@ export default function LiveTV() {
                   ]}
                 >
                   <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]} numberOfLines={1}>
-                    {shortCategoryLabel(item.name)}
+                    {item.name === SPORTS_KEY ? `Sports (${item.count})` : shortCategoryLabel(item.name)}
                   </Text>
                 </Pressable>
               );
@@ -387,7 +456,7 @@ export default function LiveTV() {
         </View>
 
         {/* Top nav strip — slim, matches reference (no big header taking room). */}
-        <View style={styles.topNav}>
+        <View style={[styles.topNav, compactPhone && { flexWrap: "wrap" }]}>
           <Image
             source={require("../../assets/logo.png")}
             style={{ width: ms(30), height: ms(30), borderRadius: 6 }}
@@ -408,7 +477,7 @@ export default function LiveTV() {
             style={({ focused }) => [styles.topNavBtn, focused && { borderColor: colors.cyan }]}
           >
             <Ionicons name={isFetching ? "sync" : "refresh-outline"} size={ms(16)} color="#fff" />
-            <Text style={styles.topNavBtnTxt}>{isFetching ? "Sync" : "Reload"}</Text>
+            {!compactPhone && <Text style={styles.topNavBtnTxt}>{isFetching ? "Sync" : "Reload"}</Text>}
           </Pressable>
           <Pressable
             testID="live-filter-btn"
@@ -417,7 +486,7 @@ export default function LiveTV() {
             style={({ focused }) => [styles.topNavBtn, focused && { borderColor: colors.cyan }]}
           >
             <Ionicons name="options-outline" size={ms(16)} color="#fff" />
-            <Text style={styles.topNavBtnTxt}>Filter{activeFilterCount ? ` (${activeFilterCount})` : ""}</Text>
+            {!compactPhone && <Text style={styles.topNavBtnTxt}>Filter{activeFilterCount ? ` (${activeFilterCount})` : ""}</Text>}
           </Pressable>
           <Pressable
             testID="live-jump-btn"
@@ -426,20 +495,20 @@ export default function LiveTV() {
             style={({ focused }) => [styles.topNavBtn, focused && { borderColor: colors.cyan }]}
           >
             <Ionicons name="keypad-outline" size={ms(16)} color="#fff" />
-            <Text style={styles.topNavBtnTxt}>Jump</Text>
+            {!compactPhone && <Text style={styles.topNavBtnTxt}>Jump</Text>}
           </Pressable>
         </View>
 
         {/* Hero — currently-focused program preview */}
-        <HeroPanel channel={focusedChannel} program={focusedProgram} nowSec={nowSec} />
+        <HeroPanel channel={focusedChannel} program={focusedProgram} nowSec={nowSec} height={heroHeight()} />
 
         {/* Time header */}
-        <View style={styles.timeHeader}>
-          <View style={{ width: LEFT_COL_W, paddingLeft: SAFE.left, justifyContent: "center" }}>
+        <View style={[styles.timeHeader, { height: headerHeight() }]}>
+          <View style={{ width: leftColW, paddingLeft: SAFE.left, justifyContent: "center" }}>
             <Text style={styles.timeHeaderDay}>{formatDayShort(nowSec)}</Text>
           </View>
-          {slotStarts.slice(0, VISIBLE_SLOTS).map((ts, i) => (
-            <View key={i} style={{ width: SLOT_W, paddingLeft: 6, justifyContent: "center" }}>
+          {slotStarts.slice(0, visibleSlots).map((ts, i) => (
+            <View key={i} style={{ width: slotW, paddingLeft: 6, justifyContent: "center" }}>
               <Text style={styles.timeHeaderSlot}>{formatTime(ts)}</Text>
             </View>
           ))}
@@ -458,6 +527,8 @@ export default function LiveTV() {
         ) : (
           <View style={{ flex: 1, position: "relative" }}>
             <FlatList
+              ref={listRef}
+              onScrollToIndexFailed={(info) => listRef.current?.scrollToOffset({ offset: rowH * info.index, animated: false })}
               data={list}
               keyExtractor={(it) => `guide-${it.key}`}
               initialNumToRender={7}
@@ -466,13 +537,13 @@ export default function LiveTV() {
               windowSize={6}
               disableVirtualization={false}
               removeClippedSubviews
-              getItemLayout={(_, index) => ({ length: ROW_H, offset: ROW_H * index, index })}
+              getItemLayout={(_, index) => ({ length: rowH, offset: rowH * index, index })}
               contentContainerStyle={{ paddingBottom: SIZES.tabBarH + vs(20) }}
               renderItem={renderGuideRow}
             />
             {/* Vertical "now" indicator drawn over the entire visible timeline area. */}
-            {nowX >= 0 && nowX <= TIMELINE_W ? (
-              <View pointerEvents="none" style={[styles.nowLine, { left: LEFT_COL_W + nowX }]}>
+            {nowX >= 0 && nowX <= timelineW ? (
+              <View pointerEvents="none" style={[styles.nowLine, { left: leftColW + nowX }]}>
                 <View style={styles.nowLineHead} />
               </View>
             ) : null}
@@ -481,7 +552,7 @@ export default function LiveTV() {
 
         {/* Channel-number typing overlay */}
         {jumpBuf.length > 0 && !numpadOpen && (
-          <View pointerEvents="none" style={styles.jumpBanner}>
+          <View pointerEvents="none" style={[styles.jumpBanner, { top: safeTop + vs(60) }]}>
             <Ionicons name="keypad-outline" size={ms(18)} color="#fff" />
             <Text style={styles.jumpBannerLabel}>Ch</Text>
             <Text style={styles.jumpBannerNum}>{jumpBuf}</Text>
@@ -574,10 +645,10 @@ export default function LiveTV() {
 }
 
 // ---- Hero preview panel (focused program) ------------------------------
-function HeroPanel({ channel, program, nowSec }: { channel: Channel | null; program: Program | null; nowSec: number }) {
+function HeroPanel({ channel, program, nowSec, height }: { channel: Channel | null; program: Program | null; nowSec: number; height: number }) {
   if (!channel && !program) {
     return (
-      <View style={[styles.hero, { alignItems: "flex-start", justifyContent: "flex-end" }]}>
+      <View style={[styles.hero, { height, alignItems: "flex-start", justifyContent: "flex-end" }]}>
         <Text style={{ color: colors.zinc400, fontFamily: "Outfit_400Regular", fontSize: SIZES.fontSmall, marginBottom: 6 }}>
           Focus a channel to preview what's on
         </Text>
@@ -593,7 +664,7 @@ function HeroPanel({ channel, program, nowSec }: { channel: Channel | null; prog
       ? Math.max(0, Math.floor((program.end_ts - nowSec) / 60))
       : null;
   return (
-    <View style={styles.hero}>
+    <View style={[styles.hero, { height }]}>
       {channel?.logo ? (
         <Image
           source={{ uri: channel.logo.startsWith("http") ? channel.logo : `${BACKEND}${channel.logo}` }}
@@ -632,12 +703,14 @@ function HeroPanel({ channel, program, nowSec }: { channel: Channel | null; prog
 
 // ---- One channel row in the guide grid --------------------------------
 const GuideRow = React.memo(function GuideRow({
-  channel, timelineStart, timelineEnd, isFav,
+  channel, timelineStart, timelineEnd, pxPerMin, rowHeight, isFav,
   loadEpg, onOpen, onToggleFav, onFocusProgram, onFocusChannel, hasPreferredFocus,
 }: {
   channel: Channel;
   timelineStart: number;
   timelineEnd: number;
+  pxPerMin: number;
+  rowHeight: number;
   isFav: boolean;
   loadEpg: boolean;
   onOpen: (c: Channel) => void;
@@ -648,9 +721,9 @@ const GuideRow = React.memo(function GuideRow({
 }) {
   const isIptv = channel.source === "iptv";
   const epgQ = useQuery({
-    // Fetch only the channel being browsed. Starting EPG requests for every
-    // mounted row overwhelms some Xtream lines and makes TV-remote scrolling jagged.
-    enabled: isIptv && loadEpg,
+    // Fetch only the channel being browsed on TV remotes (scrolling stays smooth); touch
+    // devices have no focus events, so load guide data for every visible row instead.
+    enabled: isIptv && (loadEpg || !IS_TV),
     queryKey: ["epg", channel.key],
     queryFn: async () => (await client.get(`/livetv/epg?channel_key=${encodeURIComponent(channel.key)}&limit=8`)).data as { programs: Program[] },
     staleTime: 5 * 60 * 1000,
@@ -670,9 +743,9 @@ const GuideRow = React.memo(function GuideRow({
   }, [epgQ.data, timelineStart, timelineEnd]);
 
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, { height: rowHeight }]}>
       {/* Left column: logo + channel number stacked, with full channel name below */}
-      <View style={styles.leftCol}>
+      <View style={[styles.leftCol, { width: leftColumnWidth() }]}>
         {/* Top row: logo/initial box + channel number side by side */}
         <View style={styles.channelTopRow}>
           <View style={styles.channelLogoBox}>
@@ -700,12 +773,13 @@ const GuideRow = React.memo(function GuideRow({
       </View>
 
       {/* Right: program blocks OR a "no guide data" placeholder */}
-      <View style={styles.timeline}>
+      <View style={[styles.timeline, { height: rowHeight }]}>
         {visiblePrograms.length === 0 ? (
           <NoDataBlock
             channel={channel}
             timelineStart={timelineStart}
             timelineEnd={timelineEnd}
+            pxPerMin={pxPerMin}
             isLoading={epgQ.isLoading}
             onOpen={onOpen}
             onToggleFav={onToggleFav}
@@ -720,6 +794,7 @@ const GuideRow = React.memo(function GuideRow({
               channel={channel}
               timelineStart={timelineStart}
               timelineEnd={timelineEnd}
+              pxPerMin={pxPerMin}
               onOpen={onOpen}
               onToggleFav={onToggleFav}
               onFocus={() => onFocusProgram(p)}
@@ -734,10 +809,11 @@ const GuideRow = React.memo(function GuideRow({
 
 // ---- A single program block on a row ----------------------------------
 function ProgramBlock({
-  program, channel, timelineStart, timelineEnd, onOpen, onToggleFav, onFocus, hasPreferredFocus,
+  program, channel, timelineStart, timelineEnd, pxPerMin, onOpen, onToggleFav, onFocus, hasPreferredFocus,
 }: {
   program: Program; channel: Channel;
   timelineStart: number; timelineEnd: number;
+  pxPerMin: number;
   onOpen: (c: Channel) => void; onToggleFav: (c: Channel) => void;
   onFocus: () => void; hasPreferredFocus?: boolean;
 }) {
@@ -746,8 +822,8 @@ function ProgramBlock({
   const endClamped = Math.min(program.end_ts || 0, timelineEnd);
   const offsetMin = (startClamped - timelineStart) / 60;
   const durMin = Math.max(1, (endClamped - startClamped) / 60);
-  const left = Math.round(offsetMin * PX_PER_MIN);
-  const width = Math.max(60, Math.round(durMin * PX_PER_MIN));
+  const left = Math.round(offsetMin * pxPerMin);
+  const width = Math.max(48, Math.round(durMin * pxPerMin));
 
   return (
     <Pressable
@@ -770,17 +846,18 @@ function ProgramBlock({
 
 // Placeholder block used when a channel has no EPG data.
 function NoDataBlock({
-  channel, timelineStart, timelineEnd, isLoading, onOpen, onToggleFav, onFocus, hasPreferredFocus,
+  channel, timelineStart, timelineEnd, pxPerMin, isLoading, onOpen, onToggleFav, onFocus, hasPreferredFocus,
 }: {
   channel: Channel;
   timelineStart: number; timelineEnd: number;
+  pxPerMin: number;
   isLoading: boolean;
   onOpen: (c: Channel) => void;
   onToggleFav: (c: Channel) => void;
   onFocus: () => void;
   hasPreferredFocus?: boolean;
 }) {
-  const width = Math.round(((timelineEnd - timelineStart) / 60) * PX_PER_MIN);
+  const width = Math.round(((timelineEnd - timelineStart) / 60) * pxPerMin);
   return (
     <Pressable
       focusable
@@ -795,7 +872,7 @@ function NoDataBlock({
       ]}
     >
       <Text style={[styles.progTitle, { color: colors.zinc500 }]} numberOfLines={1}>
-        {isLoading ? "Loading guide…" : "No guide data"}
+        {isLoading ? "Loading guide…" : `${channel.title} · Live now`}
       </Text>
     </Pressable>
   );
@@ -977,7 +1054,6 @@ const styles = StyleSheet.create({
 
   // ---- Hero (focused-program preview) ----
   hero: {
-    height: HERO_H,
     flexDirection: "row", alignItems: "center",
     paddingHorizontal: SAFE.left, paddingRight: SAFE.right,
     paddingVertical: vs(10),
@@ -1011,7 +1087,6 @@ const styles = StyleSheet.create({
 
   // ---- Time header ----
   timeHeader: {
-    height: HEADER_H,
     flexDirection: "row",
     borderBottomWidth: 1,
     borderBottomColor: "rgba(99,102,241,0.24)",
@@ -1022,13 +1097,11 @@ const styles = StyleSheet.create({
 
   // ---- Row ----
   row: {
-    height: ROW_H,
     flexDirection: "row",
     borderBottomWidth: 1,
     borderBottomColor: "rgba(99,102,241,0.12)",
   },
   leftCol: {
-    width: LEFT_COL_W,
     paddingLeft: SAFE.left,
     flexDirection: "column",
     justifyContent: "center",
@@ -1082,7 +1155,6 @@ const styles = StyleSheet.create({
   channelInitial: { color: "#fff", fontFamily: "Unbounded_700Bold", fontSize: ms(7), textAlign: "center" },
   timeline: {
     flex: 1,
-    height: ROW_H,
     position: "relative",
   },
   progBlock: {
@@ -1114,7 +1186,7 @@ const styles = StyleSheet.create({
 
   // ---- Jump banner + numpad ----
   jumpBanner: {
-    position: "absolute", top: SAFE.top + vs(60), alignSelf: "center",
+    position: "absolute", alignSelf: "center",
     backgroundColor: "rgba(6,7,20,0.94)", borderColor: colors.cyan, borderWidth: 2,
     borderRadius: 999, paddingHorizontal: s(20), paddingVertical: vs(8),
     flexDirection: "row", alignItems: "center", gap: 10,

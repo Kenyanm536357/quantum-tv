@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, type ReactNode } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, Alert, Image, Modal, ActivityIndicator, TextInput } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView, Alert, Image, Modal, ActivityIndicator, TextInput, Platform, useWindowDimensions } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -7,12 +7,15 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import client, { colors } from "../../src/api";
 import BrandBackground from "../../src/BrandBackground";
 import { SAFE, SIZES, IS_TV, vs, ms, s } from "../../src/responsive";
+import { useSafeTopInset } from "../../src/useSafeTopInset";
 import {
   PARENTAL_UNLOCKED_KEY,
   PARENTAL_UNLOCK_TTL,
   ADULT_CHANNELS_ENABLED_KEY,
+  notifyParentalPrefsChanged,
 } from "../../src/useParentalGate";
 import { checkDownloadAndApply, getOtaInfo } from "../../src/ota";
+import { autoBootAvailable, getAutoBootEnabled, setAutoBootEnabled } from "../../src/autoBoot";
 
 // ============================================================
 // Settings — clean categorized layout (adult channels OFF by default)
@@ -285,6 +288,8 @@ function EditProfileModal({
 }
 
 export default function Settings() {
+  const safeTop = useSafeTopInset();
+  useWindowDimensions();
   const router = useRouter();
   const qc = useQueryClient();
   const [user, setUser] = useState<any>(null);
@@ -298,11 +303,18 @@ export default function Settings() {
   const [busyAdult, setBusyAdult] = useState(false);
   const [otaBusy, setOtaBusy] = useState(false);
   const [otaMsg, setOtaMsg] = useState<string | null>(null);
+  const [autoBootEnabled, setAutoBootEnabledState] = useState(false);
+  const [autoBootBusy, setAutoBootBusy] = useState(false);
   const [editProfileVisible, setEditProfileVisible] = useState(false);
   const otaInfo = getOtaInfo();
 
   useEffect(() => {
     AsyncStorage.getItem("qtv_user").then((str) => setUser(str ? JSON.parse(str) : null));
+  }, []);
+
+  useEffect(() => {
+    if (!autoBootAvailable) return;
+    getAutoBootEnabled().then(setAutoBootEnabledState).catch(() => setAutoBootEnabledState(false));
   }, []);
 
   useEffect(() => {
@@ -353,6 +365,7 @@ export default function Settings() {
       qc.invalidateQueries({ queryKey: ["live"] });
       qc.invalidateQueries({ queryKey: ["live-favorites"] });
       qc.invalidateQueries({ queryKey: ["live-recent"] });
+      notifyParentalPrefsChanged();
     } finally {
       setBusyAdult(false);
     }
@@ -390,6 +403,23 @@ export default function Settings() {
     await AsyncStorage.removeItem(PARENTAL_UNLOCKED_KEY);
     setParentalUnlocked(false);
   }, []);
+
+  const toggleAutoBoot = useCallback(async () => {
+    if (autoBootBusy) return;
+    const next = !autoBootEnabled;
+    setAutoBootBusy(true);
+    try {
+      await setAutoBootEnabled(next);
+      setAutoBootEnabledState(next);
+    } catch (error) {
+      Alert.alert(
+        "Auto boot unavailable",
+        error instanceof Error ? error.message : "Install the latest Android build to use this option.",
+      );
+    } finally {
+      setAutoBootBusy(false);
+    }
+  }, [autoBootBusy, autoBootEnabled]);
 
   const handleProfileSaved = useCallback(async (patch: { display_name?: string; avatar?: string | null }) => {
     setUser((prev: any) => {
@@ -438,7 +468,7 @@ export default function Settings() {
         contentContainerStyle={{
           paddingLeft: SAFE.left,
           paddingRight: SAFE.right,
-          paddingTop: SAFE.top + vs(16),
+          paddingTop: safeTop + vs(16),
           paddingBottom: SIZES.tabBarH + vs(48),
           maxWidth: IS_TV ? s(980) : undefined,
         }}
@@ -555,6 +585,24 @@ export default function Settings() {
             subtitle="Xtream / IPTV live & VOD"
           />
           <View style={styles.divider} />
+          {Platform.OS === "android" ? (
+            <>
+              <SettingRow
+                icon="power-outline"
+                iconColor={autoBootEnabled ? colors.cyan : colors.zinc400}
+                iconBg={autoBootEnabled ? "rgba(103,232,249,0.14)" : "rgba(255,255,255,0.06)"}
+                title="Auto boot"
+                subtitle={autoBootAvailable
+                  ? "Open Quantum TV when this device starts"
+                  : "Available after installing the latest Android build"}
+                onPress={autoBootAvailable ? toggleAutoBoot : undefined}
+                right={autoBootBusy
+                  ? <ActivityIndicator size="small" color={colors.cyan} />
+                  : <TogglePill on={autoBootAvailable && autoBootEnabled} />}
+              />
+              <View style={styles.divider} />
+            </>
+          ) : null}
           <SettingRow
             icon="information-circle-outline"
             iconColor={colors.zinc300}

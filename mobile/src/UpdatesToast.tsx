@@ -4,6 +4,7 @@ import * as Updates from "expo-updates";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "./api";
 import { ms, s, vs, SAFE, IS_TV } from "./responsive";
+import { useSafeTopInset } from "./useSafeTopInset";
 import {
   OTA_CHECK_TIMEOUT_MS,
   checkDownloadAndApply,
@@ -19,6 +20,7 @@ const PERIODIC_CHECK_MS = 5 * 60 * 1000; // backup agent every 5 minutes
  * an update is confirmed available.
  */
 export default function UpdatesToast() {
+  const safeTop = useSafeTopInset();
   const [available, setAvailable] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [dismissed, setDismissed] = useState(false);
@@ -89,7 +91,7 @@ export default function UpdatesToast() {
   if (!available || dismissed) return null;
 
   return (
-    <Animated.View pointerEvents="box-none" style={[styles.wrap, { opacity }]}>
+    <Animated.View pointerEvents="box-none" style={[styles.wrap, { opacity, top: safeTop + vs(8) }]}>
       <View style={styles.card} testID="updates-toast">
         <View style={styles.iconDot}>
           <Ionicons name="cloud-download-outline" size={ms(18)} color="#050614" />
@@ -137,7 +139,6 @@ export default function UpdatesToast() {
 const styles = StyleSheet.create({
   wrap: {
     position: "absolute",
-    top: SAFE.top + vs(8),
     right: SAFE.right + s(12),
     zIndex: 9999,
   },

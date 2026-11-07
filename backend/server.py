@@ -2420,12 +2420,13 @@ async def _iptv_item_meta(rating_key: str, user: dict) -> Optional[dict]:
             return None
         try:
             if kind == "live":
-                raw = await _iptv_get("get_live_streams")
+                raw, cat_by_id = await _iptv_cached("live")
             else:
-                raw, _ = await _iptv_cached("vod")
+                raw, cat_by_id = await _iptv_cached("vod")
             hit = next((s for s in (raw or []) if int(s.get("stream_id", -1)) == sid_int), None)
         except Exception:
             hit = None
+            cat_by_id = {}
         info: dict = {}
         if kind == "movie":
             try:
@@ -2434,6 +2435,8 @@ async def _iptv_item_meta(rating_key: str, user: dict) -> Optional[dict]:
             except Exception as e:
                 log.info("VOD detail fetch failed for %s: %s", sid_int, e)
         title = (hit or {}).get("name") or ("Live Channel" if kind == "live" else "Movie")
+        category_id = str((hit or {}).get("category_id") or "")
+        category_name = cat_by_id.get(category_id)
         thumb_raw = info.get("movie_image") or (hit or {}).get("stream_icon")
         thumb = f"/api/iptv/logo?u={quote(thumb_raw, safe='')}" if thumb_raw else None
         cast_raw = info.get("cast") or info.get("actors") or []
@@ -2448,6 +2451,8 @@ async def _iptv_item_meta(rating_key: str, user: dict) -> Optional[dict]:
             "rating_key": rating_key,
             "title": title,
             "type": "live" if kind == "live" else "movie",
+            "category_id": category_id or None,
+            "category_name": category_name,
             "thumb": thumb,
             "art": None,
             "year": (hit or {}).get("year") or (release[:4] if release else None),

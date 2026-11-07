@@ -87,9 +87,8 @@ export function useParentalGate() {
 
   const enabled = parentalQ.data?.enabled ?? false;
   const pinSet = parentalQ.data?.pin_set ?? false;
-  // Always require a gate for adult content unless the user has enabled adult
-  // channels on this device AND (if admin PIN lock is on) the session is unlocked.
-  const requiresPin = !adultChannelsEnabled || (enabled && pinSet && !sessionUnlocked);
+  // Fail closed until settings load and whenever a required PIN is missing or locked.
+  const requiresPin = !adultChannelsEnabled || !parentalQ.data || (enabled && (!pinSet || !sessionUnlocked));
 
   const setUnlocked = useCallback(async () => {
     await AsyncStorage.setItem(PARENTAL_UNLOCKED_KEY, String(Date.now()));

@@ -377,6 +377,10 @@ export default function Settings() {
     try {
       if (parentalEnabled && pinSet) {
         const { data } = await client.post("/settings/parental/verify", { pin });
+        if (data.configured === false) {
+          setPinError("PIN protection is enabled, but your admin has not set a PIN yet.");
+          return;
+        }
         if (!data.valid) {
           setPinError("Incorrect PIN. Try again.");
           return;
@@ -431,9 +435,16 @@ export default function Settings() {
   }, []);
 
   const onToggleAdult = useCallback(async () => {
-    if (busyAdult) return;
+    if (busyAdult || parentalQ.isLoading) return;
     if (adultEnabled) {
       await applyAdultEnabled(false);
+      return;
+    }
+    if (parentalEnabled && !pinSet) {
+      Alert.alert(
+        "PIN not configured",
+        "Mature channels are locked because PIN protection is enabled. Ask your admin to set a 4-digit PIN first.",
+      );
       return;
     }
     // Require PIN only when the service has an admin PIN configured.
@@ -444,22 +455,24 @@ export default function Settings() {
       return;
     }
     Alert.alert(
-      "Show adult channels?",
-      "Adult channels are hidden by default. Turn them on for this device?",
+      "Enable Mature Channels (18+)?",
+      "These channels are for adults only. They are hidden by default and will be enabled only on this device.",
       [
         { text: "Cancel", style: "cancel" },
         { text: "Turn On", style: "destructive", onPress: () => { applyAdultEnabled(true); } },
       ],
     );
-  }, [adultEnabled, busyAdult, applyAdultEnabled, parentalEnabled, pinSet]);
+  }, [adultEnabled, busyAdult, parentalQ.isLoading, applyAdultEnabled, parentalEnabled, pinSet]);
 
-  const adultStatus = adultEnabled
+  const adultStatus = parentalEnabled && !pinSet
+    ? adultEnabled ? "Locked · admin PIN not configured" : "Hidden · admin PIN not configured"
+    : adultEnabled
     ? parentalEnabled && pinSet
       ? parentalUnlocked
-        ? "Visible · session unlocked"
-        : "Visible · PIN required to open"
-      : "Visible in Live TV"
-    : "Hidden by default";
+        ? "18+ channels enabled · session unlocked"
+        : "18+ channels enabled · PIN required"
+      : "18+ channels enabled on this device"
+    : "18+ channels hidden by default";
 
   return (
     <BrandBackground>
@@ -516,7 +529,7 @@ export default function Settings() {
             icon={adultEnabled ? "eye-outline" : "eye-off-outline"}
             iconColor={adultEnabled ? colors.cyan : colors.zinc400}
             iconBg={adultEnabled ? "rgba(103,232,249,0.16)" : "rgba(255,255,255,0.06)"}
-            title="Adult channels"
+            title="Mature channels (18+)"
             subtitle={adultStatus}
             onPress={onToggleAdult}
             right={
@@ -572,7 +585,7 @@ export default function Settings() {
             </>
           ) : null}
           <Text style={styles.note}>
-            Adult channels stay hidden until you turn them on here. You can turn them off anytime.
+            Mature (18+) channels stay hidden by default. Enable them only on an adult-controlled device; service PIN protection still applies when configured.
           </Text>
         </CategoryCard>
 
@@ -662,7 +675,7 @@ export default function Settings() {
 
       <PinModal
         visible={pinModalVisible}
-        title={pinModalMode === "enable-adult" ? "Enable Adult Channels" : "Unlock Adult Content"}
+        title={pinModalMode === "enable-adult" ? "Enable Mature Channels (18+)" : "Unlock Mature Content"}
         onSubmit={pinVerifying ? () => {} : handlePinSubmit}
         onDismiss={() => { setPinModalVisible(false); setPinError(null); }}
         error={pinError}

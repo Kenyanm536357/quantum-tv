@@ -259,6 +259,11 @@ export default function LiveTV() {
     setPinError(null);
     try {
       const { data: res } = await client.post("/settings/parental/verify", { pin });
+      if (res.configured === false) {
+        setPinError("PIN protection is enabled, but your admin has not set a PIN yet.");
+        setPinBuffer("");
+        return;
+      }
       if (res.valid) {
         await setUnlocked();
         setPinModalVisible(false);
@@ -597,7 +602,7 @@ export default function LiveTV() {
               <View style={styles.pinIconBox}>
                 <Ionicons name="lock-closed" size={ms(24)} color="#050614" />
               </View>
-              <Text style={styles.pinTitle}>Adult Content Locked</Text>
+              <Text style={styles.pinTitle}>Mature Content Locked (18+)</Text>
               <Text style={styles.pinSub}>Enter your 4-digit PIN to continue</Text>
               <View style={styles.pinDotRow}>
                 {[0,1,2,3].map((i) => (

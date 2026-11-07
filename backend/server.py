@@ -2316,8 +2316,8 @@ async def verify_parental_pin(body: PinVerifyBody, user: dict = Depends(get_curr
     s = await db.settings.find_one({"id": "global"}) or {}
     pin_hash = s.get("parental_pin_hash")
     if not pin_hash:
-        return {"valid": True}
-    return {"valid": verify_password(body.pin, pin_hash)}
+        return {"valid": False, "configured": False}
+    return {"valid": verify_password(body.pin, pin_hash), "configured": True}
 
 
 @api.get("/admin/servers")

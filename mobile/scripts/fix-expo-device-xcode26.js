@@ -4,11 +4,14 @@ const path = require("path");
 
 const packageJson = require.resolve("expo-device/package.json");
 const sourcePath = path.join(path.dirname(packageJson), "ios", "UIDevice.swift");
-const source = fs.readFileSync(sourcePath, "utf8");
+let source = fs.readFileSync(sourcePath, "utf8");
 
-if (source.includes("import TargetConditionals")) process.exit(0);
-if (!source.includes("import UIKit\n")) {
+const macro = "    return TARGET_OS_SIMULATOR != 0";
+if (!source.includes(macro)) {
+  if (source.includes("#if targetEnvironment(simulator)")) process.exit(0);
   throw new Error("Unexpected expo-device UIDevice.swift; cannot apply Xcode 26 compatibility fix.");
 }
 
-fs.writeFileSync(sourcePath, source.replace("import UIKit\n", "import UIKit\nimport TargetConditionals\n"));
+source = source.replace("import TargetConditionals\n", "");
+source = source.replace(macro, "#if targetEnvironment(simulator)\n    return true\n#else\n    return false\n#endif");
+fs.writeFileSync(sourcePath, source);

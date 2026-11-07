@@ -38,6 +38,7 @@ from dotenv import load_dotenv
 # ---------------------------------------------------------------------------
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("quantum_tv")
 
 MONGO_URL = os.environ["MONGO_URL"]
@@ -170,6 +171,36 @@ app.add_middleware(
 )
 
 api = APIRouter(prefix="/api")
+
+
+@api.get("/privacy", response_class=HTMLResponse)
+async def privacy_policy():
+    return HTMLResponse("""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quantum TV Privacy Policy</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;max-width:820px;margin:40px auto;padding:0 20px;color:#20242c}h1,h2{line-height:1.25}a{color:#145dcc}</style></head>
+<body><main><h1>Quantum TV Privacy Policy</h1><p>Effective date: November 7, 2026</p>
+<p>Quantum TV is a media player and catalog interface. It does not provide television channels, movies, series, or subscriptions. Content access is provided by the third-party service account you use.</p>
+<h2>Information we handle</h2>
+<ul>
+<li><strong>Account and device details:</strong> account username and identifier, display name, account and subscription status, and device identifier, model, name, registration, and last-seen time.</li>
+<li><strong>Authentication and provider credentials:</strong> standard account passwords are stored as salted password hashes. Xtream provider passwords used for sign-in are encrypted in the service database and are used to validate and connect your provider account.</li>
+<li><strong>Profile and app activity:</strong> optional avatar, favorites, watchlist, recently viewed channels, and playback position/duration so the app can provide profile, saved-list, and resume features.</li>
+<li><strong>Local app data:</strong> the app stores its authentication token, device identifier, and preferences such as mature-content visibility and temporary PIN-unlock state on the device.</li>
+<li><strong>Operational information:</strong> requests and diagnostics may include IP address, timestamps, requested app functions, and error details. Search terms are processed to return results; they are not used for advertising.</li>
+</ul>
+<h2>How information is used and shared</h2>
+<p>We use this information to authenticate accounts, enforce device limits and service access, retrieve catalogs and streams, maintain favorites/watchlists, save playback progress, provide support, and protect the service.</p>
+<p>Information is processed by the service hosting provider (Railway), database provider (MongoDB Atlas), and app-update delivery provider (Expo) as needed to operate Quantum TV. When you connect a third-party TV provider, your provider credentials and content requests are sent to that provider; the provider may collect information under its own privacy terms. Apple processes information related to App Store distribution and review.</p>
+<p>Quantum TV does not include advertising or cross-app tracking SDKs and does not sell personal information.</p>
+<h2>Retention and choices</h2>
+<p>Account information and saved activity are retained while needed to provide the service. An account administrator can delete an account and its associated profile data. To request account-data deletion or ask a privacy question, contact <a href="mailto:kenyan@quantumtek.net">kenyan@quantumtek.net</a>. Provider-side data must be managed with the provider.</p>
+<h2>Children and mature content</h2>
+<p>Quantum TV is not directed to children under 13. Mature channels are unavailable in the iOS app. On supported non-iOS devices, mature channels are hidden by default and may be subject to service PIN protection.</p>
+<h2>Security and changes</h2>
+<p>We use access controls and encryption for sensitive credentials in storage and transit. No online service can guarantee absolute security. This policy may be updated when the service or its data practices change; the effective date above will be revised.</p>
+<h2>Contact</h2><p>Privacy questions or requests: <a href="mailto:kenyan@quantumtek.net">kenyan@quantumtek.net</a>.</p>
+</main></body></html>""")
 
 
 # ============================================================

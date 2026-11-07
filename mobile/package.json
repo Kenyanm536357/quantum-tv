@@ -8,7 +8,7 @@
     "android": "expo run:android",
     "web": "expo start --web",
     "build:production": "eas build -p android --profile production",
-    "postinstall": "node scripts/fix-hermesc-wrapper.js"
+    "postinstall": "node scripts/fix-hermesc-wrapper.js && node scripts/fix-expo-device-xcode26.js"
   },
   "dependencies": {
     "@expo-google-fonts/outfit": "^0.2.3",

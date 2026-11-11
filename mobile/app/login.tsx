@@ -101,6 +101,7 @@ export default function Login() {
           <Image source={require("../assets/logo.png")} style={{ width: ms(110), height: ms(110), borderRadius: ms(28), marginBottom: vs(16) }} />
           <Text style={[styles.brand, { fontSize: SIZES.fontTitle * 1.4 }]}>Quantum <Text style={{ color: colors.cyan }}>TV</Text></Text>
           <Text style={[styles.tag, { fontSize: SIZES.fontSmall }]}>Sign in to your account</Text>
+          <Text style={{ color: "rgba(255,255,255,0.55)", fontSize: SIZES.fontTiny, textAlign: "center", marginTop: vs(8), maxWidth: cardMaxW }}>Quantum TV is a media player. It includes no content of its own and plays only what your own provider (Xtream) account supplies.</Text>
         </View>
 
         <View style={[styles.card, { width: cardMaxW, marginTop: isLandscape && IS_TV ? 0 : vs(28), padding: s(24) }]}>

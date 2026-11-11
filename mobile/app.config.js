@@ -12,6 +12,11 @@ module.exports = ({ config }) => {
       return true;
     });
   }
+  // App Review 2.5.19: the iOS binary must be static, so no OTA code/content swaps.
+  if (process.env.EAS_BUILD_PLATFORM === "ios") {
+    config.updates = { enabled: false };
+    config.ios = { ...(config.ios || {}), buildNumber: "10" };
+  }
   config.plugins = [...(config.plugins || []), require("./plugins/withAutoBoot")];
   return config;
 };

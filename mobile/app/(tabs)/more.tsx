@@ -623,6 +623,8 @@ export default function Settings() {
             title="Version"
             subtitle={`Quantum TV 1.0.14 · runtime ${otaInfo.runtimeVersion || "n/a"}`}
           />
+          {Platform.OS !== "ios" && (
+            <>
           <View style={styles.divider} />
           <SettingRow
             icon="cloud-download-outline"
@@ -656,6 +658,8 @@ export default function Settings() {
                 : <Ionicons name="refresh" size={ms(16)} color={colors.zinc400} />
             }
           />
+            </>
+          )}
         </CategoryCard>
 
         <CategoryCard kicker="04" title="Session">

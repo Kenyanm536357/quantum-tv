@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet, AppState, AppStateStatus, Animated } from "react-native";
+import { View, Text, Pressable, StyleSheet, AppState, AppStateStatus, Animated, Platform } from "react-native";
 import * as Updates from "expo-updates";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "./api";
@@ -29,6 +29,7 @@ export default function UpdatesToast() {
   const opacity = useRef(new Animated.Value(0)).current;
 
   const check = useCallback(async () => {
+    if (Platform.OS === "ios") return;
     // Skip in Expo Go / dev — Updates.checkForUpdateAsync throws there.
     if (!Updates.isEnabled || checkingRef.current || installing) return;
     checkingRef.current = true;
